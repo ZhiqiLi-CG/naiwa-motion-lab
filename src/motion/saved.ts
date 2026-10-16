@@ -8,6 +8,7 @@ const PER_FRAME = 2 * 33 * 4;
 interface Stored {
   id: string;
   name: string;
+  nameEn?: string;
   fps: number;
   duration: number;
   aspect: number;
@@ -51,7 +52,7 @@ function pack(t: Track, savedAt: number): Stored {
     const o = i * PER_FRAME;
     [...f.world, ...f.image].forEach((p, k) => data.set(p.slice(0, 4), o + k * 4));
   });
-  return { id: t.id, name: t.name, fps: t.fps, duration: t.duration, aspect: t.aspect ?? 1, source: t.source, savedAt, present, data };
+  return { id: t.id, name: t.name, nameEn: t.nameEn, fps: t.fps, duration: t.duration, aspect: t.aspect ?? 1, source: t.source, savedAt, present, data };
 }
 
 function unpack(s: Stored): Track {
@@ -60,7 +61,7 @@ function unpack(s: Stored): Track {
     const lm = (from: number) => Array.from({ length: 33 }, (_, k) => Array.from(s.data.subarray(from + k * 4, from + k * 4 + 4)));
     return { world: lm(i * PER_FRAME), image: lm(i * PER_FRAME + 33 * 4) };
   });
-  return { id: s.id, name: s.name, fps: s.fps, duration: s.duration, aspect: s.aspect, source: s.source, frames };
+  return { id: s.id, name: s.name, nameEn: s.nameEn, fps: s.fps, duration: s.duration, aspect: s.aspect, source: s.source, frames };
 }
 
 export async function loadSaved(): Promise<Track[]> {

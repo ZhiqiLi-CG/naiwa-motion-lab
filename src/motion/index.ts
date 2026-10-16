@@ -4,10 +4,11 @@
  * everything that comes from a person goes through one Retargeter (retarget.ts).
  */
 import type { DanceIndexEntry, DanceInfo, DanceTrack, MotionModule, MotionSource, MotionStatus, RigInfo } from "../contracts";
+import { onLang, tr } from "../i18n";
 import { PROCEDURAL_DANCES } from "./dances";
 import { bindRig, type Binding } from "./rig";
 import { loadSaved, putSaved, removeSaved } from "./saved";
-import { proceduralSource, startCamera, startVideo, trackSource, type MirrorableSource, type VideoSource } from "./sources";
+import { proceduralSource, startCamera, startVideo, trackSource, type MirrorableSource, type Status, type VideoSource } from "./sources";
 import { fetchTrack, type Track } from "./track";
 
 export type { MirrorableSource, VideoSource } from "./sources";
@@ -31,9 +32,20 @@ export function createMotion(): NaiwaMotion {
   const getBinding = () => binding;
   const statusListeners = new Set<(s: MotionStatus) => void>();
   const listListeners = new Set<(d: DanceInfo[]) => void>();
-  const emit = (s: MotionStatus) => statusListeners.forEach((l) => l(s));
+  // The last status is kept with both languages so a language switch re-shows it translated.
+  let status: Status = { state: "idle" };
+  const show = () => {
+    const { text, ...rest } = status;
+    const s: MotionStatus = text ? { ...rest, message: tr(text) } : rest;
+    statusListeners.forEach((l) => l(s));
+  };
+  const emit = (s: Status) => {
+    status = s;
+    show();
+  };
+  onLang(show);
 
-  const entries: Entry[] = PROCEDURAL_DANCES.map(({ id, name, duration }) => ({ info: { id, name, duration, origin: "procedural" } }));
+  const entries: Entry[] = PROCEDURAL_DANCES.map(({ id, name, nameEn, duration }) => ({ info: { id, name, nameEn, duration, origin: "procedural" } }));
   const list = () => entries.map((e) => e.info);
   const changed = () => listListeners.forEach((l) => l(list()));
   const cached = (load: () => Promise<Track>) => {
@@ -41,7 +53,7 @@ export function createMotion(): NaiwaMotion {
     return () => (p ??= load().catch((e) => ((p = null), Promise.reject(e))));
   };
   const mine = (t: Track): Entry => ({
-    info: { id: t.id, name: t.name, duration: t.duration, origin: "mine" },
+    info: { id: t.id, name: t.name, nameEn: t.nameEn ?? t.name, duration: t.duration, origin: "mine" },
     track: () => Promise.resolve(t),
   });
 
@@ -54,7 +66,8 @@ export function createMotion(): NaiwaMotion {
           const load = cached(() => fetchTrack(new URL(e.file, base).href));
           // The credit (source title) lives in the track itself.
           const t = await load().catch(() => null);
-          return { info: { id: e.id, name: e.name, duration: e.duration, origin: "video", credit: t?.source.title }, track: load } as Entry;
+          const info: DanceInfo = { id: e.id, name: e.name, nameEn: e.nameEn ?? t?.nameEn, duration: e.duration, origin: "video", credit: t?.source.title };
+          return { info, track: load };
         }),
       ),
     )
@@ -101,11 +114,12 @@ export function createMotion(): NaiwaMotion {
       if (!e) console.warn(`motion: unknown dance "${id}", playing ${entries[0].info.id}`);
       const entry = e ?? entries[0];
       if (!entry.track) return proceduralSource(PROCEDURAL_DANCES.find((d) => d.id === entry.info.id)!, getBinding);
-      return trackSource(entry.track(), getBinding, emit);
+      return trackSource(entry.track(), entry.info.duration, getBinding, emit);
     },
     dances: list,
     async saveDance(track: DanceTrack, name: string) {
-      const t: Track = { ...(track as Track), id: `mine-${Date.now().toString(36)}`, name: name.trim().slice(0, 16) || "我的舞蹈" };
+      const label = name.trim().slice(0, 16) || tr({ zh: "我的舞蹈", en: "My dance" });
+      const t: Track = { ...(track as Track), id: `mine-${Date.now().toString(36)}`, name: label, nameEn: label };
       await putSaved(t);
       const entry = mine(t);
       entries.push(entry);

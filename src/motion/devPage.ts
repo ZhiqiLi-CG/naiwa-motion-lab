@@ -178,11 +178,15 @@ async function main() {
   if (params.get("camera")) motion.startCamera({ mirror: mirror.checked, preview }).then(use, (e) => console.warn(String(e)));
   if (params.get("video")) motion.startVideo(params.get("video")!, { mirror: mirror.checked, preview }).then(use, (e) => console.warn(String(e)));
 
+  // Frozen time (?t=): run up to it over the first second (filters and faces settle), then hold, a whole number of
+  // loops in so the fade-in is over.
   const freeze = params.get("t");
+  const loopLen = motion.dances().find((d) => d.id === params.get("dance"))?.duration ?? 0;
+  const target = Number(freeze) + (loopLen ? Math.ceil(1.5 / loopLen) * loopLen : 0);
   const t0 = performance.now();
   let last = t0;
   const loop = (now: number) => {
-    const t = freeze !== null ? t0 + Number(freeze) * 1000 : now;
+    const t = freeze !== null ? t0 + target * 1000 - Math.max(0, 1000 - (now - t0)) : now;
     dev.frame = dev.source ? dev.source.update(t, (now - last) / 1000) : null;
     last = now;
     dev.frames++;
@@ -201,10 +205,7 @@ async function main() {
     }
     requestAnimationFrame(loop);
   };
-  if (freeze !== null) {
-    // A frozen dance still needs its fade-in to have passed.
-    dev.source?.update(t0, 0);
-  }
+  if (freeze !== null) dev.source?.update(t0, 0);
   requestAnimationFrame(loop);
 }
 

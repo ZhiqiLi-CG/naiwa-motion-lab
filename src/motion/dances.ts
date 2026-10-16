@@ -8,6 +8,7 @@ import { bentLeg, blendArm, dir, FINGERS, idlePose, rot, sideSign, SIDES, type A
 export interface ProceduralDance {
   id: string;
   name: string;
+  nameEn: string;
   duration: number;
   pose(t: number): BodyPose;
 }
@@ -66,6 +67,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "belly-laugh",
     name: "捧腹大笑",
+    nameEn: "Belly Laugh",
     duration: 4,
     pose(t) {
       const p = idlePose();
@@ -91,6 +93,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "peace",
     name: "比耶",
+    nameEn: "Peace Sign",
     duration: 4,
     pose(t) {
       const p = idlePose();
@@ -117,6 +120,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "wiggle",
     name: "扭屁股",
+    nameEn: "Butt Wiggle",
     duration: 5,
     pose(t) {
       const p = idlePose();
@@ -141,6 +145,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "disco",
     name: "蹦迪",
+    nameEn: "Club Bounce",
     duration: 3.75,
     pose(t) {
       const p = idlePose();
@@ -173,6 +178,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "sway",
     name: "摇摆",
+    nameEn: "Sway",
     duration: 4,
     pose(t) {
       const p = idlePose();
@@ -196,6 +202,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "frog-hop",
     name: "青蛙跳",
+    nameEn: "Frog Hop",
     duration: 3.2,
     pose(t) {
       const p = idlePose();
@@ -222,6 +229,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "belly-drum",
     name: "拍肚皮",
+    nameEn: "Belly Drum",
     duration: 4,
     pose(t) {
       const p = idlePose();
@@ -246,6 +254,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "jiggle",
     name: "抖肚肚",
+    nameEn: "Belly Jiggle",
     duration: 3,
     pose(t) {
       const p = idlePose();
@@ -268,6 +277,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
   {
     id: "wave",
     name: "招手嗨",
+    nameEn: "Hi Wave",
     duration: 3,
     pose(t) {
       const p = idlePose();
