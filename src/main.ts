@@ -31,8 +31,6 @@ let character: Awaited<ReturnType<typeof loadCharacter>> | null = null;
 /* ---------------- recording ---------------- */
 
 function finishRecording(rec: Awaited<ReturnType<typeof recorder.stop>>) {
-  const old = store.get().lastRecording;
-  if (old && old !== rec) URL.revokeObjectURL(old.url);
   store.set({ recording: { active: false, startedAt: null }, lastRecording: rec });
 }
 
@@ -103,7 +101,7 @@ const commands: UICommands = {
   async copyConfigLink() {
     const url = `${location.origin}${location.pathname}${encodeConfig(store.get())}`;
     await navigator.clipboard.writeText(url);
-    ui.toast(tr({ zh: "链接已复制，发给朋友一起戳奶蛙！", en: "Link copied. Send it to a friend and poke 奶蛙 together!" }), "success");
+    ui.toast(tr({ zh: "链接已复制（含当前设置）", en: "Link copied (with the current settings)" }), "success");
   },
   rainBalls() {
     for (let i = 0; i < 14; i++) {
@@ -116,8 +114,13 @@ const commands: UICommands = {
   async shareRecording() {
     const rec = store.get().lastRecording;
     if (!rec) return;
-    const how = await shareRecording(rec);
-    ui.toast(how === "shared" ? tr({ zh: "分享出去啦！", en: "Shared!" }) : tr({ zh: "视频已保存", en: "Video saved" }), "success");
+    try {
+      const how = await shareRecording(rec);
+      ui.toast(how === "shared" ? tr({ zh: "已分享", en: "Shared" }) : tr({ zh: "视频已保存", en: "Video saved" }), "success");
+    } catch (err) {
+      // Closing the share sheet is not a failure.
+      if (!(err instanceof DOMException && err.name === "AbortError")) throw err;
+    }
   },
   startCamera() {
     cameraWanted = true;
