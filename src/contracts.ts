@@ -403,7 +403,13 @@ export interface AppState {
   sound: boolean;
   theme: ThemeChoice;
   recording: { active: boolean; startedAt: number | null };
+  /** How a recording frames the frog and the camera/uploaded video. */
+  recordLayout: "frog" | "pip" | "side-by-side";
   lastRecording: Recording | null;
+  /** The live dance list (presets + 我的舞蹈), kept up to date by the integration. */
+  dances: DanceInfo[];
+  /** The uploaded video's analysed motion can be saved (set by the integration once analysis is done). */
+  canSaveDance: boolean;
   motion: MotionStatus;
   stats: { pokes: number; throws: number; fps: number };
   /** Character asset status shown while loading. */
@@ -428,6 +434,9 @@ export interface AppCommands {
   rainBalls(): void;
   /** Save or share the last recording (Web Share on phones, download elsewhere). */
   shareRecording(): Promise<void>;
+  /** Keep the analysed uploaded video's motion as one of 我的舞蹈. */
+  saveDance(name: string): Promise<void>;
+  deleteDance(id: string): Promise<void>;
 }
 
 export interface UIHandles {
