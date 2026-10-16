@@ -138,7 +138,30 @@ export interface DanceInfo {
   duration: number;
 }
 
+/** A dance captured from a real video (public/dances/<id>.json, listed in public/dances/index.json): the person's
+ *  MediaPipe pose per frame, retargeted live by the same code as the webcam. The video itself is never shipped. */
+export interface DanceTrack {
+  id: string;
+  name: string;
+  fps: number;
+  /** Seconds; the track loops (frames chosen or blended so the loop is seamless). */
+  duration: number;
+  /** Where the motion came from (title, URL, time range); credited in the UI. */
+  source: { title: string; url: string; start: number; end: number };
+  /** Per frame: 33 MediaPipe world landmarks [x, y, z, visibility] (meters, hip-centred) and 33 image landmarks
+   *  [x, y, z, visibility] (normalised to the video frame, for hops, squats and travel). */
+  frames: { world: number[][]; image: number[][] }[];
+}
+export interface DanceIndexEntry {
+  id: string;
+  name: string;
+  duration: number;
+  file: string;
+}
+
 export interface MotionModule {
+  /** Resolves when the dance list (built-in procedural + public/dances/index.json) is complete. */
+  ready(): Promise<void>;
   /** Bind to the character's skeleton (called again if the character asset is replaced). */
   bind(rig: RigInfo): void;
   /** Webcam → pose. The preview element receives the camera image with the tracked skeleton drawn over it. */
