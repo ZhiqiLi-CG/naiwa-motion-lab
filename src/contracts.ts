@@ -84,6 +84,10 @@ export interface FleshPart {
   regions?: Uint8Array;
   /** The bones this flesh rides on. */
   bones: BoneName[];
+  /** Skin binding of each vertex: 4 bone indices into RigSpec.bones and 4 weights (from the GLB), so the simulation
+   *  can compute the skinned target shape the flesh deviates from (docs/soft-binding.md). */
+  skinIndices?: Uint16Array;
+  skinWeights?: Float32Array;
 }
 
 /** What the character module hands the simulation: the rest skeleton and the soft flesh, in world space with the
