@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Naiwa Motion Lab · media on the real stage</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #16130d; }
+      #stage { position: fixed; inset: 0; }
+      video { position: fixed; right: 12px; bottom: 12px; width: 160px; z-index: 2; }
+    </style>
+  </head>
+  <body>
+    <!-- Recording the real stage (its renderer and a frame loop like main.ts's) with a companion video and its music. -->
+    <div id="stage"></div>
+    <video id="companion" loop playsinline></video>
+    <script type="module">
+      import * as THREE from "three";
+      import { createStage } from "/src/stage/index.ts";
+      import { createSfx, createRecorder } from "/src/media/index.ts";
+
+      const stage = createStage(document.getElementById("stage"));
+      const blob = new THREE.Mesh(new THREE.SphereGeometry(0.35, 48, 32), new THREE.MeshStandardMaterial({ color: "#f5c842", roughness: 0.6 }));
+      blob.castShadow = true;
+      stage.scene.add(blob);
+      const focus = new THREE.Vector3(0, 0.45, 0);
+      let last = performance.now();
+      const tick = (now) => {
+        requestAnimationFrame(tick);
+        const dt = Math.min((now - last) / 1000, 1 / 20);
+        last = now;
+        const phase = (now / 1000) * 1.4 % 1;
+        blob.position.set(Math.sin(now / 900) * 0.3, 0.35 + 4 * phase * (1 - phase) * 0.5, 0);
+        stage.setFocus(focus);
+        stage.frame(dt);
+      };
+      requestAnimationFrame(tick);
+
+      const sfx = createSfx();
+      const companion = document.getElementById("companion");
+      window.mediaStage = {
+        async record(ms = 4000, layout = "side-by-side", src = "/.cache/media/dance-music.mp4") {
+          sfx.unlock();
+          companion.src = src;
+          await companion.play();
+          sfx.attachMusic(companion);
+          const rec = createRecorder();
+          rec.start(stage.canvas, sfx.stream, { companion, layout });
+          await new Promise((r) => setTimeout(r, ms));
+          const r = await rec.stop();
+          const b = new Uint8Array(await r.blob.arrayBuffer());
+          let s = "";
+          for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+          return { mimeType: r.mimeType, size: r.blob.size, durationMs: r.durationMs, fileName: r.fileName, stageCanvas: `${stage.canvas.width}x${stage.canvas.height}`, base64: btoa(s) };
+        },
+      };
+    </script>
+  </body>
+</html>

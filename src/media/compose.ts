@@ -41,9 +41,10 @@ export function createCompositor(stage: HTMLCanvasElement, opts: ComposeOptions)
   g.imageSmoothingQuality = "high";
   // What the user saw: a preview flipped by CSS (the mirrored camera) is recorded flipped too.
   const mirrored = video ? isMirrored(video) : false;
-  const mark = watermark(Math.round(Math.min(w, h) * 0.022));
-  const labels = { person: tr(LABELS.person), frog: tr(LABELS.frog) };
   const unit = Math.min(w, h) / 720;
+  const mark = plate("Naiwa Motion Lab", Math.round(16 * unit), 0.85);
+  const caption = (t: { zh: string; en: string }) => plate(tr(t), Math.round(18 * unit), 0.95);
+  const labels = { person: caption(LABELS.person), frog: caption(LABELS.frog) };
 
   const draw = () => {
     g.fillStyle = GAP_COLOR;
@@ -55,8 +56,8 @@ export function createCompositor(stage: HTMLCanvasElement, opts: ComposeOptions)
       const [a, b] = split(w, h, gap, aV, stage.width / stage.height);
       panel(g, ready ? video : null, a.x, a.y, a.w, a.h, mirrored);
       panel(g, stage, b.x, b.y, b.w, b.h, false);
-      label(g, labels.person, a.x + 14 * unit, a.y + 14 * unit, unit);
-      label(g, labels.frog, b.x + 14 * unit, b.y + 14 * unit, unit);
+      g.drawImage(labels.person, Math.round(a.x + 12 * unit), Math.round(a.y + 12 * unit));
+      g.drawImage(labels.frog, Math.round(b.x + 12 * unit), Math.round(b.y + 12 * unit));
     } else {
       panel(g, stage, 0, 0, w, h, false);
       if (layout === "pip" && ready) inset(g, video, w, h, unit, mirrored);
@@ -195,39 +196,28 @@ function inset(g: CanvasRenderingContext2D, video: HTMLVideoElement, w: number, 
   g.restore();
 }
 
-/** A plain caption: small white text with a soft shadow, readable on video and on the stage. */
-function label(g: CanvasRenderingContext2D, text: string, x: number, y: number, unit: number): void {
-  const size = Math.round(18 * unit);
-  g.save();
-  g.font = `600 ${size}px ${FONT}`;
-  g.textBaseline = "top";
-  g.shadowColor = "rgba(0,0,0,0.75)";
-  g.shadowBlur = 5 * unit;
-  g.fillStyle = "rgba(255,255,255,0.95)";
-  g.fillText(text, x, y);
-  g.restore();
-}
-
-const FONT = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif';
-
-/** "Naiwa Motion Lab" in small plain text with a soft shadow, drawn once. */
-function watermark(size: number): HTMLCanvasElement {
+/** Plain small white text on a faint dark backdrop: readable on the light stage and on any video. */
+function plate(text: string, size: number, alpha: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   const g = c.getContext("2d")!;
   const font = `600 ${size}px ${FONT}`;
-  const text = "Naiwa Motion Lab";
   g.font = font;
-  const pad = Math.ceil(size * 0.4);
-  c.width = Math.ceil(g.measureText(text).width) + 2 * pad;
-  c.height = Math.ceil(size * 1.3) + 2 * pad;
+  const padX = Math.ceil(size * 0.45);
+  const padY = Math.ceil(size * 0.25);
+  c.width = Math.ceil(g.measureText(text).width) + 2 * padX;
+  c.height = Math.ceil(size * 1.25) + 2 * padY;
+  g.fillStyle = "rgba(0,0,0,0.3)";
+  g.beginPath();
+  g.roundRect(0, 0, c.width, c.height, Math.round(size * 0.3));
+  g.fill();
   g.font = font;
   g.textBaseline = "middle";
-  g.shadowColor = "rgba(0,0,0,0.7)";
-  g.shadowBlur = size * 0.3;
-  g.fillStyle = "rgba(255,255,255,0.78)";
-  g.fillText(text, pad, c.height / 2);
+  g.fillStyle = `rgba(255,255,255,${alpha})`;
+  g.fillText(text, padX, c.height / 2 + size * 0.04);
   return c;
 }
+
+const FONT = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif';
 
 function isMirrored(el: HTMLElement): boolean {
   const t = getComputedStyle(el).transform;
