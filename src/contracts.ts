@@ -1,5 +1,5 @@
 /**
- * Contracts between the modules of 奶蛙 Playground.
+ * Contracts between the modules of Naiwa Motion Lab.
  *
  * Each folder under src/ is owned by one module (sim, character, motion, stage, ui, media); modules meet only through
  * the types below and in src/main.ts, the integration. Every module compiles against this file, so change it only by

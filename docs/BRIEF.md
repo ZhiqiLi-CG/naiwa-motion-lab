@@ -1,6 +1,8 @@
-# 奶蛙 Playground — brief for everyone building it
+# Naiwa Motion Lab — brief for everyone building it
 
 ## What it is
+
+The product is called **Naiwa Motion Lab** (the user's name for it; 奶蛙 is the character).
 
 A web page. Someone opens the link and plays with 奶蛙: pokes and slaps its big soft belly, squeezes it, grabs it and
 throws it, changes how soft and bouncy it is, makes it dance with their webcam or an uploaded dance video (or one of

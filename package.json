@@ -1,10 +1,12 @@
 {
-  "name": "naiwa-playground",
+  "name": "naiwa-motion-lab",
   "private": true,
   "version": "0.1.0",
-  "description": "奶蛙 Playground: a soft-body + skeleton milk frog you can poke, throw and make dance with your camera, in the browser.",
+  "description": "Naiwa Motion Lab: a soft-body + skeleton 奶蛙 you can poke, throw and make dance with your camera, a video or preset dances, in the browser.",
   "type": "module",
-  "engines": { "node": ">=18.19" },
+  "engines": {
+    "node": ">=18.19"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
