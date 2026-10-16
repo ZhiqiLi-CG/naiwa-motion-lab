@@ -29,6 +29,11 @@ const EASE = 14; // 1/s, how fast the camera reaches its orbit goals
 const FLING_FRICTION = 3.5; // 1/s
 const FOLLOW_TIME_XZ = 0.18; // s, smoothing of the follow
 const FOLLOW_TIME_Y = 0.3;
+/** The framing ignores the frog's centre moving less than this (m): a poked or dancing belly sways its centre, and
+ *  a view that sways along hides the jiggle. Beyond it (a throw, a stumble) the camera follows; at rest it recentres
+ *  slowly. */
+const DEAD_ZONE = 0.14;
+const RECENTER = 0.8; // 1/s
 const SHAKE_DECAY = 1.6; // trauma per second
 const SHAKE_OFFSET = 0.07; // m at full trauma
 const SHAKE_ROLL = 0.05; // rad at full trauma
@@ -63,6 +68,9 @@ export class CameraRig {
   private yawRate = 0;
   private pitchRate = 0;
   private readonly focus = new THREE.Vector3(0, 0.5, 0);
+  /** What the target eases to: the focus, less the dead zone. */
+  private readonly anchor = new THREE.Vector3(0, 0.5, 0);
+  private readonly lag = new THREE.Vector3();
   private readonly followVel = [0, 0, 0];
   private trauma = 0;
   private time = 0;
@@ -121,6 +129,7 @@ export class CameraRig {
     this.pitch = this.pitchGoal;
     this.zoom = this.zoomGoal;
     this.target.copy(this.focus);
+    this.anchor.copy(this.focus);
     this.followVel.fill(0);
   }
 
@@ -139,11 +148,16 @@ export class CameraRig {
     this.pitch += (this.pitchGoal - this.pitch) * k;
     this.zoom += (this.zoomGoal - this.zoom) * k;
 
+    const a = this.anchor;
+    const lag = this.lag.subVectors(this.focus, a);
+    const far = lag.length();
+    if (far > DEAD_ZONE) a.addScaledVector(lag, 1 - DEAD_ZONE / far);
+    a.lerp(this.focus, 1 - Math.exp(-RECENTER * dt));
     const t = this.target;
     const v = this.followVel;
-    t.x = smoothDamp(t.x, this.focus.x, v, 0, FOLLOW_TIME_XZ, dt);
-    t.y = smoothDamp(t.y, this.focus.y, v, 1, FOLLOW_TIME_Y, dt);
-    t.z = smoothDamp(t.z, this.focus.z, v, 2, FOLLOW_TIME_XZ, dt);
+    t.x = smoothDamp(t.x, a.x, v, 0, FOLLOW_TIME_XZ, dt);
+    t.y = smoothDamp(t.y, a.y, v, 1, FOLLOW_TIME_Y, dt);
+    t.z = smoothDamp(t.z, a.z, v, 2, FOLLOW_TIME_XZ, dt);
 
     const cam = this.camera;
     const lift = Math.max(0, t.y - REST_Y) * (LIFT_BACKOFF / VERTICAL_FOLLOW);

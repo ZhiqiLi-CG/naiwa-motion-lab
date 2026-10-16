@@ -172,8 +172,11 @@ export function createStage(container: HTMLElement): PlayStage {
   const info: StageInfo = { cpuMs: 0, drawCalls: 0, triangles: 0, pixelRatio: renderer.getPixelRatio() };
   const focus = new THREE.Vector3(0, 0.5, 0);
   const keyOffset = new THREE.Vector3();
+  const lightX = new THREE.Vector3();
+  const lightY = new THREE.Vector3();
+  const shadowAt = new THREE.Vector3();
+  const texel = (2 * SHADOW_HALF) / key.shadow.mapSize.x;
   const yAxis = new THREE.Vector3(0, 1, 0);
-  let time = 0;
   let started = false;
 
   return {
@@ -196,7 +199,6 @@ export function createStage(container: HTMLElement): PlayStage {
     frame(dt) {
       const t0 = performance.now();
       dt = Math.min(Math.max(dt, 0), 0.1);
-      time += dt;
       if (!started) {
         rig.snap();
         started = true;
@@ -209,12 +211,21 @@ export function createStage(container: HTMLElement): PlayStage {
 
       // Light and environment turn with the camera's heading (see KEY_OFFSET).
       keyOffset.copy(KEY_OFFSET).applyAxisAngle(yAxis, rig.yaw);
-      key.position.copy(rig.target).add(keyOffset);
-      key.target.position.copy(rig.target);
+      // The shadow map follows the frog in whole texels across the light, so shadow edges do not crawl as it moves.
+      lightX.crossVectors(yAxis, keyOffset).normalize();
+      lightY.crossVectors(keyOffset, lightX).normalize();
+      const u = rig.target.dot(lightX);
+      const v = rig.target.dot(lightY);
+      shadowAt
+        .copy(rig.target)
+        .addScaledVector(lightX, Math.round(u / texel) * texel - u)
+        .addScaledVector(lightY, Math.round(v / texel) * texel - v);
+      key.position.copy(shadowAt).add(keyOffset);
+      key.target.position.copy(shadowAt);
       key.target.updateMatrixWorld();
       scene.environmentRotation.y = rig.yaw;
 
-      set.update(time, camera, rig.target);
+      set.update(camera, rig.target);
       pops.update(dt);
       particles.update(dt, camera);
 

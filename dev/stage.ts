@@ -81,23 +81,25 @@ function throwBall(toward: THREE.Vector3) {
   if (balls.length > 60) balls.shift();
 }
 
-const texts = ["DUANG~", "噗!", "哈哈哈", "Boing!", "嘿嘿~", "咕叽", "Q弹!"];
-const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const fx = stage.fx;
 
 const react = (kind: FrogEvent["kind"], point: THREE.Vector3, strength: number, where?: HitRegion) =>
   character.react({ kind, point, strength, region: where });
 
-function poke(hit: THREE.Intersection, strength: number) {
+/** A stand-in for the simulation's dent: the poked spot is pushed in (Gaussian), springs back and overshoots into
+ *  a bulge, with a raised ring around it. Only to judge how dents and jiggle read under the stage's lighting. */
+const dent = { at: new THREE.Vector3(), dir: new THREE.Vector3(), amp: 0, vel: 0, held: false };
+const DENT_SIGMA = 0.11;
+
+function poke(hit: THREE.Intersection, strength: number, ray: THREE.Ray) {
   const at = hit.point;
   react("poke", at, strength, region(hit));
-  frog.squashVel += 3.5 * strength;
-  const d = at.clone().sub(center()).normalize();
-  frog.tiltVel.x -= d.z * 4 * strength;
-  frog.tiltVel.y += d.x * 4 * strength;
-  fx.popText(at, pick(texts));
-  fx.burst(at, Math.random() < 0.5 ? "stars" : "hearts");
-  fx.shake(0.25 * strength);
+  const inv = toy.clone().invert();
+  dent.at.copy(at).applyMatrix4(inv);
+  dent.dir.copy(ray.direction).transformDirection(inv);
+  dent.amp = 0.07 * strength;
+  dent.vel = 0;
+  frog.squashVel += 2 * strength;
 }
 
 /* ---------------------------------------------------------------------------------------------------------------- */
@@ -125,7 +127,7 @@ stage.setGestureHandler({
   onTap(p) {
     const hit = hitFrog(p.ray);
     note(`tap ${hit ? "frog" : "background"}`);
-    if (hit) poke(hit, 1);
+    if (hit) poke(hit, 1, p.ray);
     else {
       const floorHit = p.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
       throwBall(floorHit && floorHit.distanceTo(frog.pos) < 4 ? floorHit : center());
@@ -141,10 +143,6 @@ stage.setGestureHandler({
     frog.vel.y += 1.2;
     frog.squashVel += 4;
     frog.tiltVel.y += (v.x > 0 ? 1 : -1) * 6;
-    fx.popText(hit, "啪!", { color: "#ff5e5e", size: 1.2 });
-    fx.burst(hit, "stars", 14);
-    fx.burst(center().add(new THREE.Vector3(0, 0.4, 0)), "sweat");
-    fx.shake(0.6);
   },
   onDragStart(p) {
     note("dragStart");
@@ -172,7 +170,6 @@ stage.setGestureHandler({
     const right = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 1);
     frog.vel.copy(right).multiplyScalar(v.x * k).addScaledVector(up, -v.y * k).clampLength(0, 9);
-    if (v.length() > 600) fx.popText(center(), "咻~", { color: "#3fb8ff" });
   },
   onHover(p) {
     character.lookAt(p ? p.ray.at(p.ray.origin.distanceTo(center()), new THREE.Vector3()) : null);
@@ -220,9 +217,6 @@ function tick(now: number) {
     if (frog.pos.y <= 0) {
       if (wasAir && frog.vel.y < -2.5) {
         const s = Math.min(1, -frog.vel.y / 8);
-        fx.popText(center(), pick(["噗!", "DUANG~", "咚!"]), { size: 0.8 + 0.5 * s });
-        fx.burst(new THREE.Vector3(frog.pos.x, 0.05, frog.pos.z), "drops");
-        fx.shake(0.5 * s);
         react("land", center(), s);
         frog.squashVel += 6 * s;
       }
@@ -239,6 +233,10 @@ function tick(now: number) {
   frog.tiltVel.x += (-90 * frog.tilt.x - 6 * frog.tiltVel.x) * dt;
   frog.tiltVel.y += (-90 * frog.tilt.y - 6 * frog.tiltVel.y) * dt;
   frog.tilt.addScaledVector(frog.tiltVel, dt);
+  if (!dent.held) {
+    dent.vel += (-420 * dent.amp - 7 * dent.vel) * dt;
+    dent.amp += dent.vel * dt;
+  }
   // The toy transform: position, a squash about the feet (volume roughly kept) and a wobbly tilt.
   const sq = THREE.MathUtils.clamp(frog.squash * 0.1, -0.3, 0.3);
   toy
@@ -248,8 +246,17 @@ function tick(now: number) {
   character.targetsFromPose(null, targets);
   for (const [name, m] of targets) (bones.get(name) ?? bones.set(name, new THREE.Matrix4()).get(name)!).multiplyMatrices(toy, m);
   const e = toy.elements;
+  const s2 = 2 * DENT_SIGMA * DENT_SIGMA;
+  const { at: da, dir: dd } = dent;
   for (let i = 0; i < restBody.length; i += 3) {
-    const x = restBody[i], y = restBody[i + 1], z = restBody[i + 2];
+    let x = restBody[i], y = restBody[i + 1], z = restBody[i + 2];
+    if (Math.abs(dent.amp) > 1e-4) {
+      const r2 = (x - da.x) ** 2 + (y - da.y) ** 2 + (z - da.z) ** 2;
+      const k = dent.amp * (Math.exp(-r2 / s2) - 0.3 * Math.exp(-r2 / (s2 * 3.6)));
+      x += dd.x * k;
+      y += dd.y * k;
+      z += dd.z * k;
+    }
     body[i] = e[0] * x + e[4] * y + e[8] * z + e[12];
     body[i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
     body[i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
@@ -276,7 +283,6 @@ function tick(now: number) {
       if (vn < 0) {
         b.v.addScaledVector(n, -1.6 * vn);
         if (vn < -2) {
-          fx.popText(b.p.clone(), pick(["咚!", "Boing!"]), { size: 0.7 });
           react("ball", b.p.clone(), Math.min(1, -vn / 6));
           frog.squashVel += 2;
         }
@@ -322,12 +328,6 @@ setInterval(() => {
 const head = () => center().add(new THREE.Vector3(0, 0.35, 0.15));
 const acts: Record<string, () => void> = {
   theme: () => stage.setTheme((theme = theme === "light" ? "dark" : "light")),
-  stars: () => fx.burst(head(), "stars"),
-  hearts: () => fx.burst(head(), "hearts"),
-  drops: () => fx.burst(head(), "drops"),
-  sweat: () => fx.burst(head(), "sweat"),
-  text: () => fx.popText(head(), pick(texts)),
-  shake: () => fx.shake(0.8),
   balls: () => {
     for (let i = 0; i < 16; i++)
       balls.push({
@@ -361,6 +361,15 @@ Object.assign(window, {
       v.project(stage.camera);
       const r = stage.canvas.getBoundingClientRect();
       return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height];
+    },
+    /** Poke the frog where the camera's view through (ndcX, ndcY) hits it (default: the belly), for screenshots. */
+    poke(ndcX = 0.02, ndcY = -0.05, strength = 1, hold = false) {
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(ndcX, ndcY), stage.camera);
+      const hit = hitFrog(r.ray);
+      if (hit) poke(hit, strength, r.ray);
+      dent.held = hold;
+      return !!hit;
     },
     /** Pop a showcase of effects and resolve once they are mid-flight. */
     async showcase(ms = 260) {

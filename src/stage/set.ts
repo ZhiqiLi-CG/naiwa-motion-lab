@@ -1,4 +1,4 @@
-/** The set: a sky dome and an endless floor with a lily-pad play mat. Both are unlit shaders so the floor melts into
+/** The set: a sky gradient and an endless dotted floor with a lily-pad mat. Both are unlit shaders so the floor melts into
  *  the horizon without a seam; the floor still takes the key light's shadow and the contact shadow. */
 import * as THREE from "three";
 import type { StageTheme } from "./palette";
@@ -11,59 +11,14 @@ void main() {
   gl_Position.z = gl_Position.w; // on the far plane: behind everything, whatever the camera does
 }`;
 
+// A plain gradient: the viewport stays clean, the eye goes to the frog.
 const SKY_FRAG = /* glsl */ `
 uniform vec3 uTop;
 uniform vec3 uHorizon;
-uniform vec3 uDecor;
-uniform vec3 uHillFar;
-uniform vec3 uHillNear;
-uniform float uStars;
-uniform float uTime;
 varying vec3 vDir;
-
-float hash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
 void main() {
-  vec3 d = normalize(vDir);
-  float e = d.y;
-  vec3 col = mix(uHorizon, uTop, smoothstep(-0.02, 0.35, e));
-  float az = atan(d.x, d.z);
-
-  // A lat-long grid of cells, each with one bubble or star; faded near the zenith where the grid pinches.
-  vec2 g = vec2(az * 8.9127, e * 9.0); // square cells near the horizon, a whole number (56) around
-  vec2 cell = floor(g);
-  vec2 f = fract(g) - 0.5;
-  float h = hash12(cell);
-  vec2 o = vec2(hash12(cell + 7.1), hash12(cell + 3.7)) - 0.5;
-  float r = length(f - o * 0.5);
-  float fade = smoothstep(0.05, 0.1, e) * (1.0 - smoothstep(0.55, 0.85, e));
-  // Antialias width from the elevation only: fwidth(r) jumps at cell edges and g.x at the azimuth wrap.
-  float aa = fwidth(g.y) * 1.2;
-  if (uStars > 0.5) {
-    float size = 0.018 + 0.03 * h * h;
-    float tw = 0.6 + 0.4 * sin(uTime * (1.5 + 2.0 * h) + h * 40.0);
-    float star = (1.0 - smoothstep(size - aa, size + aa, r)) * step(0.4, h);
-    float glow = exp(-r * r * 500.0) * 0.3 * step(0.4, h);
-    col = mix(col, uDecor, clamp(star * tw + glow, 0.0, 1.0) * fade);
-  } else {
-    float size = 0.12 + 0.2 * h;
-    float bubble = (1.0 - smoothstep(size - aa, size + aa, r)) * step(0.62, h);
-    float ring = (1.0 - smoothstep(0.0, aa * 2.0, abs(r - size + 0.02))) * step(0.62, h);
-    col = mix(col, uDecor, (bubble * 0.16 + ring * 0.18) * fade);
-  }
-
-  // Two rows of soft rolling hills around the horizon, hazy at their feet where the floor melts in.
-  float ea = fwidth(e) * 1.5;
-  float hFar = 0.05 + 0.022 * sin(az * 3.0 + 1.0) + 0.014 * sin(az * 7.0 + 2.3) + 0.006 * sin(az * 15.0);
-  float hNear = 0.028 + 0.016 * sin(az * 5.0 + 4.0) + 0.009 * sin(az * 11.0 + 0.7);
-  col = mix(col, uHillFar, 1.0 - smoothstep(hFar - ea, hFar + ea, e));
-  col = mix(col, uHillNear, 1.0 - smoothstep(hNear - ea, hNear + ea, e));
-  col = mix(col, uHorizon, 1.0 - smoothstep(0.0, 0.035, e));
-  gl_FragColor = vec4(col, 1.0);
+  float e = normalize(vDir).y;
+  gl_FragColor = vec4(mix(uHorizon, uTop, smoothstep(-0.02, 0.45, e)), 1.0);
   #include <colorspace_fragment>
 }`;
 
@@ -151,22 +106,14 @@ export interface StageSet {
   readonly sky: THREE.Mesh;
   readonly floor: THREE.Mesh;
   apply(theme: StageTheme): void;
-  update(time: number, camera: THREE.Camera, center: THREE.Vector3): void;
+  update(camera: THREE.Camera, center: THREE.Vector3): void;
   setContact(map: THREE.Texture, centerX: number, centerZ: number, size: number): void;
   dispose(): void;
 }
 
 export function createSet(): StageSet {
   const c = () => ({ value: new THREE.Color() });
-  const skyUniforms = {
-    uTop: c(),
-    uHorizon: c(),
-    uDecor: c(),
-    uHillFar: c(),
-    uHillNear: c(),
-    uStars: { value: 0 },
-    uTime: { value: 0 },
-  };
+  const skyUniforms = { uTop: c(), uHorizon: c() };
   const skyGeo = new THREE.SphereGeometry(50, 48, 24);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -216,10 +163,6 @@ export function createSet(): StageSet {
     apply(t) {
       skyUniforms.uTop.value.set(t.skyTop);
       skyUniforms.uHorizon.value.set(t.skyHorizon);
-      skyUniforms.uDecor.value.set(t.decorColor);
-      skyUniforms.uHillFar.value.set(t.hillFar);
-      skyUniforms.uHillNear.value.set(t.hillNear);
-      skyUniforms.uStars.value = t.decor === "stars" ? 1 : 0;
       fu.uFloor.value.set(t.floor);
       fu.uDot.value.set(t.floorDot);
       fu.uPad.value.set(t.pad);
@@ -231,8 +174,7 @@ export function createSet(): StageSet {
       fu.uPool.value.set(t.pool);
       fu.uPoolStrength.value = t.poolStrength;
     },
-    update(time, camera, center) {
-      skyUniforms.uTime.value = time;
+    update(camera, center) {
       sky.position.copy(camera.position);
       (fu.uCenter.value as THREE.Vector2).set(center.x, center.z);
     },

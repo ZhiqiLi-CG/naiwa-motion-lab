@@ -47,8 +47,24 @@ describe("CameraRig", () => {
     rig.setFocus(new THREE.Vector3(4, 0.5, -2));
     rig.update(1 / 60);
     expect(rig.target.x).toBeLessThan(0.5); // no jump
-    run(rig, 3);
+    run(rig, 1);
+    // Within the dead zone after a second, then recentred.
+    expect(rig.target.distanceTo(new THREE.Vector3(4, 0.5, -2))).toBeLessThan(0.15);
+    run(rig, 4);
     expect(rig.target.distanceTo(new THREE.Vector3(4, 0.5, -2))).toBeLessThan(0.01);
+  });
+
+  it("holds the framing still while the frog's centre jiggles in place", () => {
+    const { cam, rig } = makeRig();
+    const p0 = cam.position.clone();
+    let maxMove = 0;
+    for (let i = 0; i < 180; i++) {
+      const w = Math.sin(i * 0.9) * 0.06; // a wobbling belly moves the centre by a few cm at ~8 Hz
+      rig.setFocus(new THREE.Vector3(w, 0.5 + w / 2, -w));
+      rig.update(1 / 60);
+      maxMove = Math.max(maxMove, cam.position.distanceTo(p0));
+    }
+    expect(maxMove).toBeLessThan(0.01);
   });
 
   it("clamps zoom and keeps spinning briefly after a flick", () => {

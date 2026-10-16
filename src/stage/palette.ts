@@ -6,12 +6,6 @@ export interface StageTheme {
   /** Sky gradient, from the horizon up; the floor fades into skyHorizon far away so there is no seam. */
   skyTop: number;
   skyHorizon: number;
-  /** Decoration in the sky: soft bubbles by day, twinkling stars by night. */
-  decor: "bubbles" | "stars";
-  decorColor: number;
-  /** Rolling hills on the horizon, far and near row. */
-  hillFar: number;
-  hillNear: number;
   floor: number;
   floorDot: number;
   /** The round lily-pad play mat under the frog's home spot. */
@@ -44,10 +38,6 @@ export const THEMES: Record<ThemeName, StageTheme> = {
   light: {
     skyTop: 0x74c0ec,
     skyHorizon: 0xe2f3f0,
-    decor: "bubbles",
-    decorColor: 0xffffff,
-    hillFar: 0xbfe6dc,
-    hillNear: 0xa9dcc6,
     floor: 0xeef7f2,
     floorDot: 0xdcefe7,
     pad: 0xaee0bc,
@@ -78,10 +68,6 @@ export const THEMES: Record<ThemeName, StageTheme> = {
   dark: {
     skyTop: 0x161a40,
     skyHorizon: 0x34336c,
-    decor: "stars",
-    decorColor: 0xfff3c4,
-    hillFar: 0x2a2a5e,
-    hillNear: 0x232552,
     floor: 0x2c2f60,
     floorDot: 0x34386d,
     pad: 0x2f6c66,
