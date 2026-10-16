@@ -1,4 +1,5 @@
-/** The stage: renderer, lights, set, camera, gestures and the comic effects around the frog. */
+/** The stage: renderer, lights, set, camera and gestures around the simulated frog (plus the contract's Fx, kept
+ *  working but no longer used by the app: a clean viewport for a simulation page). */
 import * as THREE from "three";
 import type { Fx, PointerInfo, Stage } from "../contracts";
 import { createBalls } from "./balls";

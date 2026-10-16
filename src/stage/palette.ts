@@ -99,5 +99,5 @@ export const THEMES: Record<ThemeName, StageTheme> = {
   },
 };
 
-/** Candy colours for the balls (and the default comic text fills). */
+/** Colours for the balls, one per ball slot. */
 export const BALL_COLORS = [0xff6f91, 0x5cc8ff, 0x7be0a5, 0xb79cff, 0xffa24c, 0xff5e5e, 0x4fd6c6, 0xffd23f];

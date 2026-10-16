@@ -1,5 +1,6 @@
-/** Dev page for the stage: the real 奶蛙 (src/character) on toy physics to poke, slap, grab and throw, balls to throw
- *  at it, and frame timing. URL: ?theme=dark, ?clean (no HUD, for screenshots). window.__dev for scripted checks. */
+/** Dev page for the stage: the real 奶蛙 (src/character) on toy physics (no simulation here) to poke, grab and throw,
+ *  with a stand-in dent where it is poked to judge how deformation reads under the lighting, balls, and frame timing.
+ *  URL: ?theme=dark, ?clean (no HUD, for screenshots). window.__dev for scripted checks (freeze, poke, setView…). */
 import * as THREE from "three";
 import { loadCharacter, type NaiwaCharacter } from "../src/character";
 import type { BoneName, FrogEvent, HitRegion, PointerInfo } from "../src/contracts";
