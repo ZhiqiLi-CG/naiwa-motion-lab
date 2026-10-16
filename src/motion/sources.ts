@@ -24,25 +24,25 @@ export interface MirrorableSource extends MotionSource {
   setMirror(on: boolean): void;
 }
 
-/** Loops a pose function of time, easing in from idle. */
+/** Longest step a source takes at once (a stalled tab must not skip half a dance). */
+const MAX_STEP = 0.1;
+
+/** Loops a pose function of time, easing in from idle. Time advances by the dt it is given (pause, slow motion). */
 class LoopSource implements MotionSource {
-  private start: number | null = null;
-  private last = 0;
+  private time = 0;
   constructor(
     readonly kind: MotionKind,
     private readonly duration: number,
     private readonly poseAt: (t: number, dt: number) => BodyPose | null,
     private readonly binding: GetBinding,
   ) {}
-  update(nowMs: number): PoseFrame | null {
-    this.start ??= nowMs;
+  update(_nowMs: number, dt: number): PoseFrame | null {
+    const step = Math.min(Math.max(dt, 0), MAX_STEP);
+    this.time += step;
     const b = this.binding();
-    const ms = nowMs - this.start;
-    const dt = Math.max(0, Math.min(0.1, (nowMs - this.last) / 1000));
-    this.last = nowMs;
-    const pose = this.poseAt((((ms / 1000) % this.duration) + this.duration) % this.duration, dt);
+    const pose = this.poseAt(this.time % this.duration, step);
     if (!b || !pose) return null;
-    return solve(b, blendPose(idlePose(), pose, smooth(ms / FADE_IN_MS)));
+    return solve(b, blendPose(idlePose(), pose, smooth((this.time * 1000) / FADE_IN_MS)));
   }
   dispose(): void {}
 }
@@ -65,7 +65,7 @@ export function trackSource(track: Promise<Track>, duration: number, binding: Ge
 
 /**
  * Follows a stream of BodyPoses that can drop out: holds the last one briefly, eases back to idle, and eases in
- * again when the person is back.
+ * again when the person is back. Times are in ms of whatever clock the source runs on.
  */
 class Presence {
   private latest: BodyPose | null = null;
@@ -75,22 +75,22 @@ class Presence {
   private since = 0;
   lost = true;
 
-  feed(pose: BodyPose | null, nowMs: number): void {
+  feed(pose: BodyPose | null, ms: number): void {
     if (!pose) return;
-    if (nowMs - this.seenAt > 250) {
+    if (ms - this.seenAt > 250) {
       this.from = this.shown;
-      this.since = nowMs;
+      this.since = ms;
     }
     this.latest = pose;
-    this.seenAt = nowMs;
+    this.seenAt = ms;
   }
 
-  output(nowMs: number): BodyPose | null {
-    const age = nowMs - this.seenAt;
+  output(ms: number): BodyPose | null {
+    const age = ms - this.seenAt;
     this.lost = age > 300;
     let out: BodyPose | null;
     if (this.latest && age < 250) {
-      const w = smooth((nowMs - this.since) / 300);
+      const w = smooth((ms - this.since) / 300);
       out = this.from && w < 1 ? blendPose(this.from, this.latest, w) : this.latest;
     } else if (this.latest && age < 700) out = this.latest;
     else if (this.latest) {
@@ -102,7 +102,7 @@ class Presence {
   }
 }
 
-/** Camera errors in plain Chinese. */
+/** Camera errors for the user. */
 function cameraError(e: unknown): Text {
   const name = (e as { name?: string }).name;
   if (name === "NotAllowedError" || name === "SecurityError")
@@ -379,9 +379,14 @@ export async function startVideo(
     view.root.addEventListener("pointerdown", () => ((video.muted = false), emit({ state: "tracking", text: along, progress: 1 })), { once: true });
   } else emit({ state: "tracking", text: along, progress: 1 });
 
+  // Motion time runs on the dt the caller gives (pause, single step, slow motion) and the video follows it: paused at
+  // dt = 0, a single step after a pause is a seek, otherwise it plays at the caller's time scale.
+  let clock = 0;
+  let fedAt = 0;
   let lastT = -1;
-  let lastNow = 0;
-  let held: BodyPose | null = null;
+  let lastNow = -1;
+  let prevStep = 1;
+  let scale = 1;
   let wasLost = false;
   let disposed = false;
   return {
@@ -392,18 +397,32 @@ export async function startVideo(
       mirror = on;
       view.setMirror(on);
     },
-    update(nowMs) {
-      const t = Math.min(video.currentTime, track.duration - 1e-3);
-      const dt = Math.max(0, Math.min(0.1, (nowMs - lastNow) / 1000));
+    update(nowMs, dt) {
+      const step = Math.min(Math.max(dt, 0), MAX_STEP);
+      const wall = lastNow < 0 ? step : (nowMs - lastNow) / 1000;
       lastNow = nowMs;
+      if (step === 0) {
+        if (!video.paused) video.pause();
+      } else if (video.paused && prevStep === 0) {
+        video.currentTime = Math.min(video.currentTime + step, length - 1e-3);
+      } else {
+        if (wall > 0) scale += (step / wall - scale) * 0.3;
+        const rate = Math.min(4, Math.max(0.0625, Math.round(scale * 20) / 20));
+        if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
+        if (video.paused) video.play().catch(() => undefined);
+      }
+      prevStep = step;
+      clock += step * 1000;
+
+      const t = Math.min(video.currentTime, track.duration - 1e-3);
       if (t !== lastT) {
         lastT = t;
         const f = track.frames[Math.min(track.frames.length - 1, Math.round(t * fps))];
         view.draw(f.image.length ? f.image : null);
-        held = player.pose(t, dt, mirror) ?? held;
-        presence.feed(held && f.world.length ? held : null, nowMs);
-      } else if (video.paused) presence.feed(held, nowMs); // paused: hold still
-      const pose = presence.output(nowMs);
+        presence.feed(player.pose(t, (clock - fedAt) / 1000, mirror), clock);
+        fedAt = clock;
+      }
+      const pose = presence.output(clock);
       if (presence.lost !== wasLost) {
         wasLost = presence.lost;
         emit(wasLost ? { state: "lost", text: { zh: "这一段视频里没看到人", en: "No one in this part of the video" } } : { state: "tracking", text: along });

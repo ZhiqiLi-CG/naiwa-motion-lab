@@ -34,7 +34,7 @@ const ramp = (x: number, a: number, b: number) => {
 /** Person-to-frog scale of vertical motion: a person's torso (~0.5 m) moving by 1 → this many frog meters. */
 const HOP_GAIN = 0.5;
 /** The nose sits a little below the ear line in a level head; undo that so a level head is level. */
-const HEAD_LEVEL = -0.25;
+const HEAD_LEVEL = -0.19;
 
 export interface RetargetOptions {
   /** Fixed floor line (image y of the feet when standing), known for recorded tracks; live it is tracked. */
@@ -100,6 +100,8 @@ export class Retargeter {
 
     // Arms in the chest frame; hands near the belly become a belly hold.
     const toChest = C.clone().invert();
+    // Top of the person's head (the ears are about 13 cm below it).
+    const headTop = earMid.y + 0.13;
     const holds: Record<Side, number> = { L: 0, R: 0 };
     const peace: Record<Side, number> = { L: 0, R: 0 };
     const high: Record<Side, number> = { L: 0, R: 0 };
@@ -118,11 +120,13 @@ export class Retargeter {
       holds[s] = hold;
       peace[s] = w * elbowLow * ramp(h, 0.95, 1.1) * (1 - ramp(h, 1.5, 1.7)) * (1 - ramp(Math.abs(lateral), 2.2, 2.8));
       high[s] = w * ramp(h, 1.5, 1.7);
+      const overhead = w * ramp((Q[wr].y - Q[sh].y) / Math.max(0.1, headTop - Q[sh].y), 0.85, 1.15);
       p.arm[s] = {
         upper: rest.upper.clone().lerp(upper, w).normalize(),
         fore: rest.fore.clone().lerp(fore, w).normalize(),
         palm: null,
         belly: { weight: hold, height: clamp(0.1 + 0.85 * h, 0.05, 0.75), around: clamp(0.3 + 0.8 * lateral, 0.35, 1.4), lift: 0 },
+        overhead,
         fingers: [0.1, 0, 0, 0.05, 0.05],
       };
     }

@@ -46,7 +46,7 @@ const arc = (t: number, t0: number, t1: number, h: number) => {
 
 type V = [number, number, number];
 function arm(side: Side, upper: V, fore: V, more: Partial<ArmGoal> = {}): ArmGoal {
-  return { upper: dir(...upper, side), fore: dir(...fore, side), palm: null, belly: null, fingers: FINGERS.relaxed, ...more };
+  return { upper: dir(...upper, side), fore: dir(...fore, side), palm: null, belly: null, overhead: 0, fingers: FINGERS.relaxed, ...more };
 }
 const hold = (height: number, around: number, lift = 0, weight = 1): BellyHold => ({ weight, height, around, lift });
 /** Palm towards the camera. */
@@ -190,7 +190,7 @@ export const PROCEDURAL_DANCES: ProceduralDance[] = [
       p.head = rot(0, -0.18 * late, 0);
       for (const side of SIDES) {
         const sg = sideSign(side);
-        const over: ArmGoal = { upper: dir(0.35, 0.92, 0.1, side), fore: new THREE.Vector3(0.15 * sg + 0.5 * s, 1, 0.1).normalize(), palm: null, belly: null, fingers: FINGERS.open };
+        const over: ArmGoal = { upper: dir(0.35, 0.92, 0.1, side), fore: new THREE.Vector3(0.15 * sg + 0.5 * s, 1, 0.1).normalize(), palm: null, belly: null, overhead: 0, fingers: FINGERS.open };
         const wing = arm(side, [1, -0.05, 0.1], [1, 0.35 * wave(t, 1, side === "L" ? 0 : 0.5), 0.15], { fingers: FINGERS.open });
         p.arm[side] = blendArm(over, wing, wings);
         p.leg[side] = bentLeg(side, 0.06 + 0.3 * clamp01(-sg * s), 0.2);

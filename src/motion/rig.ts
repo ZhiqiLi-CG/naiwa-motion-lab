@@ -67,6 +67,8 @@ export interface Binding {
   fingers: Record<Side, { name: BoneName; dir: V3; curlAxis: V3; spreadAxis: V3 | null; slot: number }[]>;
   height: number;
   restFootY: number;
+  /** Top of the head (rest pose), carried by the head bone. */
+  headTop: V3;
 }
 
 const TORSO: BoneName[] = ["hips", "spine", "chest", "head"];
@@ -154,6 +156,7 @@ export function bindRig(rig: RigInfo): Binding {
     fingers,
     height: rig.height,
     restFootY: Math.min(P("foot_L").y, P("foot_R").y),
+    headTop: ((t: Band) => new THREE.Vector3(t.cx, t.y1, t.cz))(bands.reduce((a, c) => (c.y1 > a.y1 ? c : a))),
   };
   // Margins: limbs keep about their own thickness away from the body, but never need more room than the rest pose has.
   const D = restDeltas();
@@ -375,6 +378,26 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
     if (ik) {
       u = nlerp(u, ik.upper, w);
       f = nlerp(f, ik.fore, w);
+    }
+    // Hands above the person's head go above the frog's head: its arms are short for its head, so raise them
+    // towards straight up just as much as it takes.
+    if (goal.overhead > 0) {
+      const want = fromRest(b, D, P, "head", b.headTop).y + 0.02;
+      const sg = sideSign(side);
+      const upU = new THREE.Vector3(0.3 * sg, 1, 0.1).normalize().applyQuaternion(chest);
+      const upF = new THREE.Vector3(0.05 * sg, 1, 0.1).normalize().applyQuaternion(chest);
+      const wristY = (k: number) => S.y + nlerp(u, upU, k).y * a.upper + nlerp(f, upF, k).y * a.fore;
+      if (wristY(0) < want) {
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 7; k++) {
+          const mid = (lo + hi) / 2;
+          if (wristY(mid) < want) lo = mid;
+          else hi = mid;
+        }
+        const k = hi * Math.min(goal.overhead, 1);
+        u = nlerp(u, upU, k);
+        f = nlerp(f, upF, k);
+      }
     }
     for (let k = 0; k < 3; k++) {
       const E = S.clone().addScaledVector(u, a.upper);

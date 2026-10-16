@@ -2,7 +2,8 @@
  * dev/motion.html: the motion module on its own. The frog (public/models/naiwa.glb, or the contract test frog) is posed
  * straight from the PoseFrames (no simulation), seen from the front and the side, with its skeleton drawn on top.
  *
- * URL: ?dance=<id> &t=<seconds> (freeze) &camera=1 &video=<url> &mirror=0 &rig=test &xray=1
+ * URL: ?dance=<id> &t=<seconds> (freeze) &camera=1 &video=<url> &mirror=0 &rig=test &xray=1 &scale=<time scale>
+ * Keys: space pause, . single step, 1 / 2 / 3 time scale 1 / 0.5 / 0.25.
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -193,16 +194,29 @@ async function main() {
   if (params.get("camera")) motion.startCamera({ mirror: mirror.checked, preview }).then(use, (e) => console.warn(String(e)));
   if (params.get("video")) motion.startVideo(params.get("video")!, { mirror: mirror.checked, preview }).then(use, (e) => console.warn(String(e)));
 
-  // Frozen time (?t=): run up to it over the first second (filters and faces settle), then hold, a whole number of
-  // loops in so the fade-in is over.
+  // The clock: dt is scaled for slow motion (?scale=, keys 1/2/3), 0 while paused (space), one frame per "." step.
+  let scale = Number(params.get("scale") ?? 1);
+  let paused = false;
+  let stepOnce = false;
+  addEventListener("keydown", (e) => {
+    if (e.key === " ") paused = !paused;
+    else if (e.key === ".") (paused = true), (stepOnce = true);
+    else if ("123".includes(e.key)) scale = [1, 0.5, 0.25]["123".indexOf(e.key)];
+  });
+  // Frozen time (?t=): step the source there (filters and faces settle on the way), then pause.
   const freeze = params.get("t");
-  const loopLen = motion.dances().find((d) => d.id === params.get("dance"))?.duration ?? 0;
-  const target = Number(freeze) + (loopLen ? Math.ceil(1.5 / loopLen) * loopLen : 0);
-  const t0 = performance.now();
-  let last = t0;
+  if (freeze !== null && dev.source) {
+    await new Promise((r) => setTimeout(r, 50));
+    const loopLen = motion.dances().find((d) => d.id === params.get("dance"))?.duration ?? 1;
+    const total = Number(freeze) + Math.ceil(1.5 / loopLen) * loopLen;
+    for (let t = 0; t < total - 1e-9; t += 0.02) dev.source.update(performance.now(), Math.min(0.02, total - t));
+    paused = true;
+  }
+  let last = performance.now();
   const loop = (now: number) => {
-    const t = freeze !== null ? t0 + target * 1000 - Math.max(0, 1000 - (now - t0)) : now;
-    dev.frame = dev.source ? dev.source.update(t, (now - last) / 1000) : null;
+    const dt = paused ? (stepOnce ? 1 / 60 : 0) : ((now - last) / 1000) * scale;
+    stepOnce = false;
+    dev.frame = dev.source ? dev.source.update(now, dt) : null;
     last = now;
     dev.frames++;
     applyFrame(frog, dev.frame);
@@ -220,7 +234,6 @@ async function main() {
     }
     requestAnimationFrame(loop);
   };
-  if (freeze !== null) dev.source?.update(t0, 0);
   requestAnimationFrame(loop);
 }
 

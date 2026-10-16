@@ -46,6 +46,8 @@ export interface ArmGoal {
   fore: THREE.Vector3;
   palm: PalmGoal | null;
   belly: BellyHold | null;
+  /** 0..1: the hand is above the head (lifted above the frog's head however short its arms are). */
+  overhead: number;
   fingers: Fingers;
 }
 
@@ -88,7 +90,7 @@ export function rot(bend: number, lean = 0, turn = 0): THREE.Quaternion {
 }
 
 export function restArm(side: Side): ArmGoal {
-  return { upper: dir(0.35, -0.94, 0.05, side), fore: dir(0.15, -0.95, 0.25, side), palm: null, belly: null, fingers: [...FINGERS.relaxed] };
+  return { upper: dir(0.35, -0.94, 0.05, side), fore: dir(0.15, -0.95, 0.25, side), palm: null, belly: null, overhead: 0, fingers: [...FINGERS.relaxed] };
 }
 
 export function straightLeg(side: Side): LegGoal {
@@ -145,6 +147,7 @@ export function blendArm(a: ArmGoal, b: ArmGoal, w: number): ArmGoal {
     fore: nlerp(a.fore, b.fore, w),
     palm: blendPalm(a.palm, b.palm, w),
     belly: blendBelly(a.belly, b.belly, w),
+    overhead: a.overhead + (b.overhead - a.overhead) * w,
     fingers: a.fingers.map((x, i) => x + (b.fingers[i] - x) * w) as Fingers,
   };
 }
@@ -182,7 +185,7 @@ const mirrorQ = (q: THREE.Quaternion) => new THREE.Quaternion(q.x, -q.y, -q.z, q
 
 function mirrorArm(a: ArmGoal): ArmGoal {
   const palm = a.palm && { dir: mirrorV(a.palm.dir), weight: a.palm.weight };
-  return { upper: mirrorV(a.upper), fore: mirrorV(a.fore), palm, belly: a.belly && { ...a.belly }, fingers: [...a.fingers] };
+  return { upper: mirrorV(a.upper), fore: mirrorV(a.fore), palm, belly: a.belly && { ...a.belly }, overhead: a.overhead, fingers: [...a.fingers] };
 }
 function mirrorLeg(l: LegGoal): LegGoal {
   return { thigh: mirrorV(l.thigh), shin: mirrorV(l.shin), toe: l.toe };

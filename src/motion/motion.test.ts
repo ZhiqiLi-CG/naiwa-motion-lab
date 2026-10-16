@@ -21,7 +21,7 @@ describe("rig binding", () => {
   it("solves the rig's own rest directions to its rest rotations", () => {
     const p = idlePose();
     for (const s of SIDES) {
-      p.arm[s] = { upper: b.arm[s].dirUpper.clone(), fore: b.arm[s].dirFore.clone(), palm: null, belly: null, fingers: [0, 0, 0, 0, 0] };
+      p.arm[s] = { upper: b.arm[s].dirUpper.clone(), fore: b.arm[s].dirFore.clone(), palm: null, belly: null, overhead: 0, fingers: [0, 0, 0, 0, 0] };
       p.leg[s] = { thigh: b.leg[s].dirThigh.clone(), shin: b.leg[s].dirShin.clone(), toe: 0 };
     }
     const f = solve(b, p);
