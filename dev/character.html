@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>character · 奶蛙 Playground dev</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #e9e9e6;
+        font: 12px/1.4 system-ui, sans-serif;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+      #hud {
+        position: fixed;
+        left: 8px;
+        top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: calc(100% - 16px);
+      }
+      #hud button {
+        font: inherit;
+        padding: 2px 8px;
+        border: 1px solid #0003;
+        border-radius: 6px;
+        background: #fff;
+      }
+      #info {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: #000a;
+        color: #fff;
+        white-space: pre;
+        font: 11px/1.4 ui-monospace, monospace;
+      }
+      body.clean #hud,
+      body.clean #info {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="info"></div>
+    <script type="module" src="/src/character/dev.ts"></script>
+  </body>
+</html>
