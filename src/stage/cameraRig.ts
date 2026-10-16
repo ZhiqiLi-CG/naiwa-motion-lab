@@ -6,7 +6,7 @@ import * as THREE from "three";
 export const FOV = 35;
 /** Default view: a little to the frog's right (its eyes are on the sides of the head) and a little from above. */
 export const DEFAULT_YAW = 0.32;
-export const DEFAULT_PITCH = 0.27;
+export const DEFAULT_PITCH = 0.2;
 const PITCH_MIN = 0.06;
 const PITCH_MAX = 1.25;
 const ZOOM_MIN = 0.5;

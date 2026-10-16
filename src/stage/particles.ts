@@ -153,6 +153,7 @@ function drawAtlas(): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = CELL * COLS;
   canvas.height = CELL * ROWS;
+  // A CPU canvas (willReadFrequently): a GPU reset would silently blank an accelerated one.
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.lineJoin = "round";
   const r = CELL * 0.34;

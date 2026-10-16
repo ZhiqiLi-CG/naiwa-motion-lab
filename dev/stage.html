@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>stage · 奶蛙 Playground dev</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #222;
+        font: 12px/1.4 system-ui, sans-serif;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+      #hud {
+        position: fixed;
+        left: 8px;
+        top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: calc(100% - 16px);
+        pointer-events: none;
+      }
+      #hud > * {
+        pointer-events: auto;
+      }
+      #hud button {
+        border: 0;
+        border-radius: 999px;
+        padding: 4px 10px;
+        background: rgb(255 255 255 / 0.85);
+        color: #333;
+        font: inherit;
+      }
+      #stats {
+        padding: 4px 8px;
+        border-radius: 8px;
+        background: rgb(0 0 0 / 0.55);
+        color: #fff;
+        font-family: ui-monospace, monospace;
+        white-space: pre;
+      }
+      body.clean #hud {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="hud">
+      <button data-act="theme">主题</button>
+      <button data-act="stars">星星</button>
+      <button data-act="hearts">爱心</button>
+      <button data-act="drops">水滴</button>
+      <button data-act="sweat">汗</button>
+      <button data-act="text">DUANG~</button>
+      <button data-act="shake">震</button>
+      <button data-act="balls">下球雨</button>
+      <button data-act="reset">复位</button>
+      <div id="stats"></div>
+    </div>
+    <script type="module" src="./stage.ts"></script>
+  </body>
+</html>

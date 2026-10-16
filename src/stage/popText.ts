@@ -24,72 +24,72 @@ function shade(css: string, k: number): string {
   return `#${c.getHexString(THREE.SRGBColorSpace)}`;
 }
 
-/** Bold sticker lettering: hard drop shadow, thick dark outline, glossy gradient fill, each glyph tilted a little. */
-export function drawComicText(ctx: CanvasRenderingContext2D, text: string, fill: string): void {
+/** Sticker lettering: soft drop shadow, white border, dark outline, then the glyphs filled with a glossy gradient.
+ *  Strokes are fattened so even a regular-weight system font reads as chunky comic type; each glyph bounces off
+ *  the baseline and tilts a little. `layer` is a scratch canvas of the same size (the fill is glossed there alone). */
+export function drawComicText(
+  ctx: CanvasRenderingContext2D,
+  layer: CanvasRenderingContext2D,
+  text: string,
+  fill: string,
+): void {
   const { width: w, height: h } = ctx.canvas;
-  ctx.clearRect(0, 0, w, h);
   const glyphs = [...text];
-  // Letters overlap a little (gap < 0) like hand lettering; shrink the font until the line fits with its outline.
-  let fontPx = 150;
+  // Letters overlap a little (gap < 0) like hand lettering; shrink the font until the line fits with its border.
+  let fontPx = 140;
   const layout = () => {
-    ctx.font = `900 ${fontPx}px ${FONT_STACK}`;
+    ctx.font = layer.font = `900 ${fontPx}px ${FONT_STACK}`;
     const widths = glyphs.map((g) => ctx.measureText(g).width);
-    const gap = -fontPx * 0.04;
+    const gap = -fontPx * 0.02;
     return { widths, gap, total: widths.reduce((s, x) => s + x + gap, -gap) };
   };
   let { widths, gap, total } = layout();
-  const room = w - fontPx * 0.5 - 24;
+  const room = w - fontPx * 0.5;
   if (total > room) {
     fontPx = Math.floor((fontPx * room) / total);
     ({ widths, gap, total } = layout());
   }
-  const line = fontPx * 0.2;
-  const dark = shade(fill, 0.32);
-  const light = shade(fill, 1.35);
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.lineJoin = "round";
-  ctx.miterLimit = 2;
-
-  // Glyph placements: a bouncy baseline and alternating tilt.
-  const places = glyphs.map((g, i) => {
-    const x = w / 2 - total / 2 + widths.slice(0, i).reduce((s, x) => s + x + gap, 0) + widths[i] / 2;
-    const y = h / 2 + Math.sin(i * 1.9 + 0.6) * fontPx * 0.07;
-    const rot = (i % 2 ? 1 : -1) * 0.07 + Math.sin(i * 2.7) * 0.03;
-    return { g, x, y, rot };
-  });
-  const each = (draw: (g: string) => void, dx = 0, dy = 0) => {
+  const places = glyphs.map((g, i) => ({
+    g,
+    x: w / 2 - total / 2 + widths.slice(0, i).reduce((s, x) => s + x + gap, 0) + widths[i] / 2,
+    y: h / 2 + fontPx * 0.04 + Math.sin(i * 1.9 + 0.6) * fontPx * 0.07,
+    rot: (i % 2 ? 1 : -1) * 0.07 + Math.sin(i * 2.7) * 0.03,
+  }));
+  const each = (c: CanvasRenderingContext2D, style: string | CanvasGradient, line: number, dx = 0, dy = 0) => {
+    c.fillStyle = c.strokeStyle = style;
+    c.lineWidth = line;
     for (const p of places) {
-      ctx.save();
-      ctx.translate(p.x + dx, p.y + dy);
-      ctx.rotate(p.rot);
-      draw(p.g);
-      ctx.restore();
+      c.save();
+      c.translate(p.x + dx, p.y + dy);
+      c.rotate(p.rot);
+      if (line > 0) c.strokeText(p.g, 0, 0);
+      c.fillText(p.g, 0, 0);
+      c.restore();
     }
   };
+  for (const c of [ctx, layer]) {
+    c.clearRect(0, 0, w, h);
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.lineJoin = "round";
+  }
 
-  // Drop shadow, outline (strokes under fills so neighbours never cover each other's fill), fill, gloss.
-  ctx.fillStyle = ctx.strokeStyle = dark;
-  ctx.lineWidth = line * 2;
-  each((g) => {
-    ctx.strokeText(g, 0, 0);
-    ctx.fillText(g, 0, 0);
-  }, fontPx * 0.05, fontPx * 0.07);
-  each((g) => ctx.strokeText(g, 0, 0));
-  const grad = ctx.createLinearGradient(0, h / 2 - fontPx * 0.5, 0, h / 2 + fontPx * 0.45);
-  grad.addColorStop(0, light);
-  grad.addColorStop(0.55, fill);
-  grad.addColorStop(1, shade(fill, 0.8));
-  ctx.fillStyle = grad;
-  each((g) => ctx.fillText(g, 0, 0));
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
-  ctx.beginPath();
-  ctx.ellipse(w / 2, h / 2 - fontPx * 0.5, total * 0.62, fontPx * 0.36, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  each(ctx, "rgba(60, 30, 20, 0.3)", fontPx * 0.38, fontPx * 0.03, fontPx * 0.09);
+  each(ctx, "#ffffff", fontPx * 0.38);
+  each(ctx, shade(fill, 0.3), fontPx * 0.2);
+
+  const grad = layer.createLinearGradient(0, h / 2 - fontPx * 0.5, 0, h / 2 + fontPx * 0.5);
+  grad.addColorStop(0, shade(fill, 1.25));
+  grad.addColorStop(0.5, fill);
+  grad.addColorStop(1, shade(fill, 0.78));
+  each(layer, grad, fontPx * 0.05);
+  layer.globalCompositeOperation = "source-atop";
+  layer.fillStyle = "rgba(255, 255, 255, 0.5)";
+  layer.beginPath();
+  layer.ellipse(w / 2, h / 2 - fontPx * 0.3, total * 0.75, fontPx * 0.2, 0, 0, Math.PI * 2);
+  layer.fill();
+  layer.globalCompositeOperation = "source-over";
+  ctx.drawImage(layer.canvas, 0, 0);
 }
 
 interface Pop {
@@ -105,7 +105,7 @@ interface Pop {
 
 export interface PopTexts {
   readonly group: THREE.Group;
-  pop(at: THREE.Vector3, text: string, camera: THREE.Camera, opts?: { color?: string; size?: number }): void;
+  pop(at: THREE.Vector3, text: string, camera: THREE.PerspectiveCamera, opts?: { color?: string; size?: number }): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -114,10 +114,15 @@ export function createPopTexts(): PopTexts {
   const group = new THREE.Group();
   group.name = "stage-pop-texts";
   const cache = new Map<string, THREE.CanvasTexture>();
-  const canvas = document.createElement("canvas");
-  canvas.width = TEX_W;
-  canvas.height = TEX_H;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  // CPU canvases (willReadFrequently): a GPU reset would silently blank accelerated ones.
+  const scratch = () => {
+    const c = document.createElement("canvas");
+    c.width = TEX_W;
+    c.height = TEX_H;
+    return c.getContext("2d", { willReadFrequently: true })!;
+  };
+  const ctx = scratch();
+  const layer = scratch();
   let nextFill = 0;
   let nextPop = 0;
 
@@ -139,13 +144,11 @@ export function createPopTexts(): PopTexts {
       cache.set(key, tex);
       return tex;
     }
-    drawComicText(ctx, text, fill);
+    drawComicText(ctx, layer, text, fill);
     // Each texture keeps its own pixels: copy the shared drawing canvas.
-    const own = document.createElement("canvas");
-    own.width = TEX_W;
-    own.height = TEX_H;
-    own.getContext("2d", { willReadFrequently: true })!.drawImage(canvas, 0, 0);
-    tex = new THREE.CanvasTexture(own);
+    const own = scratch();
+    own.drawImage(ctx.canvas, 0, 0);
+    tex = new THREE.CanvasTexture(own.canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     cache.set(key, tex);
@@ -160,6 +163,7 @@ export function createPopTexts(): PopTexts {
   };
 
   const toCamera = new THREE.Vector3();
+  const local = new THREE.Vector3();
   return {
     group,
     pop(at, text, camera, opts = {}) {
@@ -172,10 +176,20 @@ export function createPopTexts(): PopTexts {
       p.base.copy(at).addScaledVector(toCamera, 0.15);
       p.base.x += (Math.random() - 0.5) * 0.12;
       p.base.y += 0.12 + Math.random() * 0.06;
+      p.size = opts.size ?? 1;
+      // Keep the whole lettering (at its overshoot, and after its rise) inside the view: narrow phone screens.
+      local.copy(p.base).applyMatrix4(camera.matrixWorldInverse);
+      const depth = Math.max(0.3, -local.z);
+      const halfH = depth * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+      const textH = p.size * WORLD_H * 0.6 * 1.25;
+      const textW = (textH / 0.6) * (TEX_W / TEX_H) * 0.9;
+      const limX = Math.max(0, halfH * camera.aspect - textW / 2);
+      local.x = THREE.MathUtils.clamp(local.x, -limX, limX);
+      local.y = Math.min(local.y, Math.max(0, halfH - textH / 2 - 0.45));
+      p.base.copy(local).applyMatrix4(camera.matrixWorld);
       p.drift.set((Math.random() - 0.5) * 0.25, 0.42 + Math.random() * 0.12, 0);
       p.tilt = (Math.random() - 0.5) * 0.4;
       p.spin = (Math.random() - 0.5) * 0.3;
-      p.size = opts.size ?? 1;
       p.age = 0;
       p.life = LIFE * (0.9 + 0.2 * Math.random());
       p.sprite.visible = true;

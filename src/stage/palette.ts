@@ -9,6 +9,9 @@ export interface StageTheme {
   /** Decoration in the sky: soft bubbles by day, twinkling stars by night. */
   decor: "bubbles" | "stars";
   decorColor: number;
+  /** Rolling hills on the horizon, far and near row. */
+  hillFar: number;
+  hillNear: number;
   floor: number;
   floorDot: number;
   /** The round lily-pad play mat under the frog's home spot. */
@@ -40,9 +43,11 @@ export interface EnvLook {
 export const THEMES: Record<ThemeName, StageTheme> = {
   light: {
     skyTop: 0x74c0ec,
-    skyHorizon: 0xd2eef8,
+    skyHorizon: 0xe2f3f0,
     decor: "bubbles",
     decorColor: 0xffffff,
+    hillFar: 0xbfe6dc,
+    hillNear: 0xa9dcc6,
     floor: 0xeef7f2,
     floorDot: 0xdcefe7,
     pad: 0xaee0bc,
@@ -51,7 +56,7 @@ export const THEMES: Record<ThemeName, StageTheme> = {
     shadowTint: 0x93a6c8,
     contactTint: 0x5f6f94,
     pool: 0xfff3d6,
-    poolStrength: 0.12,
+    poolStrength: 0.1,
     keyColor: 0xfff1dc,
     keyIntensity: 3.2,
     envIntensity: 0.55,
@@ -71,21 +76,23 @@ export const THEMES: Record<ThemeName, StageTheme> = {
     },
   },
   dark: {
-    skyTop: 0x12142e,
-    skyHorizon: 0x2c2f5e,
+    skyTop: 0x161a40,
+    skyHorizon: 0x34336c,
     decor: "stars",
     decorColor: 0xfff3c4,
-    floor: 0x272b55,
-    floorDot: 0x2f3462,
-    pad: 0x2f6a5f,
-    padRim: 0x255449,
-    padVein: 0x3b8172,
-    shadowTint: 0x2a2450,
-    contactTint: 0x0b0c22,
-    pool: 0xffd9a0,
-    poolStrength: 0.55,
-    keyColor: 0xffe0b6,
-    keyIntensity: 2.7,
+    hillFar: 0x2a2a5e,
+    hillNear: 0x232552,
+    floor: 0x2c2f60,
+    floorDot: 0x34386d,
+    pad: 0x2f6c66,
+    padRim: 0x25574f,
+    padVein: 0x418a7e,
+    shadowTint: 0x524c8c,
+    contactTint: 0x0d0e28,
+    pool: 0xffd59a,
+    poolStrength: 0.9,
+    keyColor: 0xfff0dc,
+    keyIntensity: 2.8,
     envIntensity: 0.75,
     exposure: 1,
     env: {
@@ -94,7 +101,7 @@ export const THEMES: Record<ThemeName, StageTheme> = {
       ground: 0x2c2442,
       domeIntensity: 0.5,
       panels: [
-        { color: 0xffe2bc, intensity: 4.2, position: [-3.2, 4.2, 3.6], size: [3.5, 3] },
+        { color: 0xfff0dc, intensity: 4.6, position: [-3.2, 4.2, 3.6], size: [3.5, 3] },
         { color: 0xbfc8ff, intensity: 1.1, position: [4.5, 1.8, 2.6], size: [3, 3] },
         { color: 0x9fd8ff, intensity: 3.6, position: [0.5, 3.2, -4.8], size: [6, 1.6] },
       ],
