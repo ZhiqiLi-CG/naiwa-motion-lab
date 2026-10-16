@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.cache/
+tests/e2e/out/
+assets-src/**/blender-cache/
+*.blend1

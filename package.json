@@ -1,0 +1,29 @@
+{
+  "name": "naiwa-playground",
+  "private": true,
+  "version": "0.1.0",
+  "description": "奶蛙 Playground: a soft-body + skeleton milk frog you can poke, throw and make dance with your camera, in the browser.",
+  "type": "module",
+  "engines": { "node": ">=18.19" },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "node tests/e2e/run.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "@mediapipe/tasks-vision": "1.1.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "18.19.130",
+    "@types/three": "0.186.0",
+    "puppeteer-core": "24.43.1",
+    "typescript": "5.9.3",
+    "vite": "5.4.21",
+    "vitest": "2.1.9"
+  }
+}
