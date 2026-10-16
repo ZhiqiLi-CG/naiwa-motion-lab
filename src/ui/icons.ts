@@ -1,0 +1,38 @@
+/** Icon bodies on a 24 px grid, drawn with round 2 px strokes in currentColor (styled by .nw-icon). */
+export const ICONS = {
+  // a four-fingered mitten, like 奶蛙's own hands
+  hand: `<path d="M7.5 13.5V8a1.5 1.5 0 0 1 3 0v3.5M10.5 11V5.5a1.5 1.5 0 0 1 3 0V11M13.5 11V6.5a1.5 1.5 0 0 1 3 0V12M16.5 12.5V10a1.5 1.5 0 0 1 3 0v4a7 7 0 0 1-7 7h-.6a6 6 0 0 1-4.7-2.3l-2.7-3.4a1.6 1.6 0 0 1 2.4-2.1l1.1 1.3"/>`,
+  ball: `<circle cx="12" cy="12" r="8.5"/><path d="M6.2 5.8c2.6 2.4 2.6 10 0 12.4M17.8 5.8c-2.6 2.4-2.6 10 0 12.4"/>`,
+  feather: `<path d="M19.5 4.5C12.5 4.5 8 9.5 8 16v.5h.5c6.5 0 11-4.5 11-12z"/><path d="M4.5 19.5l9-9M10 14h4.5M12.5 10.5h4"/>`,
+  pump: `<path d="M8 3.5h8M12 3.5V8"/><rect x="9" y="8" width="6" height="11" rx="2"/><path d="M6.5 20.5h11M15 15.5c2.5 0 4 1 4 3v2"/>`,
+  rain: `<path d="M7.2 13.5h9.6a3.3 3.3 0 0 0 .5-6.6 5.4 5.4 0 0 0-10.5.9 2.9 2.9 0 0 0 .4 5.7z"/><circle cx="8" cy="18.5" r="1.4"/><circle cx="12.5" cy="20.5" r="1.4"/><circle cx="16.5" cy="17.8" r="1.4"/>`,
+  reset: `<path d="M4 4.5V9h4.5"/><path d="M4.6 9A8 8 0 1 1 4 12.5"/>`,
+  record: `<circle cx="12" cy="12" r="6" class="nw-icon-fill"/>`,
+  stop: `<rect x="7" y="7" width="10" height="10" rx="2.5" class="nw-icon-fill"/>`,
+  soundOn: `<path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>`,
+  soundOff: `<path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`,
+  sun: `<circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.6 5.6l1.1 1.1M17.3 17.3l1.1 1.1M5.6 18.4l1.1-1.1M17.3 6.7l1.1-1.1"/>`,
+  moon: `<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>`,
+  help: `<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.7v.4"/><circle cx="12" cy="17" r=".8" class="nw-icon-fill"/>`,
+  camera: `<rect x="3" y="6.5" width="13" height="11" rx="3"/><path d="M16 10.5l5-3v9l-5-3"/>`,
+  film: `<rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 9.3v5.4l4.6-2.7z"/>`,
+  music: `<path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>`,
+  mirror: `<path d="M12 3v2.5M12 9.5v5M12 18.5V21"/><path d="M9 7.5L4 17h5zM15 7.5L20 17h-5z"/>`,
+  upload: `<path d="M12 15.5V4.5M7.5 9L12 4.5 16.5 9M5 15v2.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V15"/>`,
+  save: `<path d="M12 4.5v11M7.5 11 12 15.5l4.5-4.5M5 19.5h14"/>`,
+  link: `<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>`,
+  close: `<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>`,
+  sliders: `<path d="M4 7h8.5M17.5 7H20M4 17h2.5M11.5 17H20"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/>`,
+  chevronDown: `<path d="M6.5 9.5l5.5 5.5 5.5-5.5"/>`,
+  sparkle: `<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 16v4M16.5 18h4"/>`,
+  play: `<path d="M8.5 6v12l9.5-6z"/>`,
+  again: `<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/>`,
+  // a figure standing fully inside the frame: "step back so all of you is seen"
+  standBack: `<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="7.5" r="1.8"/><path d="M12 9.5v5M9 11.5l3-1 3 1M10 18.5l2-4 2 4"/>`,
+  sunLight: `<circle cx="12" cy="12" r="3.5"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2"/>`,
+  bigMove: `<path d="M5 12h14M5 12l3-3M5 12l3 3M19 12l-3-3M19 12l-3 3"/>`,
+  person: `<circle cx="12" cy="6.5" r="2.5"/><path d="M12 9.5v6M8 12.5l4-2 4 2M9.5 21l2.5-5.5 2.5 5.5"/>`,
+  keyboard: `<rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/>`,
+} as const;
+
+export type IconName = keyof typeof ICONS;

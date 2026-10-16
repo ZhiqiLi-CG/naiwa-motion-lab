@@ -1,0 +1,235 @@
+/* 奶蛙 Playground design tokens. mountUI sets <html data-theme="light|dark"> (the OS preference unless the player
+   chose). Components use only these tokens, never raw colours; every text token meets WCAG AA (4.5:1) on every
+   surface and selection state of its theme, also when a floating surface lets the stage show through (kept by
+   contrast.test.ts). Sizes sit on a 4 px grid. */
+
+:root {
+  /* Typography: system fonts only (nothing is fetched). The rounded faces give headings a toy's voice where the
+     system has them (Yuanti on macOS, 幼圆 on Windows); everything falls back to the system CJK sans. */
+  --font-sans: system-ui, -apple-system, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "Segoe UI", sans-serif;
+  --font-fun: "Yuanti SC", "YouYuan", "Hiragino Maru Gothic ProN", "Arial Rounded MT Bold", var(--font-sans);
+  --font-num: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", var(--font-sans);
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --leading-xs: 16px;
+  --leading-sm: 20px;
+  --leading-md: 24px;
+  --leading-lg: 28px;
+  --leading-xl: 32px;
+  --leading-2xl: 40px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;
+  --weight-black: 800;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Round, friendly shapes */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 999px;
+
+  /* Controls: compact and precise with a mouse, finger-sized on touch screens (layout.css raises them) */
+  --control-sm: 32px;
+  --control-md: 40px;
+  --control-lg: 48px;
+  --tool-size: 64px;
+  --edge: 3px; /* the toy-button "3D" bottom edge */
+  --gutter: 16px;
+  --panel-w: 296px;
+
+  /* Motion: bouncy but short; all of it stops when the player prefers reduced motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-squish: cubic-bezier(0.5, 1.9, 0.4, 0.8);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 360ms;
+
+  /* The character's own colours (the brand mark, illustrations); the same in both themes */
+  --frog-body: #ffcf4a;
+  --frog-shade: #f0b52a;
+  --frog-belly: #f7e2b5;
+  --frog-eye: #9bd26f;
+  --frog-pupil: #1e1c14;
+  --frog-hand: #5f5c45;
+  --frog-mouth: #a8402f;
+  --frog-tongue: #ff8a8a;
+
+  /* Material swatches of the presets (decorative fills, never text) */
+  --mat-jelly: #ffb84d;
+  --mat-mochi: #fff1dc;
+  --mat-balloon: #ff8fb1;
+  --mat-pudding: #e8a85c;
+  --mat-rubber: #8fd16f;
+  /* Candy fills for the dance cards' glyph discs (decorative) */
+  --candy-1: #ffcf4a;
+  --candy-2: #ff9fb8;
+  --candy-3: #8fd6ff;
+  --candy-4: #b9a6ff;
+  --candy-5: #9be38a;
+  --candy-ink: #2d2412;
+
+  /* Media (camera and video previews, the recording) are dark in both themes; text on them uses these */
+  --media-bg: #15120c;
+  --media-scrim: rgba(18, 14, 6, 0.7);
+  --media-text: #fff8e6;
+  --media-text-secondary: #e9dcc0;
+  --media-accent: #ffcf4a;
+  --media-live: #ff6b6b; /* the live/recording dot, never text */
+
+  /* Layers */
+  --z-ui: 10;
+  --z-panel: 20;
+  --z-sheet: 30;
+  --z-drop: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+  --z-loading: 70;
+}
+
+/* Light theme (default) */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --bg-app: #fff6dc;
+  /* floating panels over the 3D stage: a little of it shows through behind the blur */
+  --bg-float: rgba(255, 252, 242, 0.92);
+  --bg-surface: #fffcf2;
+  --bg-raised: #ffffff;
+  --bg-sunken: #f8eed3;
+  --bg-hover: rgba(120, 88, 0, 0.06);
+  --bg-active: rgba(120, 88, 0, 0.11);
+  --bg-selected: rgba(255, 190, 30, 0.24);
+
+  --border-subtle: #f1e5c4;
+  --border: #e6d4a6;
+  --border-strong: #cdb47a;
+  --border-focus: #b97c00;
+
+  --text-primary: #2d2412;
+  --text-secondary: #5a4c32;
+  --text-tertiary: #6b5c40;
+  --text-disabled: #b0a283;
+
+  --accent: #ffcb3d;
+  --accent-hover: #ffc020;
+  --accent-press: #f5b400;
+  --accent-edge: #d89a00;
+  --accent-soft: rgba(255, 196, 40, 0.26);
+  --accent-border: rgba(200, 140, 0, 0.5);
+  --accent-text: #845400;
+  --on-accent: #3a2700;
+
+  --leaf: #5aa832;
+  --leaf-text: #2c6612;
+  --leaf-soft: rgba(90, 168, 50, 0.16);
+
+  --danger: #d62f36;
+  --danger-hover: #c4252c;
+  --danger-edge: #9a1a20;
+  --danger-text: #ad1f26;
+  --danger-soft: rgba(214, 47, 54, 0.12);
+  --on-danger: #ffffff;
+
+  --success-text: #1f6a3c;
+  --success-soft: rgba(40, 150, 90, 0.14);
+  --warning-text: #7f4c00;
+  --warning-soft: rgba(240, 150, 0, 0.17);
+  --info-text: #1d5b92;
+  --info-soft: rgba(40, 120, 200, 0.13);
+  --neutral-text: #5a4c32;
+  --neutral-soft: rgba(90, 76, 50, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(90, 60, 0, 0.1);
+  --shadow-md: 0 6px 18px rgba(90, 60, 0, 0.12), 0 1px 3px rgba(90, 60, 0, 0.1);
+  --shadow-lg: 0 20px 48px rgba(90, 60, 0, 0.2), 0 2px 8px rgba(90, 60, 0, 0.12);
+  --focus-ring: 0 0 0 2px var(--bg-surface), 0 0 0 4px rgba(185, 124, 0, 0.75);
+  --backdrop: rgba(60, 42, 0, 0.32);
+  --scrollbar: rgba(90, 60, 0, 0.18);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #14110b;
+  --bg-float: rgba(34, 29, 20, 0.94);
+  --bg-surface: #221d14;
+  --bg-raised: #2d261a;
+  --bg-sunken: #19150e;
+  --bg-hover: rgba(255, 230, 170, 0.06);
+  --bg-active: rgba(255, 230, 170, 0.11);
+  --bg-selected: rgba(255, 203, 61, 0.18);
+
+  --border-subtle: #2e271a;
+  --border: #3d3322;
+  --border-strong: #5a4b2f;
+  --border-focus: #ffd45c;
+
+  --text-primary: #fbf3e0;
+  --text-secondary: #d9cbab;
+  --text-tertiary: #cbbd9b;
+  --text-disabled: #6e6249;
+
+  --accent: #ffcb3d;
+  --accent-hover: #ffd65f;
+  --accent-press: #f5b82a;
+  --accent-edge: #a87800;
+  --accent-soft: rgba(255, 203, 61, 0.17);
+  --accent-border: rgba(255, 203, 61, 0.45);
+  --accent-text: #ffd664;
+  --on-accent: #2e2100;
+
+  --leaf: #7cc653;
+  --leaf-text: #a6e07c;
+  --leaf-soft: rgba(124, 198, 83, 0.16);
+
+  --danger: #d23a40;
+  --danger-hover: #bf2f35;
+  --danger-edge: #8c1d22;
+  --danger-text: #ffa29b;
+  --danger-soft: rgba(230, 72, 77, 0.17);
+  --on-danger: #ffffff;
+
+  --success-text: #7fdca2;
+  --success-soft: rgba(60, 180, 110, 0.16);
+  --warning-text: #ffc35a;
+  --warning-soft: rgba(255, 170, 30, 0.15);
+  --info-text: #8cc8ff;
+  --info-soft: rgba(80, 160, 240, 0.15);
+  --neutral-text: #d9cbab;
+  --neutral-soft: rgba(217, 203, 171, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 2px var(--bg-surface), 0 0 0 4px rgba(255, 212, 92, 0.8);
+  --backdrop: rgba(6, 4, 0, 0.6);
+  --scrollbar: rgba(255, 230, 170, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+    --ease-bounce: var(--ease-out);
+    --ease-squish: var(--ease-out);
+  }
+}

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>UI dev · 奶蛙 Playground</title>
+    <style>
+      /* A stand-in for the 3D stage: a sky, a floor and a big flat 奶蛙 where the real one stands, so it is easy to
+         see whether the UI leaves the frog (and its belly) visible. */
+      #stage {
+        position: fixed;
+        inset: 0;
+        background: radial-gradient(ellipse at 50% 120%, #f3d98f 0 30%, transparent 31%),
+          linear-gradient(#fff4d1, #ffe9b0 62%, #f6d78a 62%, #f1cc78);
+        overflow: hidden;
+        cursor: grab;
+        touch-action: none;
+      }
+      [data-theme="dark"] #stage {
+        background: radial-gradient(ellipse at 50% 120%, #3a3220 0 30%, transparent 31%),
+          linear-gradient(#1b1a26, #262333 62%, #2c271c 62%, #241f16);
+      }
+      #frog {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(46vh, 70vw);
+        height: min(46vh, 70vw);
+        transform: translate(-50%, -46%);
+        transform-origin: 50% 90%;
+        transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      #frog.poke {
+        transform: translate(-50%, -46%) scale(1.12, 0.86);
+        transition-duration: 0.08s;
+      }
+      #frog .f-body { fill: #ffcf4a; }
+      #frog .f-belly { fill: #f7e2b5; }
+      #frog .f-eye { fill: #9bd26f; }
+      #frog .f-pupil { fill: #1e1c14; }
+      #frog .f-hand { fill: #5f5c45; }
+      #frog .f-mouth { fill: none; stroke: #a8402f; stroke-width: 1.6; stroke-linecap: round; }
+      #belly-mark {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 6px;
+        height: 6px;
+        margin: -3px;
+        border-radius: 50%;
+        background: #e33;
+        transform: translate(0, calc(min(46vh, 70vw) * 0.14));
+        display: none;
+      }
+      body.show-belly #belly-mark { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage">
+        <svg id="frog" viewBox="0 0 40 40" aria-hidden="true">
+          <path class="f-body" d="M20 3.5c-5.6 0-9 4.4-9 9.6 0 1.8-1.6 3.4-3.2 6.4C5.2 24.6 5.4 36.5 20 36.5s14.8-11.9 12.2-17c-1.6-3-3.2-4.6-3.2-6.4 0-5.2-3.4-9.6-9-9.6z" />
+          <ellipse class="f-belly" cx="20" cy="26.5" rx="8.6" ry="7.6" />
+          <circle class="f-eye" cx="12.6" cy="11.6" r="3.1" /><circle class="f-pupil" cx="12.2" cy="11.8" r="1.45" />
+          <circle class="f-eye" cx="27.4" cy="11.6" r="3.1" /><circle class="f-pupil" cx="27.8" cy="11.8" r="1.45" />
+          <path class="f-mouth" d="M15.2 15.6c2.8 2.6 6.8 2.6 9.6 0" />
+          <ellipse class="f-hand" cx="12.6" cy="26.4" rx="2.4" ry="1.7" transform="rotate(-35 12.6 26.4)" />
+          <ellipse class="f-hand" cx="27.4" cy="26.4" rx="2.4" ry="1.7" transform="rotate(35 27.4 26.4)" />
+        </svg>
+        <div id="belly-mark"></div>
+      </div>
+      <div id="ui"></div>
+    </div>
+    <script type="module">
+      import "/src/styles/index.css";
+      import { createStore, initialState, MATERIAL_PRESETS } from "/src/store.ts";
+      import { mountUI } from "/src/ui/index.ts";
+
+      const q = new URLSearchParams(location.search);
+      if (q.has("hint")) localStorage.removeItem("naiwa.hint.poked");
+      const store = createStore(initialState());
+      if (q.get("theme")) store.set({ theme: q.get("theme") });
+
+      const dances = [
+        { id: "belly-laugh", name: "捧腹大笑", duration: 4 },
+        { id: "wiggle", name: "扭扭屁股", duration: 6 },
+        { id: "jump", name: "原地蹦蹦", duration: 3 },
+        { id: "robot", name: "机械舞", duration: 8 },
+        { id: "subject-3", name: "科目三", duration: 12, source: { title: "网友翻跳 · 科目三", url: "https://example.com", start: 3, end: 15 } },
+        { id: "swim", name: "游泳", duration: 5 },
+      ];
+
+      /* ---- a canvas "recording" of a bouncing blob, standing in for the media recorder ---- */
+      let recorder = null;
+      let chunks = [];
+      let raf = 0;
+      function startFakeRecorder() {
+        const c = document.createElement("canvas");
+        c.width = 480;
+        c.height = 360;
+        const g = c.getContext("2d");
+        const t0 = performance.now();
+        const draw = () => {
+          const t = (performance.now() - t0) / 1000;
+          g.fillStyle = "#ffe9b0";
+          g.fillRect(0, 0, 480, 360);
+          const y = 200 - Math.abs(Math.sin(t * 4)) * 90;
+          g.fillStyle = "#ffcf4a";
+          g.beginPath();
+          g.ellipse(240, y, 70 + Math.cos(t * 8) * 6, 80 - Math.cos(t * 8) * 6, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = "#f7e2b5";
+          g.beginPath();
+          g.ellipse(240, y + 22, 40, 36, 0, 0, Math.PI * 2);
+          g.fill();
+          raf = requestAnimationFrame(draw);
+        };
+        draw();
+        chunks = [];
+        recorder = new MediaRecorder(c.captureStream(30), { mimeType: "video/webm" });
+        recorder.ondataavailable = (e) => chunks.push(e.data);
+        recorder.start(200);
+      }
+      function stopFakeRecorder(startedAt) {
+        return new Promise((resolve) => {
+          recorder.onstop = () => {
+            cancelAnimationFrame(raf);
+            const blob = new Blob(chunks, { type: "video/webm" });
+            resolve({
+              blob,
+              mimeType: "video/webm",
+              durationMs: performance.now() - startedAt,
+              url: URL.createObjectURL(blob),
+              fileName: "naiwa-20261016-153000.webm",
+            });
+          };
+          recorder.stop();
+        });
+      }
+
+      let camStream = null;
+      const commands = {
+        resetFrog: () => console.log("[mock] resetFrog"),
+        rainBalls: () => console.log("[mock] rainBalls"),
+        startRecording() {
+          startFakeRecorder();
+          store.set({ recording: { active: true, startedAt: performance.now() } });
+        },
+        async stopRecording() {
+          const at = store.get().recording.startedAt;
+          store.set({ recording: { active: false, startedAt: null } });
+          store.set({ lastRecording: await stopFakeRecorder(at) });
+        },
+        loadVideo(file) {
+          store.set({ mode: "video", motion: { state: "loading", message: "正在读取视频…" } });
+          const v = document.createElement("video");
+          Object.assign(v, { src: URL.createObjectURL(file), loop: true, muted: true, autoplay: true, playsInline: true });
+          ui.preview.replaceChildren(v);
+          setTimeout(() => store.set({ motion: { state: "tracking", fps: 30 } }), 900);
+        },
+        async copyConfigLink() {
+          await new Promise((r) => setTimeout(r, 150));
+        },
+        async shareRecording() {
+          const r = store.get().lastRecording;
+          const a = Object.assign(document.createElement("a"), { href: r.url, download: r.fileName });
+          a.click();
+        },
+        async startCamera() {
+          store.set({ motion: { state: "loading", message: "正在加载姿态模型…" } });
+          try {
+            camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const v = document.createElement("video");
+            Object.assign(v, { srcObject: camStream, muted: true, autoplay: true, playsInline: true });
+            if (store.get().mirror) v.style.transform = "scaleX(-1)";
+            ui.preview.replaceChildren(v);
+            store.set({ motion: { state: "ready", message: "退后一点，让全身入镜" } });
+            setTimeout(() => store.set({ motion: { state: "tracking", fps: 28 } }), 1200);
+          } catch {
+            store.set({ motion: { state: "error", message: "没拿到摄像头权限，点地址栏的摄像头图标允许一下" } });
+          }
+        },
+        stopCamera() {
+          camStream?.getTracks().forEach((t) => t.stop());
+          ui.preview.replaceChildren();
+          store.set({ motion: { state: "idle" } });
+        },
+      };
+
+      const ui = mountUI(document.getElementById("ui"), store, commands, { dances, presets: MATERIAL_PRESETS });
+      window.mock = { store, ui, commands };
+
+      /* ---- the stand-in stage reacts to pokes and drags like the real one reports them ---- */
+      const frog = document.getElementById("frog");
+      const stage = document.getElementById("stage");
+      let down = null;
+      stage.addEventListener("pointerdown", (e) => (down = { x: e.clientX, y: e.clientY, t: performance.now() }));
+      stage.addEventListener("pointerup", (e) => {
+        if (!down) return;
+        const d = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+        const s = store.get().stats;
+        store.set({ stats: d > 40 ? { ...s, throws: s.throws + 1 } : { ...s, pokes: s.pokes + 1 } });
+        frog.classList.add("poke");
+        setTimeout(() => frog.classList.remove("poke"), 90);
+        down = null;
+      });
+      setInterval(() => store.set({ stats: { ...store.get().stats, fps: 58 + Math.random() * 4 } }), 1000);
+
+      /* ---- query-driven states for screenshots ---- */
+      const mode = q.get("mode");
+      if (q.get("belly")) document.body.classList.add("show-belly");
+      if (q.get("loading") !== "1") setTimeout(() => store.set({ loading: { active: false, message: "" } }), Number(q.get("load") ?? 900));
+      else store.set({ loading: { active: true, message: "正在叫醒奶蛙…" } });
+      if (mode) store.set({ mode });
+      if (q.get("tool")) store.set({ tool: q.get("tool") });
+      if (q.get("pokes")) store.set({ stats: { ...store.get().stats, pokes: Number(q.get("pokes")), throws: Number(q.get("throws") ?? 0) } });
+      if (q.get("motion")) store.set({ motion: { state: q.get("motion"), message: q.get("msg") ?? undefined, fps: 27 } });
+      if (q.get("custom")) store.set({ params: { softness: 0.42, bellySize: 1.5 } });
+      if (q.get("recording")) store.set({ recording: { active: true, startedAt: performance.now() - 12_400 } });
+      if (q.get("sheet")) document.querySelector(".nw-sheet-handle").click();
+      if (q.get("feel") === "closed") window.dispatchEvent(new KeyboardEvent("keydown", { key: "f" }));
+      if (q.get("help")) setTimeout(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" })), 1000);
+      if (q.get("toast")) setTimeout(() => {
+        ui.toast("链接复制好啦，发给朋友一起捏！", "success");
+        ui.toast("找不到你啦，往后退一点", "warning");
+      }, 1000);
+      if (q.get("rec")) {
+        commands.startRecording();
+        setTimeout(() => commands.stopRecording(), 1200);
+      }
+      if (q.get("preview")) {
+        // a fake picture in the preview: a gradient canvas standing in for the camera
+        const c = document.createElement("canvas");
+        c.width = 640;
+        c.height = 480;
+        const g = c.getContext("2d");
+        const gr = g.createLinearGradient(0, 0, 640, 480);
+        gr.addColorStop(0, "#7d8fa8");
+        gr.addColorStop(1, "#d9c9a8");
+        g.fillStyle = gr;
+        g.fillRect(0, 0, 640, 480);
+        g.strokeStyle = "#7cf";
+        g.lineWidth = 6;
+        g.beginPath();
+        g.moveTo(320, 120); g.lineTo(320, 280); g.lineTo(270, 420); g.moveTo(320, 280); g.lineTo(370, 420);
+        g.moveTo(240, 220); g.lineTo(320, 170); g.lineTo(400, 220);
+        g.stroke();
+        g.beginPath(); g.arc(320, 95, 28, 0, Math.PI * 2); g.stroke();
+        ui.preview.replaceChildren(c);
+      }
+    </script>
+  </body>
+</html>
