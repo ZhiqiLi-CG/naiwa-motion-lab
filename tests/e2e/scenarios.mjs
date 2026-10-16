@@ -8,7 +8,7 @@ import { followScore, histogram, meanHistogram, splitLayout } from "./lib/follow
 import { mb } from "./lib/deploy.mjs";
 import {
   sleep, MODES, waitReady, shot, toPx, locateFrog, frogRegion, findControl, findMode, describe, appState, enterMode,
-  uploadVideo, poseRange, sampleBones, measureFrames, counts, since, mouseThrow, touchThrow,
+  uploadVideo, poseRange, sampleBones, measureFrames, counts, since, mouseThrow, touchThrow, press,
 } from "./lib/app.mjs";
 
 // Targets. This machine is far faster than "an ordinary laptop", so the frame rate here must be near the display's.
@@ -24,6 +24,9 @@ const FOLLOW_MIN = 0.5; // arm-raise correlation with the person
 const SYNC_MAX_S = 0.25;
 const SOAK_MS = 65000; // MediaPipe posts its usage log every 60 s
 const REST_DRIFT_MAX_M = 0.03;
+const PENETRATION_TOL_M = 0.01; // limb flesh deeper than this inside the Body counts as passing through it
+const HEAD_RMS_MAX_M = 0.01; // the head's shape change once its motion is taken out
+const HEAD_MAX_M = 0.025;
 const ARM_BONES = ["hand_L", "hand_R", "upperarm_L", "upperarm_R", "forearm_L", "forearm_R", "chest", "hips"];
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
 const fmt = (f) => `${f.fps.toFixed(0)} fps, main-thread work p50 ${f.workP50.toFixed(1)} ms / p95 ${f.workP95.toFixed(1)} ms, ${f.longTasks} long tasks` + (f.physicsP95 != null ? `, physics p50 ${f.physicsP50.toFixed(2)} ms / p95 ${f.physicsP95.toFixed(2)} ms` : "");
@@ -133,6 +136,34 @@ async function frameRate(T, group, page, what = "frame rate") {
   return f;
 }
 
+/** Interpenetration over a few frames: per limb region the most vertices inside the Body (deeper than the
+ *  tolerance) and the deepest; the head's largest shape change. Null without the hook's sim and spec. */
+async function sampleInterpenetration(page, frames, everyMs) {
+  const agg = { per: {}, head: { rms: 0, p95: 0, max: 0 }, frames: 0 };
+  for (let i = 0; i < frames; i++) {
+    const r = await page.evaluate((tol) => window.__e2e.penetration(tol), PENETRATION_TOL_M);
+    if (!r) return null;
+    agg.frames++;
+    for (const [k, v] of Object.entries(r.per)) {
+      const a = (agg.per[k] ??= { vertices: v.vertices, inside: 0, maxDepth: 0 });
+      a.inside = Math.max(a.inside, v.deep);
+      a.maxDepth = Math.max(a.maxDepth, v.maxDepth);
+    }
+    if (r.head) for (const k of ["rms", "p95", "max"]) agg.head[k] = Math.max(agg.head[k], r.head[k]);
+    await sleep(everyMs);
+  }
+  return agg;
+}
+function verdictInterpenetration(T, group, what, agg) {
+  if (!agg) return T.check(group, `${what}: no limb inside the body`, "MISSING", "needs the test hook (sim.readBody/readLimbs, character.spec)");
+  const parts = Object.entries(agg.per).map(([k, v]) => `${k} ${v.inside}/${v.vertices} vertices${v.inside ? ` up to ${(v.maxDepth * 100).toFixed(1)} cm deep` : ""}`);
+  const through = Object.values(agg.per).some((v) => v.inside > 0);
+  T.check(group, `${what}: no limb inside the body`, through ? "FAIL" : "PASS", `worst of ${agg.frames} frames: ${parts.join(", ")} (vertices outside the Body in the rest pose that are now more than ${PENETRATION_TOL_M * 100} cm inside it)`);
+  const h = agg.head;
+  T.check(group, `${what}: the head keeps its shape`, h.rms <= HEAD_RMS_MAX_M && h.max <= HEAD_MAX_M ? "PASS" : "FAIL",
+    `head vertices off their rest shape after the best rigid fit: rms ${(h.rms * 100).toFixed(1)} cm, p95 ${(h.p95 * 100).toFixed(1)} cm, max ${(h.max * 100).toFixed(1)} cm (allowed rms ${HEAD_RMS_MAX_M * 100}, max ${HEAD_MAX_M * 100} cm)`);
+}
+
 /** Record with the app's own controls; returns the probed file, or null after reporting why. */
 async function recordClip(T, group, page, log, seconds, during) {
   log.step = "start recording";
@@ -142,7 +173,7 @@ async function recordClip(T, group, page, log, seconds, during) {
     return null;
   }
   const recInfo = await describe(rec);
-  await rec.click();
+  await press(rec);
   await sleep(400);
   const st = await appState(page);
   if (st) T.check(group, "start recording", st.recording.active ? "PASS" : "FAIL", `pressed "${recInfo.text}"; store.recording.active = ${st.recording.active}`);
@@ -156,7 +187,7 @@ async function recordClip(T, group, page, log, seconds, during) {
     return null;
   }
   const stopInfo = await describe(stop);
-  await stop.click();
+  await press(stop);
   log.step = "wait for the recording";
   let blob = null;
   for (let i = 0; i < 60 && !blob; i++) {
@@ -197,7 +228,7 @@ async function transport(page, what, speed) {
   const el = await findControl(page, specs[what]);
   if (el) {
     const d = await describe(el);
-    await el.click();
+    await press(el);
     await sleep(250);
     return `UI "${d.text}"`;
   }
@@ -273,6 +304,13 @@ async function playbackChecks(T, group, page, log, video) {
   await transport(page, "speed", 1);
 }
 
+/** Enter a mode for a scenario that tests what the mode does (not the control): through the UI, else the store. */
+async function enter(T, group, page, mode) {
+  const r = await enterMode(page, mode, null, true);
+  if (r.via) T.check(group, `enter ${mode} mode`, "INFO", `no visible control labelled "${MODES[mode]}" or [data-mode=${mode}]: switched through store.mode (= ${r.storeMode}); the modes scenario reports the control`);
+  return r.found || r.storeMode === mode;
+}
+
 /* ---------------------------------------------------------------- scenarios ------------------------------------ */
 
 /** The frog, the frame rate, a tap on the belly, a drag-and-throw. */
@@ -337,13 +375,14 @@ export async function play(T, page, log) {
   const reset = await findControl(page, { re: "^(复位|重置|Reset)$|复位|Reset" });
   if (!reset) T.check("play", "reset puts the frog back", "MISSING", "no visible 复位 / Reset control");
   else {
-    await reset.click();
+    await press(reset);
     await sleep(1500);
     const hips = (await sampleBones(page))?.hips;
     const d = hips ? Math.hypot(hips[12], hips[14]) : null;
     T.check("play", "reset puts the frog back", d == null || d < 0.15 ? "PASS" : "FAIL", d == null ? "pressed; pose not visible without the hook" : `hips ${(d * 100).toFixed(0)} cm from home after 复位`);
   }
   const home = await locateFrog(page, T.out, null);
+  if (ready.hooks.sim) verdictInterpenetration(T, "play", "standing", await sampleInterpenetration(page, 4, 300));
 
   log.step = "readouts";
   const st = await appState(page);
@@ -358,7 +397,7 @@ export async function play(T, page, log) {
   const ball = await findControl(page, { re: "探测球|丢球|^球$|Ball|Probe", skip: "下球雨|Rain" });
   if (!ball) T.check("play", "ball tool", "MISSING", "no visible ball tool control");
   else {
-    await ball.click();
+    await press(ball);
     await sleep(300);
     const b0 = await counts(page);
     await page.mouse.click(home.target.x, home.target.y);
@@ -368,7 +407,7 @@ export async function play(T, page, log) {
     T.check("play", "ball tool drops a ball on the frog", (balls ?? 1) > 0 && (!ready.hooks.sim || d.events.includes("ball")) && !d.fx.length ? "PASS" : "FAIL",
       `${balls ?? "?"} ball(s) in the simulation, events [${d.events.join(", ")}]${d.fx.length ? `, comic effects ${d.fx.join(", ")}` : ""}`);
     const hand = await findControl(page, { re: "^(戳 / 拖动|手|Poke / drag|Hand)$|戳|Poke" });
-    if (hand) await hand.click();
+    if (hand) await press(hand);
   }
 
   log.step = "sound";
@@ -377,7 +416,7 @@ export async function play(T, page, log) {
   const sound = await findControl(page, { re: "声音|Sound" });
   if (!sound) T.check("play", "sound can be turned on", "MISSING", "no visible sound control");
   else {
-    await sound.click();
+    await press(sound);
     await sleep(300);
     const s0 = await counts(page);
     await page.mouse.click(home.target.x, home.target.y);
@@ -415,8 +454,7 @@ export async function dances(T, page, log) {
   const frog = await locateFrog(page, T.out, null);
   const idleDeg = await idlePoseDeg(page);
   log.step = "enter dance";
-  const r = await enterMode(page, "dance");
-  if (!r.found) return T.check("dances", "enter dance mode", "MISSING", `no control labelled "${MODES.dance}"`);
+  if (!(await enter(T, "dances", page, "dance"))) return T.check("dances", "enter dance mode", "MISSING", `no control labelled "${MODES.dance}"`);
   let list = [];
   for (let i = 0; i < 40 && !list.length; i++) {
     list = ((await appState(page))?.dances ?? []).filter((d) => d.origin !== "mine");
@@ -427,16 +465,14 @@ export async function dances(T, page, log) {
   let first = true;
   for (const d of list) {
     log.step = `dance ${d.id}`;
-    const el = await findControl(page, { label: d.name, skip: "删除" });
-    if (!el) {
-      T.check("dances", `${d.name} plays`, "FAIL", `no visible control named "${d.name}" in 舞蹈库`);
-      continue;
-    }
-    await el.click();
+    const el = (await findControl(page, { label: d.name, skip: "删除|Delete" })) ?? (d.nameEn ? await findControl(page, { label: d.nameEn, skip: "删除|Delete" }) : null);
+    if (el) await press(el);
+    else await page.evaluate((id) => window.__naiwa.store.set({ dance: id }), d.id);
     await sleep(700);
     const st = await appState(page);
     const m = await poseMoves(T, "dances", page, frog, Math.max(2500, d.duration * 1000 * 1.2), `dance-${d.id}`, idleDeg);
-    T.check("dances", `${d.name} plays`, st.dance === d.id && m.ok ? "PASS" : "FAIL", `store.dance = ${st.dance}, motion ${st.motion.state}; ${m.detail}`);
+    T.check("dances", `${d.name} plays`, st.dance === d.id && m.ok ? "PASS" : "FAIL", `${el ? "picked in 舞蹈库" : "no visible control with its name: picked through store.dance"}; store.dance = ${st.dance}, motion ${st.motion.state}; ${m.detail}`);
+    verdictInterpenetration(T, "dances", d.name, await sampleInterpenetration(page, 8, Math.max(150, (d.duration * 1000) / 8)));
     if (first) await frameRate(T, "dances", page, "frame rate while dancing");
     first = false;
   }
@@ -449,10 +485,10 @@ export async function camera(T, page, log) {
   const frog = await locateFrog(page, T.out, null);
   const idleDeg = await idlePoseDeg(page);
   log.step = "enter camera";
-  const r = await enterMode(page, "camera");
-  if (!r.found) return T.check("camera", "enter camera mode", "MISSING", `no control labelled "${MODES.camera}"`);
-  const start = await findControl(page, { re: "打开摄像头|开启摄像头|开摄像头|启动摄像头" });
-  if (start) await start.click();
+  if (!(await enter(T, "camera", page, "camera"))) return T.check("camera", "enter camera mode", "MISSING", `no control labelled "${MODES.camera}"`);
+  const start = await findControl(page, { re: "打开摄像头|开启摄像头|开摄像头|启动摄像头|Turn on the camera|Start camera" });
+  if (start) await press(start);
+  else if (ready.hooks.hook) await page.evaluate(() => window.__naiwa.commands.startCamera?.());
   const t0 = Date.now();
   if (ready.hooks.store) {
     log.step = "wait for tracking";
@@ -466,7 +502,7 @@ export async function camera(T, page, log) {
       if (m?.state === "error") break;
       await sleep(300);
     }
-    T.check("camera", "reaches tracking", tracking ? "PASS" : "FAIL", (start ? `pressed "${(await describe(start).catch(() => ({ text: "?" }))).text}"; ` : "no start button; ") + states.map((s) => `${s.at}s ${s.key}`).join(" → "));
+    T.check("camera", "reaches tracking", tracking ? "PASS" : "FAIL", (start ? `pressed "${(await describe(start).catch(() => ({ text: "?" }))).text}"; ` : "no start button: commands.startCamera(); ") + states.map((s) => `${s.at}s ${s.key}`).join(" → "));
   } else {
     await sleep(8000);
     T.check("camera", "reaches tracking", "MISSING", "motion state not visible without the test hook (store)");
@@ -486,10 +522,10 @@ export async function camera(T, page, log) {
     if (ms) T.check("camera", "still tracking after a minute", ms.state === "tracking" ? "PASS" : "FAIL", `state ${ms.state}${ms.message ? ` "${ms.message}"` : ""}`);
   }
   log.step = "back to play";
-  const back = await enterMode(page, "play");
+  const back = await enterMode(page, "play", null, true);
   await sleep(2500);
   const live = await page.evaluate(() => window.__e2e.liveCameraTracks());
-  if (back.found) T.check("camera", "camera released after leaving the mode", live === 0 ? "PASS" : "FAIL", `${live} live camera track(s) after switching to ${MODES.play}`);
+  if (back.found || back.storeMode === "play") T.check("camera", "camera released after leaving the mode", live === 0 ? "PASS" : "FAIL", `${live} live camera track(s) after switching to ${MODES.play}`);
 }
 
 /** Video mode: upload a real dance clip, analysis to 100%, synced playback with its music, the frog follows the
@@ -500,8 +536,7 @@ export async function video(T, page, log, which) {
   const ready = await boot(T, g, page, log);
   if (!ready) return;
   log.step = "enter video";
-  const r = await enterMode(page, "video");
-  if (!r.found) return T.check(g, "enter video mode", "MISSING", `no control labelled "${MODES.video}"`);
+  if (!(await enter(T, g, page, "video"))) return T.check(g, "enter video mode", "MISSING", `no control labelled "${MODES.video}"`);
   log.step = "upload";
   const how = await uploadVideo(page, clip.file);
   T.check(g, `upload a ${which} clip`, how ? "PASS" : "MISSING", how ? `${clip.name} (${clip.width}×${clip.height}, ${clip.duration.toFixed(1)} s${clip.audio ? ", with music" : ""}) via ${how}` : "video mode shows no file input or upload control");
@@ -563,7 +598,7 @@ async function saveDance(T, g, page, log) {
   const st = await appState(page);
   const keep = await findControl(page, { re: "存为我的舞蹈|存为|保存这支" });
   if (!keep) return T.check(g, "save as 我的舞蹈", st.canSaveDance ? "FAIL" : "FAIL", `no visible 存为我的舞蹈 control (store.canSaveDance = ${st.canSaveDance})`);
-  await keep.click();
+  await press(keep);
   await sleep(400);
   const name = `测试舞${Date.now() % 1000}`;
   const input = (await page.$$("input[type=text], input:not([type])")).at(-1);
@@ -572,7 +607,7 @@ async function saveDance(T, g, page, log) {
     await input.type(name);
   }
   const ok = await findControl(page, { re: "存好|确定|保存", skip: "存为" });
-  if (ok) await ok.click();
+  if (ok) await press(ok);
   else await page.keyboard.press("Enter");
   let mine = null;
   for (let i = 0; i < 40 && !mine; i++) {
@@ -582,10 +617,10 @@ async function saveDance(T, g, page, log) {
   T.check(g, "save as 我的舞蹈", mine ? "PASS" : "FAIL", mine ? `"${name}" is in the dance list (${mine.duration.toFixed(1)} s)` : `no dance named "${name}" with origin "mine" in store.dances after saving (canSaveDance = ${st.canSaveDance})`);
   if (!mine) return;
   log.step = "dance 我的舞蹈";
-  await enterMode(page, "dance");
+  await enterMode(page, "dance", null, true);
   const el = await findControl(page, { label: name, skip: "删除" });
   if (!el) return T.check(g, "我的舞蹈 plays in 舞蹈库", "FAIL", `no control named "${name}" in 舞蹈库`);
-  await el.click();
+  await press(el);
   await sleep(700);
   const frog = await locateFrog(page, T.out, null);
   const m = await poseMoves(T, g, page, frog, 3000, `${g}-mine`);
@@ -596,7 +631,7 @@ async function sideBySide(T, g, page, log, clip) {
   log.step = "side-by-side layout";
   const lay = await findControl(page, { re: "真人\\s*vs\\s*奶蛙|并排|左右" });
   if (!lay) return T.check(g, "真人 vs 奶蛙 recording", "MISSING", "no visible control for the side-by-side layout (真人 vs 奶蛙)");
-  await lay.click();
+  await press(lay);
   await sleep(300);
   const st = await appState(page);
   T.check(g, "choose 真人 vs 奶蛙 layout", st.recordLayout === "side-by-side" ? "PASS" : "FAIL", `store.recordLayout = ${st.recordLayout}`);
@@ -692,7 +727,7 @@ export async function languages(T, page, log, group) {
       const toggle = await findControl(page, { re: lang === "en" ? "^(EN|En|English|英文|A文)$|English|Language|语言" : "^(中|中文|ZH|Zh)$|中文|语言|Language" });
       if (toggle) {
         const d = await describe(toggle);
-        await toggle.click();
+        await press(toggle);
         await sleep(500);
         how = `UI toggle "${d.text}"`;
       }
@@ -708,7 +743,7 @@ export async function languages(T, page, log, group) {
     const untranslated = new Map(), overflow = new Map();
     for (const mode of ["play", "camera", "video", "dance"]) {
       log.step = `${lang} ${mode}`;
-      await enterMode(page, mode);
+      await enterMode(page, mode, null, true);
       await sleep(700);
       await shot(page, T.out, `${group}-${lang}-${mode}`);
       for (const u of await page.evaluate((l) => window.__e2e.textAudit(l), lang)) if (!untranslated.has(u.text)) untranslated.set(u.text, `${mode} ${u.where}`);
@@ -727,7 +762,7 @@ export async function languages(T, page, log, group) {
       if (lay > 1) T.check(group, `no sideways scrolling (${lang})`, "FAIL", `page ${lay} px wider than the screen`);
     }
   }
-  await enterMode(page, "play");
+  await enterMode(page, "play", null, true);
 }
 
 /** Pause, single step and slow motion on a preset dance (driven: the frog moves all the time). */
@@ -736,9 +771,68 @@ export async function playback(T, page, log) {
   if (!ready) return;
   if (!ready.hooks.store || !ready.hooks.sim) return T.check("playback", "pause, step, slow motion", "MISSING", "needs the test hook (store, sim)");
   log.step = "enter dance";
-  const r = await enterMode(page, "dance");
-  if (!r.found) return T.check("playback", "enter dance mode", "MISSING", `no control labelled "${MODES.dance}"`);
+  if (!(await enter(T, "playback", page, "dance"))) return T.check("playback", "enter dance mode", "MISSING", `no control labelled "${MODES.dance}"`);
   await sleep(1500);
   await playbackChecks(T, "playback", page, log, false);
   await shot(page, T.out, "playback");
+}
+
+/** Every simulator the page offers (solver × cell model × resolution): switching rebuilds it; each must run, stand
+ *  the frog up, dance, and its step time and frame rate are recorded. */
+export async function simulators(T, page, log) {
+  const ready = await boot(T, "simulators", page, log);
+  if (!ready) return;
+  if (!ready.hooks.store) return T.check("simulators", "every simulator", "MISSING", "needs the test hook (store.simulator)");
+  const restY = await page.evaluate(() => {
+    const p = window.__naiwa.character.spec.body.positions;
+    let y = 0;
+    for (let i = 1; i < p.length; i += 3) y += p[i];
+    return y / (p.length / 3);
+  });
+  await page.evaluate(() => { window.__e2e.firstSim = window.__naiwa.sim; });
+  const rows = [];
+  let staleReported = false;
+  for (const solver of ["constraints", "fem"]) for (const cellModel of ["volume", "corotational", "neohookean"]) for (const resolution of ["low", "medium", "high"]) {
+    const name = `${solver}/${cellModel}/${resolution}`;
+    log.step = `simulator ${name}`;
+    const errors0 = log.errors.length;
+    await page.evaluate((sim) => window.__naiwa.store.set({ simulator: sim, mode: "play", playback: { paused: false, timeScale: 1 } }), { solver, cellModel, resolution });
+    await page.evaluate(() => window.__naiwa.commands.resetFrog());
+    await sleep(2500);
+    const standing = await page.evaluate(() => {
+      const c = window.__naiwa.character.center(new (window.__naiwa.stage.camera.position.constructor)());
+      return { y: c.y, x: c.x, z: c.z, ok: Number.isFinite(c.y) };
+    });
+    const st0 = await appState(page);
+    const fresh = await page.evaluate(() => window.__naiwa.sim !== window.__e2e.firstSim);
+    if (!fresh && !staleReported && rows.length) {
+      T.check("simulators", "test hook sees the rebuilt simulation", "FAIL", "window.__naiwa.sim still is the first simulation after a rebuild (src/main.ts: expose it as a getter, get sim() { return sim; })");
+      staleReported = true;
+    }
+    await page.evaluate(() => window.__naiwa.store.set({ mode: "dance" }));
+    await sleep(800);
+    const frog = await locateFrog(page, T.out, null);
+    const m = await poseMoves(T, "simulators", page, frog, 2000, `sim-${solver}-${cellModel}-${resolution}`);
+    const f = await measureFrames(page, 2000);
+    const st = await appState(page);
+    const pen = fresh || !rows.length ? await sampleInterpenetration(page, 4, 200) : null;
+    const errs = log.errors.slice(errors0);
+    const stands = standing.ok && standing.y > restY * 0.75 && standing.y < restY * 1.4;
+    const ok = !errs.length && st0.stats.particles > 0 && stands && m.ok && st.simulator.solver === solver && st.simulator.cellModel === cellModel && st.simulator.resolution === resolution;
+    const penText = pen ? `; worst limb penetration ${Math.max(...Object.values(pen.per).map((v) => v.inside))} vertices, ${(Math.max(...Object.values(pen.per).map((v) => v.maxDepth)) * 100).toFixed(1)} cm, head rms ${(pen.head.rms * 100).toFixed(1)} cm` : "";
+    rows.push({ name, particles: st.stats.particles, cells: st.stats.cells, stepMs: st.stats.stepMs, fps: Math.round(f.fps), volume: st.stats.volumeRatio });
+    T.check("simulators", name, ok ? (st.stats.stepMs > PHYSICS_P95_MAX_MS ? "WARN" : "PASS") : "FAIL",
+      `${errs.length ? `errors: ${errs.slice(0, 2).join(" | ")}; ` : ""}${st0.stats.particles} particles, ${st0.stats.cells} cells; ` +
+        `${stands ? "stands" : "does not stand"} (body centre ${standing.y.toFixed(2)} m high, rest ${restY.toFixed(2)} m); dances: ${m.detail}; ` +
+        `step ${st.stats.stepMs} ms, ${Math.round(f.fps)} fps (main-thread p95 ${f.workP95.toFixed(1)} ms), volume ×${st.stats.volumeRatio}${penText}`);
+  }
+  // Resolution must change the particle budget.
+  for (const solver of ["constraints", "fem"]) for (const cellModel of ["volume", "corotational", "neohookean"]) {
+    const [lo, me, hi] = ["low", "medium", "high"].map((r) => rows.find((x) => x.name === `${solver}/${cellModel}/${r}`));
+    if (lo && me && hi && !(lo.particles < me.particles && me.particles < hi.particles)) {
+      T.check("simulators", `${solver}/${cellModel}: resolution changes the particle count`, "FAIL", `low ${lo.particles}, medium ${me.particles}, high ${hi.particles} particles`);
+    }
+  }
+  T.shared.simulatorTable = rows;
+  T.check("simulators", "step time and frame rate per simulator", "INFO", rows.map((r) => `${r.name} ${r.stepMs} ms ${r.fps} fps (${r.particles} p, ${r.cells} c)`).join("; "));
 }

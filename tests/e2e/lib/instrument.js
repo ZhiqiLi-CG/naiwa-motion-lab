@@ -146,6 +146,13 @@
     return null;
   };
   e2e.describe = (el) => ({ text: label(el).slice(0, 40), tag: el.tagName.toLowerCase(), rect: rectOf(el) });
+  /** What a click at the control's centre would really hit, when that is not the control itself. */
+  e2e.coveredBy = (el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!top || el.contains(top) || top.contains(el) || (el.htmlFor && top.id === el.htmlFor)) return null;
+    return `${top.tagName.toLowerCase()}${top.className && typeof top.className === "string" ? `.${top.className.split(" ")[0]}` : ""} "${label(top).slice(0, 24)}"`;
+  };
 
   /** All visible controls (for the phone layout check). */
   e2e.controls = () =>
@@ -304,6 +311,197 @@
       k++;
     }
     return { speed: path / ((performance.now() - t0) / 1000), frames: k };
+  };
+
+  /* ---- Interpenetration: limb flesh inside the Body, and the head's shape ---- */
+
+  /** Point-in-closed-mesh by ray parity along +x, +y and +z (majority), each ray tested against the triangles of
+   *  its grid cell only. */
+  const insideTester = (pos, idx) => {
+    const N = 48;
+    let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], pos[i + k]); hi[k] = Math.max(hi[k], pos[i + k]); }
+    const grids = [0, 1, 2].map((axis) => {
+      const [u, v] = [(axis + 1) % 3, (axis + 2) % 3];
+      const cells = Array.from({ length: N * N }, () => []);
+      const cu = (x) => Math.min(N - 1, Math.max(0, Math.floor(((x - lo[u]) / (hi[u] - lo[u] || 1)) * N)));
+      const cv = (x) => Math.min(N - 1, Math.max(0, Math.floor(((x - lo[v]) / (hi[v] - lo[v] || 1)) * N)));
+      for (let t = 0; t < idx.length; t += 3) {
+        const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+        const u0 = cu(Math.min(pos[a + u], pos[b + u], pos[c + u])), u1 = cu(Math.max(pos[a + u], pos[b + u], pos[c + u]));
+        const v0 = cv(Math.min(pos[a + v], pos[b + v], pos[c + v])), v1 = cv(Math.max(pos[a + v], pos[b + v], pos[c + v]));
+        for (let i = u0; i <= u1; i++) for (let j = v0; j <= v1; j++) cells[i * N + j].push(t);
+      }
+      return { axis, u, v, cells, cu, cv };
+    });
+    const crosses = (g, p) => {
+      let n = 0;
+      const pu = p[g.u] + 1.3e-7, pv = p[g.v] + 0.7e-7; // off any shared edge
+      for (const t of g.cells[g.cu(pu) * N + g.cv(pv)]) {
+        const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+        const au = pos[a + g.u] - pu, av = pos[a + g.v] - pv, bu = pos[b + g.u] - pu, bv = pos[b + g.v] - pv, cu_ = pos[c + g.u] - pu, cv_ = pos[c + g.v] - pv;
+        const d1 = au * bv - av * bu, d2 = bu * cv_ - bv * cu_, d3 = cu_ * av - cv_ * au;
+        if (!((d1 > 0 && d2 > 0 && d3 > 0) || (d1 < 0 && d2 < 0 && d3 < 0))) continue;
+        // Where the ray meets the triangle's plane along the axis (barycentric weights of the 2D test).
+        const w = d1 + d2 + d3;
+        const hit = (d2 * pos[a + g.axis] + d3 * pos[b + g.axis] + d1 * pos[c + g.axis]) / w;
+        if (hit > p[g.axis]) n++;
+      }
+      return n % 2 === 1;
+    };
+    return {
+      inside: (p) => {
+        if (p[0] < lo[0] || p[0] > hi[0] || p[1] < lo[1] || p[1] > hi[1] || p[2] < lo[2] || p[2] > hi[2]) return false;
+        return grids.reduce((k, g) => k + (crosses(g, p) ? 1 : 0), 0) >= 2;
+      },
+    };
+  };
+  /** Distance from a point to a triangle mesh (closest point on its triangles, Ericson 5.1.5), with a hash grid. */
+  const distanceTester = (pos, idx, cell = 0.04) => {
+    const map = new Map();
+    const key = (x, y, z) => `${x},${y},${z}`;
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+      const lo = [0, 1, 2].map((k) => Math.floor(Math.min(pos[a + k], pos[b + k], pos[c + k]) / cell));
+      const hi = [0, 1, 2].map((k) => Math.floor(Math.max(pos[a + k], pos[b + k], pos[c + k]) / cell));
+      for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+        const k = key(x, y, z);
+        (map.get(k) ?? map.set(k, []).get(k)).push(t);
+      }
+    }
+    const sub = (u, v) => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+    const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    const at = (i) => [pos[i], pos[i + 1], pos[i + 2]];
+    const closest = (p, a, b, c) => {
+      const ab = sub(b, a), ac = sub(c, a), ap = sub(p, a);
+      const d1 = dot(ab, ap), d2 = dot(ac, ap);
+      if (d1 <= 0 && d2 <= 0) return a;
+      const bp = sub(p, b), d3 = dot(ab, bp), d4 = dot(ac, bp);
+      if (d3 >= 0 && d4 <= d3) return b;
+      const vc = d1 * d4 - d3 * d2;
+      if (vc <= 0 && d1 >= 0 && d3 <= 0) { const v = d1 / (d1 - d3); return [a[0] + v * ab[0], a[1] + v * ab[1], a[2] + v * ab[2]]; }
+      const cp = sub(p, c), d5 = dot(ab, cp), d6 = dot(ac, cp);
+      if (d6 >= 0 && d5 <= d6) return c;
+      const vb = d5 * d2 - d1 * d6;
+      if (vb <= 0 && d2 >= 0 && d6 <= 0) { const w = d2 / (d2 - d6); return [a[0] + w * ac[0], a[1] + w * ac[1], a[2] + w * ac[2]]; }
+      const va = d3 * d6 - d5 * d4;
+      if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) { const w = (d4 - d3) / (d4 - d3 + (d5 - d6)); return [b[0] + w * (c[0] - b[0]), b[1] + w * (c[1] - b[1]), b[2] + w * (c[2] - b[2])]; }
+      const den = 1 / (va + vb + vc), v = vb * den, w = vc * den;
+      return [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w];
+    };
+    return (p) => {
+      let best = Infinity;
+      const cx = Math.floor(p[0] / cell), cy = Math.floor(p[1] / cell), cz = Math.floor(p[2] / cell);
+      for (let r = 0; r <= 6 && best > r * cell; r++) {
+        const seen = new Set();
+        for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++) {
+          if (Math.max(Math.abs(x - cx), Math.abs(y - cy), Math.abs(z - cz)) !== r) continue;
+          for (const t of map.get(key(x, y, z)) ?? []) {
+            if (seen.has(t)) continue;
+            seen.add(t);
+            const q = closest(p, at(idx[t] * 3), at(idx[t + 1] * 3), at(idx[t + 2] * 3));
+            best = Math.min(best, Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]));
+          }
+        }
+      }
+      return best;
+    };
+  };
+
+  /** How far a point set is from a rigid copy of another (best rotation + translation, Horn's quaternion method):
+   *  the shape change with the motion taken out. Returns per-point residuals (m). */
+  const rigidResidual = (A, B) => {
+    const n = A.length / 3;
+    const ca = [0, 0, 0], cb = [0, 0, 0];
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { ca[k] += A[i * 3 + k] / n; cb[k] += B[i * 3 + k] / n; }
+    const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < n; i++) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) S[r][c] += (A[i * 3 + r] - ca[r]) * (B[i * 3 + c] - cb[c]);
+    const [[xx, xy, xz], [yx, yy, yz], [zx, zy, zz]] = S;
+    const N = [
+      [xx + yy + zz, yz - zy, zx - xz, xy - yx],
+      [yz - zy, xx - yy - zz, xy + yx, zx + xz],
+      [zx - xz, xy + yx, -xx + yy - zz, yz + zy],
+      [xy - yx, zx + xz, yz + zy, -xx - yy + zz],
+    ];
+    // Jacobi eigen-decomposition of the symmetric 4×4.
+    const V = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+    for (let sweep = 0; sweep < 30; sweep++) {
+      for (let p = 0; p < 3; p++) for (let q = p + 1; q < 4; q++) {
+        if (Math.abs(N[p][q]) < 1e-15) continue;
+        const th = (N[q][q] - N[p][p]) / (2 * N[p][q]);
+        const t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+        const c = 1 / Math.sqrt(t * t + 1), s_ = t * c;
+        for (let k = 0; k < 4; k++) { const a = N[k][p], b = N[k][q]; N[k][p] = c * a - s_ * b; N[k][q] = s_ * a + c * b; }
+        for (let k = 0; k < 4; k++) { const a = N[p][k], b = N[q][k]; N[p][k] = c * a - s_ * b; N[q][k] = s_ * a + c * b; }
+        for (let k = 0; k < 4; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = c * a - s_ * b; V[k][q] = s_ * a + c * b; }
+      }
+    }
+    let best = 0;
+    for (let k = 1; k < 4; k++) if (N[k][k] > N[best][best]) best = k;
+    const [w, x, y, z] = [V[0][best], V[1][best], V[2][best], V[3][best]];
+    const R = [
+      [w * w + x * x - y * y - z * z, 2 * (x * y - w * z), 2 * (x * z + w * y)],
+      [2 * (x * y + w * z), w * w - x * x + y * y - z * z, 2 * (y * z - w * x)],
+      [2 * (x * z - w * y), 2 * (y * z + w * x), w * w - x * x - y * y + z * z],
+    ];
+    const out = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = [A[i * 3] - ca[0], A[i * 3 + 1] - ca[1], A[i * 3 + 2] - ca[2]];
+      let d = 0;
+      for (let r = 0; r < 3; r++) d += (R[r][0] * a[0] + R[r][1] * a[1] + R[r][2] * a[2] + cb[r] - B[i * 3 + r]) ** 2;
+      out[i] = Math.sqrt(d);
+    }
+    return out;
+  };
+  const REGION_NAMES = ["belly", "body", "head", "arm", "hand", "leg", "foot"];
+  /** This frame: limb vertices inside the Body that were outside it at rest (count and depth per region), and how
+   *  far the head's vertices are from their rest shape once the head bone's motion is taken out. */
+  e2e.penetration = (tol = 0.01) => {
+    const n = window.__naiwa;
+    const spec = n?.character?.spec;
+    if (!spec || !n.sim?.readLimbs || !spec.limbs?.length) return null;
+    if (!e2e.restInside) {
+      const rest = insideTester(spec.body.positions, spec.body.indices);
+      e2e.restInside = spec.limbs.map((l) => {
+        const out = new Uint8Array(l.positions.length / 3);
+        for (let i = 0; i < out.length; i++) out[i] = rest.inside([l.positions[i * 3], l.positions[i * 3 + 1], l.positions[i * 3 + 2]]) ? 1 : 0;
+        return out;
+      });
+    }
+    const body = n.sim.readBody();
+    const tester = insideTester(body, spec.body.indices);
+    const dist = distanceTester(body, spec.body.indices);
+    const limbs = new Map();
+    n.sim.readLimbs(limbs);
+    const per = {};
+    spec.limbs.forEach((l, li) => {
+      const p = limbs.get(l.name);
+      if (!p) return;
+      for (let i = 0; i < p.length / 3; i++) {
+        const region = REGION_NAMES[l.regions?.[i] ?? 3] ?? "arm";
+        const r = (per[region] ??= { vertices: 0, inside: 0, deep: 0, maxDepth: 0 });
+        r.vertices++;
+        if (e2e.restInside[li][i]) continue;
+        const q = [p[i * 3], p[i * 3 + 1], p[i * 3 + 2]];
+        if (!tester.inside(q)) continue;
+        const depth = dist(q);
+        r.inside++;
+        if (depth > tol) r.deep++;
+        r.maxDepth = Math.max(r.maxDepth, depth);
+      }
+    });
+    // Head shape: the head's vertices against their rest shape, best rigid fit taken out.
+    let head = null;
+    const regions = spec.body.regions;
+    if (regions) {
+      const ids = [];
+      for (let i = 0; i < regions.length; i++) if (regions[i] === 2) ids.push(i);
+      const A = new Float64Array(ids.length * 3), B = new Float64Array(ids.length * 3);
+      ids.forEach((v, j) => { for (let k = 0; k < 3; k++) { A[j * 3 + k] = spec.body.positions[v * 3 + k]; B[j * 3 + k] = body[v * 3 + k]; } });
+      const d = Array.from(rigidResidual(A, B)).sort((x, y) => x - y);
+      head = { vertices: d.length, rms: Math.sqrt(d.reduce((s2, x) => s2 + x * x, 0) / d.length), p95: d[Math.floor(d.length * 0.95)], max: d[d.length - 1] };
+    }
+    return { per, head };
   };
 
   /** Rects to leave out of frame differences: the camera/video preview and its drawn skeleton. */

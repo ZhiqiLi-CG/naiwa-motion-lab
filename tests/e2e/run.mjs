@@ -12,7 +12,8 @@
 //     --quick             skip the 65 s camera soak that catches MediaPipe's periodic usage logging
 //     --allow-missing     exit 0 when nothing fails even if parts of the app are not there yet
 //
-// Scenarios: play, modes, dances, camera, video-portrait, video-landscape, playback, record, phone, lang, lang-phone.
+// Scenarios: play, modes, dances, camera, video-portrait, video-landscape, playback, simulators, record, phone, lang,
+// lang-phone.
 //
 // The app exposes window.__naiwa = { store, sim, character, stage, motion, commands } (src/main.ts). Everything also
 // works without it from the DOM, the pixels and the browser APIs, but with it the checks are exact (the frog's pixels
@@ -174,6 +175,7 @@ async function scenario(name, viewport, body, { timeoutMs = 150000, userAgent, l
       const problems = [...new Set([...log.errors, ...log.failed, ...log.bad])];
       check(name, "no console errors or failed requests", problems.length ? "FAIL" : "PASS",
         problems.length ? problems.slice(0, 8).join(" | ") + (problems.length > 8 ? ` … (${problems.length})` : "") : `${log.requests.length} requests, ${Math.round((Date.now() - t0) / 1000)} s`);
+      if (log.covered.length) check(name, "controls are not covered by other elements", "FAIL", [...new Set(log.covered)].slice(0, 6).join("; "));
       externalAll.push(...log.external.map((u) => `${name} ${u}`));
       writeFileSync(join(OUT, `${name}-console.txt`), [...log.console, "", "-- errors --", ...problems, "", "-- external --", ...log.external].join("\n"));
     }
@@ -187,6 +189,7 @@ await scenario("dances", DESKTOP, (p, l) => S.dances(T, p, l));
 await scenario("camera", DESKTOP, (p, l) => S.camera(T, p, l), { timeoutMs: 200000 });
 for (const which of Object.keys(clips)) await scenario(`video-${which}`, DESKTOP, (p, l) => S.video(T, p, l, which), { timeoutMs: 240000 });
 await scenario("playback", DESKTOP, (p, l) => S.playback(T, p, l));
+await scenario("simulators", DESKTOP, (p, l) => S.simulators(T, p, l), { timeoutMs: 480000 });
 await scenario("record", DESKTOP, (p, l) => S.record(T, p, l));
 await scenario("phone", PHONE, (p, l) => S.phone(T, p, l), { userAgent: PHONE_UA });
 await scenario("lang", DESKTOP, (p, l) => S.languages(T, p, l, "lang"));

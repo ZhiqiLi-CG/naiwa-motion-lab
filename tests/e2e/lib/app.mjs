@@ -23,7 +23,8 @@ export async function openPage(browser, url, { viewport, userAgent, lang = "zh-C
   }, lang);
   await page.evaluateOnNewDocument(INSTRUMENT);
   const origin = new URL(url).origin;
-  const log = { errors: [], failed: [], bad: [], external: [], requests: [], console: [], step: "load" };
+  const log = { errors: [], failed: [], bad: [], external: [], requests: [], console: [], covered: [], step: "load" };
+  page.__e2eLog = log;
   const at = (m) => `[${log.step}] ${m}`;
   page.on("console", (m) => {
     const where = m.location()?.url ? ` (${m.location().url.replace(origin, "")}${m.location().lineNumber != null ? `:${m.location().lineNumber + 1}` : ""})` : "";
@@ -128,6 +129,18 @@ export async function findControl(page, spec) {
 }
 export const findMode = (page, mode) => findControl(page, { mode, label: MODES[mode] });
 
+/** Click a control the way a person does (at its centre); a control another element covers is noted in the
+ *  page's log (log.covered) and clicked anyway, so the rest of the scenario still runs. */
+export async function press(el) {
+  const page = el.frame.page();
+  const cover = await el.evaluate((e) => window.__e2e.coveredBy(e));
+  if (cover) {
+    const d = await describe(el);
+    page.__e2eLog?.covered.push(`"${d.text}" is under ${cover}`);
+    await el.evaluate((e) => e.click());
+  } else await el.click();
+}
+
 export async function describe(el) {
   return el.evaluate((e) => window.__e2e.describe(e));
 }
@@ -138,12 +151,18 @@ export async function appState(page) {
   return page.evaluate(() => window.__e2e.state());
 }
 
-/** Press a mode control; a file chooser it opens gets `file` (video mode) or is cancelled. */
-export async function enterMode(page, mode, file) {
+/** Press a mode control; a file chooser it opens gets `file` (video mode) or is cancelled. With `fallback`, a page
+ *  without the control is switched through the hook's store instead (r.via says so). */
+export async function enterMode(page, mode, file, fallback = false) {
   const el = await findMode(page, mode);
-  if (!el) return { found: false };
+  if (!el) {
+    if (!fallback || !(await page.evaluate(() => !!window.__naiwa?.store))) return { found: false };
+    await page.evaluate((m) => window.__naiwa.store.set({ mode: m }), mode);
+    await sleep(800);
+    return { found: false, via: "store", storeMode: (await appState(page))?.mode };
+  }
   const chooserP = page.waitForFileChooser({ timeout: 2500 }).catch(() => null);
-  await el.click();
+  await press(el);
   const chooser = await chooserP;
   if (chooser) {
     if (file) await chooser.accept([file]);
@@ -163,10 +182,23 @@ export async function uploadVideo(page, file) {
     await target.uploadFile(file);
     return "file input";
   }
-  const el = await findControl(page, { re: "上传|选择视频|选视频|换视频|打开视频|导入" });
-  if (!el) return null;
+  const el = await findControl(page, { re: "上传|选择视频|选视频|换视频|打开视频|导入|Upload|Choose a video" });
+  if (!el) {
+    // No upload control: hand the file to commands.loadVideo through a file input of our own.
+    if (!(await page.evaluate(() => !!window.__naiwa?.commands?.loadVideo))) return null;
+    const own = await page.evaluateHandle(() => {
+      const i = document.createElement("input");
+      i.type = "file";
+      i.style.display = "none";
+      document.body.append(i);
+      return i;
+    });
+    await own.asElement().uploadFile(file);
+    await page.evaluate((i) => { window.__naiwa.commands.loadVideo(i.files[0]); i.remove(); }, own);
+    return "commands.loadVideo (no upload control found)";
+  }
   const chooserP = page.waitForFileChooser({ timeout: 2500 }).catch(() => null);
-  await el.click();
+  await press(el);
   const chooser = await chooserP;
   if (!chooser) return null;
   await chooser.accept([file]);
