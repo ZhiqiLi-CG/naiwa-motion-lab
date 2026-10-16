@@ -9,7 +9,7 @@
  * default camera). "_L" is the character's own left, which is +X when it faces +Z.
  */
 import type * as THREE from "three";
-import type { Lang } from "./i18n";
+import type { Lang, Text } from "./i18n";
 
 /* ------------------------------------------------------------------------------------------------------------------ */
 /* Character asset: public/models/naiwa.glb (built in Blender from assets-src/naiwa, see docs/character-contract.md)  */
@@ -230,18 +230,41 @@ export interface PhysicsParams {
   regionSoftness?: Partial<Record<FleshRegion, number>>;
 }
 
-/** Which soft-body simulator runs the flesh; the page offers them side by side (the user: "simulator 我们可以给几个选项，
- *  约束求解很快 也可以提供"). Changing any of these rebuilds the simulation. */
-export type SoftSolver = "constraints" | "fem";
-export type CellModel = "volume" | "corotational" | "neohookean";
-export type SimResolution = "low" | "medium" | "high";
+/** The page is a lab: the simulation is a small core with pluggable simulators around it (src/sim/api.ts registers
+ *  them; docs/simulator-api.md documents it). Built in: a CPU example (constraint solver) and a GPU example
+ *  (MPM / FEM on WebGPU); users add their own. Each simulator declares its parameters, and the page builds its
+ *  controls from that declaration. */
+export interface SimParameter {
+  key: string;
+  label: Text;
+  kind: "number" | "choice" | "boolean";
+  min?: number;
+  max?: number;
+  step?: number;
+  /** e.g. "Hz", "kPa", "ms". */
+  unit?: string;
+  choices?: { value: string; label: Text }[];
+  default: number | string | boolean;
+  /** Changing it rebuilds the simulation (else it applies live). */
+  rebuild?: boolean;
+  help?: Text;
+}
+export interface SimulatorInfo {
+  id: string;
+  name: Text;
+  device: "cpu" | "gpu";
+  summary: Text;
+  parameters: SimParameter[];
+  /** null when it can run in this browser, else why not (e.g. no WebGPU). */
+  unavailable: Text | null;
+  /** Built in, or added by the user (editable source). */
+  origin: "builtin" | "user";
+}
 export interface SimulatorOptions {
-  /** constraints: Rapier's constraint solver (fast); fem: the whole body's elasticity solved as one linear system. */
-  solver: SoftSolver;
-  /** Constitutive model of the cells. */
-  cellModel: CellModel;
-  /** Particle budget of the flesh (coarse and fast … fine and slow). */
-  resolution: SimResolution;
+  /** Id of a registered simulator, e.g. "cpu-constraints", "gpu-mpm", or a user's own. */
+  id: string;
+  /** Values for its declared parameters (missing ones take their defaults). */
+  settings: Record<string, number | string | boolean>;
 }
 
 /** free: the simulation owns the whole frog (poke mode: it can be knocked over, grabbed and thrown).
@@ -454,8 +477,9 @@ export interface AppState {
   /** The uploaded video's analysed motion can be saved (set by the integration once analysis is done). */
   canSaveDance: boolean;
   motion: MotionStatus;
-  /** The soft-body simulator in use. */
+  /** The soft-body simulator in use, and every simulator registered (built in and the user's). */
   simulator: SimulatorOptions;
+  simulators: SimulatorInfo[];
   /** Simulation playback: paused, and the speed of simulated time (1 = real time, 0.25 = slow motion). */
   playback: { paused: boolean; timeScale: number };
   /** Simulation readouts, refreshed a few times a second by the integration. */
