@@ -68,7 +68,9 @@ edit files outside your folder.
 
 The user (2026-10-16): the simulator is written around a small core with modular parts around it and exposed
 interfaces, so users change the simulator code to test their own algorithms; "所以这就要求了你现在的simulation的代码要干净".
-The CPU example is a constraint solver, the GPU example MPM/FEM. Clean, readable, documented code
+And by block: "simulation的代码要模块化，比如碰撞处理阿、simulation的核心阿……要尽量干净，让别人可以将某一个板块做成自己的，也
+容易接进来" — a small core loop over named block slots (skeleton, flesh solver, collision, coupling, interaction,
+output), each block replaceable on its own. The CPU example is a constraint solver, the GPU example MPM/FEM. Clean, readable, documented code
 (docs/simulator-api.md) is a requirement, not a nicety.
 
 ## Working
