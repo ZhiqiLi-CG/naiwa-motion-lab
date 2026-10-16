@@ -36,6 +36,7 @@ export function initialState(): AppState {
     dances: [],
     canSaveDance: false,
     motion: { state: "idle" },
+    simulator: { solver: "constraints", cellModel: "volume", resolution: "medium" },
     playback: { paused: false, timeScale: 1 },
     stats: { fps: 0, stepMs: 0, particles: 0, cells: 0, volumeRatio: 1 },
     loading: { active: true, message: "" },

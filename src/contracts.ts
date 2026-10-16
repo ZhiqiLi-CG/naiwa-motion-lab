@@ -230,6 +230,20 @@ export interface PhysicsParams {
   regionSoftness?: Partial<Record<FleshRegion, number>>;
 }
 
+/** Which soft-body simulator runs the flesh; the page offers them side by side (the user: "simulator 我们可以给几个选项，
+ *  约束求解很快 也可以提供"). Changing any of these rebuilds the simulation. */
+export type SoftSolver = "constraints" | "fem";
+export type CellModel = "volume" | "corotational" | "neohookean";
+export type SimResolution = "low" | "medium" | "high";
+export interface SimulatorOptions {
+  /** constraints: Rapier's constraint solver (fast); fem: the whole body's elasticity solved as one linear system. */
+  solver: SoftSolver;
+  /** Constitutive model of the cells. */
+  cellModel: CellModel;
+  /** Particle budget of the flesh (coarse and fast … fine and slow). */
+  resolution: SimResolution;
+}
+
 /** free: the simulation owns the whole frog (poke mode: it can be knocked over, grabbed and thrown).
  *  driven: pose targets drive the skeleton, the root is held at home (+ rootOffset); the flesh still jiggles and the
  *  frog can still be poked. */
@@ -440,6 +454,8 @@ export interface AppState {
   /** The uploaded video's analysed motion can be saved (set by the integration once analysis is done). */
   canSaveDance: boolean;
   motion: MotionStatus;
+  /** The soft-body simulator in use. */
+  simulator: SimulatorOptions;
   /** Simulation playback: paused, and the speed of simulated time (1 = real time, 0.25 = slow motion). */
   playback: { paused: boolean; timeScale: number };
   /** Simulation readouts, refreshed a few times a second by the integration. */

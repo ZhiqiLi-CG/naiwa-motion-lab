@@ -159,9 +159,26 @@ store.subscribe((s, prev) => {
   if (s.lang !== prev.lang) setLang(s.lang);
   if (s.sound !== prev.sound) sfx.setEnabled(s.sound);
   if (s.params !== prev.params) sim?.setParams(effectiveParams());
+  if (s.simulator !== prev.simulator) rebuildSim();
   const mirrorMatters = s.mode === "camera" || s.mode === "video";
   if (s.mode !== prev.mode || s.dance !== prev.dance || (mirrorMatters && s.mirror !== prev.mirror)) void switchMotion();
 });
+
+/* ---------------- the simulation (rebuilt when the simulator options change) ---------------- */
+
+function buildSim() {
+  if (!character) return;
+  sim?.dispose();
+  sim = createFrogSim(character.spec, effectiveParams(), store.get().simulator);
+  sim.onEvent(onFrogEvent);
+  sim.setMode(store.get().mode === "play" ? "free" : "driven");
+  sentBelly = -1;
+}
+
+function rebuildSim() {
+  grab = null;
+  buildSim();
+}
 
 /* ---------------- pump: hold to inflate the flesh (volume factor), it relaxes back when let go ---------------- */
 
@@ -315,8 +332,7 @@ async function boot() {
   character = loaded;
   stage.scene.add(character.object);
   motion.bind(character.rig);
-  sim = createFrogSim(character.spec, effectiveParams());
-  sim.onEvent(onFrogEvent);
+  buildSim();
   store.set({ loading: { active: false, message: "" } });
   await switchMotion();
 
