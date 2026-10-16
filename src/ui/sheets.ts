@@ -1,15 +1,17 @@
 /** The recording result sheet and the help dialog. */
 import type { AppState, Recording, ThemeChoice } from "../contracts";
-import { SHORTCUTS, TEXT } from "./copy";
+import type { Lang } from "../i18n";
+import { SHORTCUT_KEYS, copy, formatDuration } from "./copy";
 import { changed, type Ctx, type Part } from "./ctx";
-import { h, icon } from "./dom";
-import { formatDuration } from "./format";
+import { frogMark, h, icon } from "./dom";
 import type { createDialogs } from "./overlays";
+import { segmented } from "./panel";
 
 type Dialogs = ReturnType<typeof createDialogs>;
 
 export function createRecordingSheet(ctx: Ctx, dialogs: Dialogs): Part {
   const { commands } = ctx;
+  const T = copy();
   function show(rec: Recording) {
     const video = h("video", {
       class: "nw-rec-video",
@@ -20,27 +22,24 @@ export function createRecordingSheet(ctx: Ctx, dialogs: Dialogs): Part {
       muted: true,
       playsinline: true,
     });
-    const busy = (b: HTMLButtonElement, run: () => Promise<void>, fail: string, ok?: string) => {
+    // the commands announce their own success; the sheet reports a failure
+    const busy = (b: HTMLButtonElement, run: () => Promise<void>, fail: string) => {
       b.disabled = true;
-      run().then(
-        () => ok && ctx.toast(ok, "success"),
-        () => ctx.toast(fail, "error"),
-      ).finally(() => (b.disabled = false));
+      run()
+        .catch(() => ctx.toast(fail, "error"))
+        .finally(() => (b.disabled = false));
     };
     const share: HTMLButtonElement = h(
       "button",
-      { class: "nw-btn nw-btn--primary nw-btn--lg", "data-autofocus": true, onclick: () => busy(share, () => commands.shareRecording(), TEXT.toasts.shareFailed) },
+      { class: "nw-btn nw-btn--primary nw-btn--lg", "data-autofocus": true, onclick: () => busy(share, () => commands.shareRecording(), T.toasts.shareFailed) },
       icon("save"),
-      TEXT.rec.share,
+      T.rec.share,
     );
-    const copy: HTMLButtonElement = h(
+    const link: HTMLButtonElement = h(
       "button",
-      {
-        class: "nw-btn nw-btn--secondary nw-btn--lg",
-        onclick: () => busy(copy, () => commands.copyConfigLink(), TEXT.toasts.linkFailed, TEXT.toasts.linkCopied),
-      },
+      { class: "nw-btn nw-btn--secondary nw-btn--lg", onclick: () => busy(link, () => commands.copyConfigLink(), T.toasts.linkFailed) },
       icon("link"),
-      TEXT.rec.copy,
+      T.rec.copy,
     );
     const again = h(
       "button",
@@ -52,15 +51,16 @@ export function createRecordingSheet(ctx: Ctx, dialogs: Dialogs): Part {
         },
       },
       icon("again"),
-      TEXT.rec.again,
+      T.rec.again,
     );
     const close = dialogs.open({
-      title: TEXT.rec.title,
+      title: T.rec.title,
       cls: "nw-dialog--rec",
+      badge: h("span", { class: "nw-dialog-badge" }, icon("check")),
       body: [
         h("div", { class: "nw-rec-frame" }, video),
-        h("p", { class: "nw-rec-sub" }, TEXT.rec.sub(formatDuration(rec.durationMs))),
-        h("div", { class: "nw-rec-actions" }, share, copy, again),
+        h("p", { class: "nw-rec-sub" }, T.rec.sub(formatDuration(rec.durationMs))),
+        h("div", { class: "nw-rec-actions" }, share, link, again),
       ],
       onClose: () => video.pause(),
     });
@@ -76,48 +76,44 @@ export function createHelp(ctx: Ctx, dialogs: Dialogs) {
   const { store } = ctx;
   return function openHelp() {
     if (dialogs.isOpen()) return;
-    const themeBtns = (Object.keys(TEXT.themes) as ThemeChoice[]).map((t) =>
-      h(
-        "button",
-        {
-          class: "nw-seg-btn",
-          "aria-pressed": String(store.get().theme === t),
-          onclick: () => {
-            store.set({ theme: t });
-            themeBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(Object.keys(TEXT.themes)[i] === t)));
-          },
-        },
-        TEXT.themes[t],
-      ),
+    const T = copy();
+    const themes = segmented<ThemeChoice>(
+      T.themeTitle,
+      (Object.keys(T.themes) as ThemeChoice[]).map((t) => ({ value: t, text: T.themes[t] })),
+      (theme) => {
+        store.set({ theme });
+        themes.set(theme);
+      },
     );
-    const fps = store.get().stats.fps;
+    themes.set(store.get().theme);
+    // switching the language rebuilds the UI in the other one, this dialog included
+    const langs = segmented<Lang>(T.langTitle, [{ value: "zh", text: "中文" }, { value: "en", text: "English" }], (lang) => store.set({ lang }));
+    langs.set(store.get().lang);
     dialogs.open({
-      title: TEXT.helpTitle,
+      title: T.product,
       cls: "nw-dialog--help",
+      badge: frogMark("nw-mark nw-dialog-mark"),
       body: [
+        h("p", { class: "nw-help-sub" }, T.helpSub),
         h(
           "div",
           { class: "nw-help-grid" },
           h(
             "section",
             {},
-            h("h3", { class: "nw-caption" }, "玩法"),
-            h(
-              "dl",
-              { class: "nw-howto" },
-              ...TEXT.howTo.flatMap(([a, b]) => [h("dt", {}, a), h("dd", {}, b)]),
-            ),
+            h("h3", { class: "nw-section-title" }, T.viewTitle),
+            h("dl", { class: "nw-defs" }, ...T.viewOps.flatMap(([a, b]) => [h("dt", {}, a), h("dd", {}, b)])),
           ),
           h(
             "section",
             { class: "nw-only-keys" },
-            h("h3", { class: "nw-caption" }, TEXT.keysTitle),
+            h("h3", { class: "nw-section-title" }, T.keysTitle),
             h(
               "dl",
               { class: "nw-keys" },
-              ...SHORTCUTS.flatMap(([keys, what]) => [
+              ...SHORTCUT_KEYS.flatMap((keys, i) => [
                 h("dt", {}, ...keys.map((k) => h("kbd", { class: "nw-kbd" }, k))),
-                h("dd", {}, what),
+                h("dd", {}, T.shortcuts[i]),
               ]),
             ),
           ),
@@ -125,10 +121,18 @@ export function createHelp(ctx: Ctx, dialogs: Dialogs) {
         h(
           "div",
           { class: "nw-help-foot" },
-          h("span", { class: "nw-caption" }, TEXT.themeTitle),
-          h("div", { class: "nw-seg", role: "group", "aria-label": TEXT.themeTitle }, ...themeBtns),
-          h("span", { class: "nw-spacer" }),
-          fps > 0 ? h("span", { class: "nw-fps" }, `画面 ${Math.round(fps)} fps`) : null,
+          h(
+            "div",
+            { class: "nw-help-setting" },
+            h("span", { class: "nw-section-title" }, T.themeTitle),
+            themes.el,
+          ),
+          h(
+            "div",
+            { class: "nw-help-setting" },
+            h("span", { class: "nw-section-title" }, T.langTitle),
+            langs.el,
+          ),
         ),
       ],
     });

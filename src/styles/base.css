@@ -41,7 +41,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.nw-ui :where(h1, h2, h3, p, ul, dl, dd, figure) {
+.nw-ui :where(h1, h2, h3, h4, p, ul, dl, dd, figure) {
   margin: 0;
   padding: 0;
 }
@@ -67,17 +67,13 @@ body {
   cursor: default;
 }
 
-.nw-ui :where(a) {
-  color: var(--accent-text);
-}
-
 .nw-ui :where(video) {
   display: block;
   max-width: 100%;
 }
 
 .nw-ui :focus-visible {
-  outline: 3px solid var(--border-focus);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -95,14 +91,6 @@ body {
 }
 
 /* Helpers */
-.nw-caption {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-}
-
 .nw-truncate {
   min-width: 0;
   overflow: hidden;
@@ -110,17 +98,19 @@ body {
   white-space: nowrap;
 }
 
-.nw-spacer {
-  flex: 1 1 auto;
+.nw-note {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
 .nw-icon {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -130,46 +120,20 @@ body {
   stroke: none;
 }
 
-/* The 奶蛙 mark */
+/* The 奶蛙 mark (a round sticker of the character as in the references) */
 .nw-mark {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   flex: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border);
 }
 
-.nw-mark .f-body {
-  fill: var(--frog-body);
-}
-
-.nw-mark .f-belly {
-  fill: var(--frog-belly);
-}
-
-.nw-mark .f-eye {
-  fill: var(--frog-eye);
-}
-
-.nw-mark .f-pupil {
-  fill: var(--frog-pupil);
-}
-
-.nw-mark .f-hand {
-  fill: var(--frog-hand);
-}
-
-.nw-mark .f-mouth {
-  fill: none;
-  stroke: var(--frog-mouth);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-}
-
-/* Reduced motion: no bounces, wiggles, pulses or floating anywhere in the UI. */
+/* Reduced motion: nothing moves for decoration (spinners, pulses, sweeps) */
 @media (prefers-reduced-motion: reduce) {
   .nw-ui *,
   .nw-ui *::before,
-  .nw-ui *::after,
-  .nw-ui::before {
+  .nw-ui *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

@@ -13,6 +13,7 @@ export const ICONS = {
   soundOff: `<path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`,
   sun: `<circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.6 5.6l1.1 1.1M17.3 17.3l1.1 1.1M5.6 18.4l1.1-1.1M17.3 6.7l1.1-1.1"/>`,
   moon: `<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>`,
+  alert: `<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.5" r=".8" class="nw-icon-fill"/>`,
   help: `<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.7v.4"/><circle cx="12" cy="17" r=".8" class="nw-icon-fill"/>`,
   camera: `<rect x="3" y="6.5" width="13" height="11" rx="3"/><path d="M16 10.5l5-3v9l-5-3"/>`,
   film: `<rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 9.3v5.4l4.6-2.7z"/>`,
@@ -25,13 +26,29 @@ export const ICONS = {
   sliders: `<path d="M4 7h8.5M17.5 7H20M4 17h2.5M11.5 17H20"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/>`,
   chevronDown: `<path d="M6.5 9.5l5.5 5.5 5.5-5.5"/>`,
   sparkle: `<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 16v4M16.5 18h4"/>`,
-  play: `<path d="M8.5 6v12l9.5-6z"/>`,
+  play: `<path d="M8 5.5v13l10.5-6.5z" class="nw-icon-fill"/>`,
   again: `<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/>`,
   // a figure standing fully inside the frame: "step back so all of you is seen"
   standBack: `<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="7.5" r="1.8"/><path d="M12 9.5v5M9 11.5l3-1 3 1M10 18.5l2-4 2 4"/>`,
   sunLight: `<circle cx="12" cy="12" r="3.5"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2"/>`,
   bigMove: `<path d="M5 12h14M5 12l3-3M5 12l3 3M19 12l-3-3M19 12l-3 3"/>`,
   person: `<circle cx="12" cy="6.5" r="2.5"/><path d="M12 9.5v6M8 12.5l4-2 4 2M9.5 21l2.5-5.5 2.5 5.5"/>`,
+  // recording layouts: the frog alone, the video as a corner picture, the two side by side
+  layoutFrog: `<rect x="3" y="5" width="18" height="14" rx="3"/><ellipse cx="12" cy="13" rx="3.5" ry="4" class="nw-icon-fill"/>`,
+  layoutPip: `<rect x="3" y="5" width="18" height="14" rx="3"/><ellipse cx="14" cy="12.5" rx="3" ry="3.5" class="nw-icon-fill"/><rect x="5.5" y="13" width="5" height="4" rx="1"/>`,
+  layoutSide: `<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M12 5v14"/><circle cx="7.5" cy="10" r="1.3"/><path d="M7.5 11.5v3.5"/><ellipse cx="16.5" cy="12.5" rx="2.5" ry="3" class="nw-icon-fill"/>`,
+  keep: `<path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15.5L12 16.5l-6.5 4V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M12 7.5v5M9.5 10h5"/>`,
+  check: `<path d="M5 12.5l4.5 4.5L19 7.5"/>`,
+  trash: `<path d="M4.5 7h15M10 7V4.5h4V7M6.5 7l1 12.5h9l1-12.5"/>`,
+  swap: `<path d="M5 9h12l-3.5-3.5M19 15H7l3.5 3.5"/>`,
+  // motion sources: none (physics only), preset motions
+  free: `<circle cx="12" cy="12" r="8"/><path d="M8.5 12h7"/>`,
+  motion: `<circle cx="12" cy="5" r="2"/><path d="M12 7.5v6M8 10.5l4-2 4 2M9.5 20l2.5-6.5 2.5 6.5"/><path d="M4 16.5h3M17 16.5h3"/>`,
+  pause: `<rect x="7" y="5.5" width="3.5" height="13" rx="1" class="nw-icon-fill"/><rect x="13.5" y="5.5" width="3.5" height="13" rx="1" class="nw-icon-fill"/>`,
+  step: `<path d="M7 6.5v11l8-5.5z" class="nw-icon-fill"/><path d="M17.5 6.5v11"/>`,
+  code: `<path d="M8.5 7.5L4 12l4.5 4.5M15.5 7.5L20 12l-4.5 4.5M13.5 5l-3 14"/>`,
+  // a parameter that rebuilds the simulation when changed
+  rebuild: `<path d="M19 12a7 7 0 1 1-2-4.9"/><path d="M19 4.5V8h-3.5"/>`,
   keyboard: `<rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/>`,
 } as const;
 

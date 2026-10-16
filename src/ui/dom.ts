@@ -30,21 +30,44 @@ export function icon(name: IconName, cls = "nw-icon"): SVGSVGElement {
   return svg;
 }
 
-/** The 奶蛙 mark: pear body, cream belly, side eyes, hands on the belly (its signature pose). */
+let marks = 0;
+
+/** The 奶蛙 mark, as in assets-src/naiwa/references (the same drawing as public/icons/naiwa.svg): a laughing face
+ *  with the tongue out over the huge cream belly, hands on the belly, in a round sticker. */
 export function frogMark(cls = "nw-mark"): SVGSVGElement {
   const svg = document.createElementNS(SVG, "svg");
-  svg.setAttribute("viewBox", "0 0 40 40");
+  svg.setAttribute("viewBox", "0 0 512 512");
   svg.setAttribute("class", cls);
   svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = FROG;
+  svg.innerHTML = frogArt(`nwm${++marks}`);
   return svg;
 }
 
-const FROG = `
-<path class="f-body" d="M20 3.5c-5.6 0-9 4.4-9 9.6 0 1.8-1.6 3.4-3.2 6.4C5.2 24.6 5.4 36.5 20 36.5s14.8-11.9 12.2-17c-1.6-3-3.2-4.6-3.2-6.4 0-5.2-3.4-9.6-9-9.6z"/>
-<ellipse class="f-belly" cx="20" cy="26.5" rx="8.6" ry="7.6"/>
-<circle class="f-eye" cx="12.6" cy="11.6" r="3.1"/><circle class="f-pupil" cx="12.2" cy="11.8" r="1.45"/>
-<circle class="f-eye" cx="27.4" cy="11.6" r="3.1"/><circle class="f-pupil" cx="27.8" cy="11.8" r="1.45"/>
-<path class="f-mouth" d="M15.2 15.6c2.8 2.6 6.8 2.6 9.6 0"/>
-<ellipse class="f-hand" cx="12.6" cy="26.4" rx="2.4" ry="1.7" transform="rotate(-35 12.6 26.4)"/>
-<ellipse class="f-hand" cx="27.4" cy="26.4" rx="2.4" ry="1.7" transform="rotate(35 27.4 26.4)"/>`;
+const stop = (o: number, token: string) => `<stop offset="${o}" style="stop-color:var(--frog-${token})"/>`;
+const fill = (token: string) => `style="fill:var(--frog-${token})"`;
+
+function frogArt(id: string): string {
+  return `<defs>
+<radialGradient id="${id}b" cx="50%" cy="38%" r="70%">${stop(0, "bg-1")}${stop(1, "bg-2")}</radialGradient>
+<radialGradient id="${id}s" gradientUnits="userSpaceOnUse" cx="215" cy="190" r="400">${stop(0, "skin-1")}${stop(0.5, "skin-2")}${stop(1, "skin-3")}</radialGradient>
+<radialGradient id="${id}y" cx="45%" cy="35%" r="70%">${stop(0, "belly-1")}${stop(1, "belly-2")}</radialGradient>
+<radialGradient id="${id}i" cx="45%" cy="40%" r="60%">${stop(0, "iris-1")}${stop(1, "iris-2")}</radialGradient>
+<g id="${id}h" stroke-linecap="round"><path fill="none" stroke-width="46" style="stroke:var(--frog-arm)" d="M114 300C92 344 104 394 146 420"/><circle cx="150" cy="424" r="25" ${fill("hand")}/><path fill="none" stroke-width="15" style="stroke:var(--frog-hand)" d="M160 410L188 400M166 425L197 422M162 440L190 448M144 408L152 390"/></g>
+<clipPath id="${id}c"><circle cx="256" cy="256" r="256"/></clipPath>
+</defs>
+<g clip-path="url(#${id}c)">
+<rect width="512" height="512" fill="url(#${id}b)"/>
+<g fill="url(#${id}s)"><path d="M256 84C320 84 356 126 362 180C368 236 448 290 458 388C466 466 452 540 436 600H76C60 540 46 466 54 388C64 290 144 236 150 180C156 126 192 84 256 84Z"/><circle cx="170" cy="168" r="40"/><circle cx="342" cy="168" r="40"/></g>
+<ellipse cx="256" cy="452" rx="152" ry="122" fill="url(#${id}y)"/>
+<use href="#${id}h"/><use href="#${id}h" transform="translate(512 0) scale(-1 1)"/>
+<g class="nw-mark-eyes">
+<circle cx="170" cy="166" r="30" fill="url(#${id}i)" stroke-width="3" style="stroke:var(--frog-iris-edge)"/><circle cx="342" cy="166" r="30" fill="url(#${id}i)" stroke-width="3" style="stroke:var(--frog-iris-edge)"/>
+<circle cx="174" cy="168" r="14" ${fill("pupil")}/><circle cx="338" cy="168" r="14" ${fill("pupil")}/>
+<circle cx="168" cy="160" r="5" ${fill("glint")}/><circle cx="332" cy="160" r="5" ${fill("glint")}/>
+</g>
+<path ${fill("mouth")} d="M184 214C220 226 292 226 328 214C330 268 300 300 256 300C212 300 182 268 184 214Z"/>
+<path ${fill("teeth")} d="M188 216C222 228 290 228 324 216L322 234C290 244 222 244 190 234Z"/>
+<path class="nw-mark-tongue" ${fill("tongue")} d="M222 266C232 252 280 252 290 266C298 280 296 312 280 324C268 334 244 334 232 324C216 312 214 280 222 266Z"/>
+<path fill="none" stroke-width="3" stroke-linecap="round" style="stroke:var(--frog-tongue-line)" d="M256 272V310"/>
+</g>`;
+}

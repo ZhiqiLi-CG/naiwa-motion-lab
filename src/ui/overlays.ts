@@ -1,13 +1,12 @@
-/** Things that float over everything: toasts, dialogs, the loading screen, the first-poke hint, the drop target. */
-import type { AppState } from "../contracts";
-import { MOTION_CHIP, TEXT, type ChipTone } from "./copy";
+/** Things that float over everything: toasts, dialogs, the loading screen, the drop target for a video file. */
+import { copy } from "./copy";
 import { changed, type Ctx, type Part, type ToastKind } from "./ctx";
 import { frogMark, h, icon } from "./dom";
 import type { IconName } from "./icons";
 
 /* ---------- Toasts ---------- */
 
-const TOAST_ICON: Record<ToastKind, IconName> = { info: "sparkle", success: "sparkle", warning: "help", error: "close" };
+const TOAST_ICON: Record<ToastKind, IconName> = { info: "help", success: "check", warning: "alert", error: "alert" };
 
 export function createToasts(host: HTMLElement): (message: string, kind?: ToastKind) => void {
   const stack = h("div", { class: "nw-toasts", role: "status", "aria-live": "polite" });
@@ -41,6 +40,8 @@ export interface DialogOpts {
   body: Node[];
   /** Extra class on the dialog, e.g. "nw-dialog--rec". */
   cls?: string;
+  /** A little picture before the title. */
+  badge?: Element;
   onClose?(): void;
 }
 
@@ -49,13 +50,14 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), video[
 export function createDialogs(host: HTMLElement) {
   const stack: { el: HTMLElement; close(): void }[] = [];
   function open(o: DialogOpts): () => void {
+    const T = copy();
     const before = document.activeElement as HTMLElement | null;
     const id = `nw-dlg-${Math.random().toString(36).slice(2, 8)}`;
-    const closeBtn = h("button", { class: "nw-icon-btn nw-dialog-close", "aria-label": TEXT.rec.close }, icon("close"));
+    const closeBtn = h("button", { class: "nw-icon-btn nw-dialog-close", "aria-label": T.rec.close }, icon("close"));
     const dialog = h(
       "div",
       { class: `nw-dialog ${o.cls ?? ""}`, role: "dialog", "aria-modal": "true", "aria-labelledby": id },
-      h("header", { class: "nw-dialog-head" }, h("h2", { id, class: "nw-dialog-title" }, o.title), closeBtn),
+      h("header", { class: "nw-dialog-head" }, o.badge ?? null, h("h2", { id, class: "nw-dialog-title" }, o.title), closeBtn),
       h("div", { class: "nw-dialog-body" }, ...o.body),
     );
     const overlay = h("div", { class: "nw-overlay" }, dialog);
@@ -100,44 +102,18 @@ export function createDialogs(host: HTMLElement) {
   };
 }
 
-/* ---------- Status chip ---------- */
-
-export function statusChip(): { el: HTMLElement; set(text: string, tone: ChipTone, o?: { live?: boolean; busy?: boolean }): void } {
-  const dot = h("span", { class: "nw-status-dot" });
-  const text = h("span", {});
-  const el = h("span", { class: "nw-status" }, dot, text);
-  return {
-    el,
-    set(t, tone, o = {}) {
-      el.className = `nw-status nw-status--${tone}${o.live ? " is-live" : ""}${o.busy ? " is-busy" : ""}`;
-      text.textContent = t;
-    },
-  };
-}
-
-export function motionChip() {
-  const chip = statusChip();
-  return {
-    el: chip.el,
-    update(m: AppState["motion"]) {
-      const d = MOTION_CHIP[m.state];
-      const fps = m.state === "tracking" && m.fps ? ` · ${Math.round(m.fps)} fps` : "";
-      chip.set(d.text + fps, d.tone, d);
-    },
-  };
-}
-
 /* ---------- Loading screen ---------- */
 
 export function createLoading(host: HTMLElement): Part {
+  const T = copy();
   const msg = h("p", { class: "nw-loading-msg" });
   const el = h(
     "div",
-    { class: "nw-loading", role: "progressbar", "aria-label": TEXT.loadingTitle, "aria-busy": "true" },
-    h("div", { class: "nw-loading-frog" }, frogMark("nw-mark nw-loading-mark"), h("span", { class: "nw-loading-shadow" })),
-    h("p", { class: "nw-loading-title" }, "奶蛙 ", h("span", {}, "Playground")),
+    { class: "nw-loading", role: "progressbar", "aria-label": T.product, "aria-busy": "true" },
+    frogMark("nw-mark nw-loading-mark"),
+    h("p", { class: "nw-loading-title" }, T.product),
     msg,
-    h("div", { class: "nw-loading-dots", "aria-hidden": "true" }, h("i", {}), h("i", {}), h("i", {})),
+    h("div", { class: "nw-loading-bar", "aria-hidden": "true" }, h("i", {})),
   );
   host.append(el);
   return {
@@ -151,88 +127,60 @@ export function createLoading(host: HTMLElement): Part {
       } else if (!el.hidden) {
         el.classList.add("is-done");
         const hide = () => {
-          if (!el.classList.contains("is-done")) return;
-          el.hidden = true;
+          if (el.classList.contains("is-done")) el.hidden = true;
         };
         el.addEventListener("transitionend", hide, { once: true });
-        setTimeout(hide, 700);
+        setTimeout(hide, 500);
       }
-    },
-  };
-}
-
-/* ---------- First-poke hint ---------- */
-
-const HINT_KEY = "naiwa.hint.poked";
-
-function hintSeen(): boolean {
-  try {
-    return localStorage.getItem(HINT_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function createPokeHint(host: HTMLElement): Part {
-  const el = h(
-    "div",
-    { class: "nw-hint", "aria-hidden": "true" },
-    h("span", { class: "nw-hint-finger" }, icon("hand")),
-    h("span", { class: "nw-hint-text" }, TEXT.pokeHint),
-  );
-  host.append(el);
-  let seen = hintSeen();
-  return {
-    update(s) {
-      if (s.stats.pokes > 0 && !seen) {
-        seen = true;
-        try {
-          localStorage.setItem(HINT_KEY, "1");
-        } catch {
-          /* private mode: the hint simply comes back next visit */
-        }
-      }
-      el.classList.toggle("is-shown", !seen && !s.loading.active && s.mode === "play");
     },
   };
 }
 
 /* ---------- Drop a video anywhere ---------- */
 
-export function createDropTarget(ctx: Ctx, host: HTMLElement): void {
+export function createDropTarget(ctx: Ctx, host: HTMLElement): () => void {
+  const T = copy();
   const el = h(
     "div",
     { class: "nw-drop", "aria-hidden": "true" },
-    h("div", { class: "nw-drop-box" }, icon("film", "nw-icon nw-drop-icon"), h("p", {}, TEXT.video.dropBig)),
+    h("div", { class: "nw-drop-box" }, icon("film", "nw-icon nw-drop-icon"), h("p", {}, T.video.dropBig)),
   );
   host.append(el);
   let depth = 0;
   const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
-  window.addEventListener("dragenter", (e) => {
-    if (!hasFiles(e)) return;
-    depth++;
-    el.classList.add("is-shown");
-  });
-  window.addEventListener("dragleave", (e) => {
-    if (!hasFiles(e)) return;
-    depth = Math.max(0, depth - 1);
-    if (depth === 0) el.classList.remove("is-shown");
-  });
-  window.addEventListener("dragover", (e) => {
-    if (hasFiles(e)) e.preventDefault();
-  });
-  window.addEventListener("drop", (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault();
-    depth = 0;
-    el.classList.remove("is-shown");
-    const file = e.dataTransfer?.files[0];
-    if (file) pickVideo(ctx, file);
-  });
+  const on: Record<"dragenter" | "dragleave" | "dragover" | "drop", (e: DragEvent) => void> = {
+    dragenter(e) {
+      if (!hasFiles(e)) return;
+      depth++;
+      el.classList.add("is-shown");
+    },
+    dragleave(e) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) el.classList.remove("is-shown");
+    },
+    dragover(e) {
+      if (hasFiles(e)) e.preventDefault();
+    },
+    drop(e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      el.classList.remove("is-shown");
+      const file = e.dataTransfer?.files[0];
+      if (file) pickVideo(ctx, file);
+    },
+  };
+  const names = Object.keys(on) as (keyof typeof on)[];
+  for (const n of names) window.addEventListener(n, on[n]);
+  return () => names.forEach((n) => window.removeEventListener(n, on[n]));
 }
 
 export function pickVideo(ctx: Ctx, file: File): void {
-  if (!file.type.startsWith("video/")) return ctx.toast(TEXT.video.notVideo, "warning");
+  const T = copy();
+  if (!file.type.startsWith("video/")) return ctx.toast(T.video.notVideo, "warning");
   ctx.commands.loadVideo(file);
+  // kept on the root so a rebuilt video panel (language switch) still shows it
+  ctx.root.dataset.videoName = file.name;
   ctx.root.dispatchEvent(new CustomEvent("nw:video", { detail: file.name }));
 }

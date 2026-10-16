@@ -138,10 +138,6 @@ describe("media surfaces (dark in both themes)", () => {
     for (const t of ["media-text", "media-text-secondary"])
       expect(contrast(color(t), color("media-bg")), t).toBeGreaterThanOrEqual(4.5);
   });
-  it("dance-card glyph ink reads on every candy disc", () => {
-    for (const c of ["candy-1", "candy-2", "candy-3", "candy-4", "candy-5"])
-      expect(contrast(color("candy-ink"), color(c)), c).toBeGreaterThanOrEqual(4.5);
-  });
 });
 
 describe("colour usage", () => {

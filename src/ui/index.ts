@@ -1,28 +1,38 @@
 /**
- * The DOM interface of 奶蛙 Playground. It floats over the 3D stage (#stage) with pointer events only on its own
- * controls, so the frog stays touchable everywhere else. It renders from the store and writes the store (mode, tool,
- * params, preset, dance, mirror, sound, theme); everything else goes through the commands.
+ * The DOM interface of Naiwa Motion Lab: a top bar (brand, simulation readouts, record, language, sound, theme,
+ * help), the Motion panel (source, transfer status, the person's preview with skeleton, per-source controls), the
+ * Simulation panel (material presets, global knobs, material by region) and the bar under the viewport (playback,
+ * interaction, reset). On phones the two panels are tabs of one bottom sheet. It floats over the 3D stage (#stage)
+ * with pointer events only on its own controls, renders from the store and writes the store (mode, tool, params,
+ * preset, dance, mirror, sound, theme, lang, recordLayout, playback); everything else goes through the commands.
+ * Switching the language rebuilds it in the other language (the preview element survives).
  *
  * Styles: import "./styles/index.css" once (src/styles/index.css).
  */
-import type { AppState, MaterialPreset, UIHandles } from "../contracts";
+import type { AppState, DanceInfo, MaterialPreset, UIHandles } from "../contracts";
+import { setLang, type Lang } from "../i18n";
 import type { Store } from "../store";
-import type { Ctx, Part, UICommands, UIDance } from "./ctx";
+import { copy } from "./copy";
+import type { Ctx, Part, ToastKind, UICommands } from "./ctx";
 import { h, icon } from "./dom";
 import { resolveTheme } from "./format";
+import { watchInsets, type Insets } from "./insets";
 import { bindKeys } from "./keys";
-import { createCameraPanel, createDancePanel, createPip, createVideoPanel } from "./modes";
-import { createDialogs, createDropTarget, createLoading, createPokeHint, createToasts } from "./overlays";
-import { createCounter, createDock } from "./play";
-import { createFeel } from "./feel";
+import { createMotionPanel } from "./motion";
+import { createDialogs, createDropTarget, createLoading, createToasts } from "./overlays";
+import { createReadouts } from "./readouts";
 import { createHelp, createRecordingSheet } from "./sheets";
+import { createSimulationPanel } from "./simulation";
 import { createTopbar } from "./topbar";
+import { createTransport } from "./transport";
 
-export type { CameraCommands, UICommands, UIDance } from "./ctx";
+export type { CameraCommands, UICommands } from "./ctx";
+export type { Insets } from "./insets";
 export { resolveTheme } from "./format";
 
 export interface UIOptions {
-  dances: UIDance[];
+  /** Shown while the store's live list (AppState.dances) is still empty. */
+  dances: DanceInfo[];
   presets: MaterialPreset[];
 }
 
@@ -31,15 +41,31 @@ export interface MountedUI extends UIHandles {
   theme(): "light" | "dark";
   /** Called whenever the shown theme changes (the stage should follow: Stage.setTheme). */
   onTheme(cb: (theme: "light" | "dark") => void): () => void;
-  /** Replace the dance list (MotionModule.ready() completes it after mount). */
-  setDances(dances: UIDance[]): void;
+  /** Pixels of each window edge the UI covers now (top bar, side panels, the bar under the viewport, phone sheet). */
+  insets(): Insets;
+  /** Called whenever the covered edges change: frame the frog in the free middle (e.g. a camera view offset). */
+  onInsets(cb: (insets: Insets) => void): () => void;
+  dispose(): void;
+}
+
+type Tab = "motion" | "sim";
+
+/** One build of the UI in one language. */
+interface View {
+  lang: Lang;
+  parts: Part[];
+  toast(message: string, kind?: ToastKind): void;
+  dialogs: ReturnType<typeof createDialogs>;
+  openHelp(): void;
+  sheetChanged(): void;
+  insets: ReturnType<typeof watchInsets>;
   dispose(): void;
 }
 
 export function mountUI(root: HTMLElement, store: Store, commands: UICommands, opts: UIOptions): MountedUI {
   root.classList.add("nw-ui");
   root.dataset.sheet = "closed";
-  root.dataset.feel = window.matchMedia("(max-width: 720px)").matches ? "closed" : "open";
+  root.dataset.tab = "motion";
 
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
   const theme = () => resolveTheme(store.get().theme, dark.matches);
@@ -54,71 +80,109 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
   };
   applyTheme();
 
-  const layer = h("div", { class: "nw-layer" });
-  const sheet = h("div", { class: "nw-sheet" });
-  const sheetHandle = h(
-    "button",
-    { class: "nw-sheet-handle", "aria-expanded": "false", onclick: () => ctx.setSheet() },
-    h("span", { class: "nw-sheet-grip", "aria-hidden": "true" }),
-    h("span", { class: "nw-sheet-label" }),
-    icon("chevronDown"),
-  );
-  sheet.append(sheetHandle);
-  const overlays = h("div", { class: "nw-overlays" });
-  root.append(layer, sheet, overlays);
+  // The motion module draws the camera/video into this element, so it outlives every rebuild.
+  const preview = h("div", { class: "nw-preview-media" });
+  const insetListeners = new Set<(i: Insets) => void>();
 
-  const toast = createToasts(overlays);
-  const dialogs = createDialogs(overlays);
+  let view: View | null = null;
   const ctx: Ctx = {
     root,
     store,
     commands,
     presets: opts.presets,
-    toast,
-    openHelp: () => openHelp(),
+    toast: (m, k) => view?.toast(m, k),
+    openHelp: () => view?.openHelp(),
     setSheet(open) {
-      const next = open ?? root.dataset.sheet !== "open";
-      root.dataset.sheet = next ? "open" : "closed";
-      sheetHandle.setAttribute("aria-expanded", String(next));
-      sheetHandle.querySelector(".nw-sheet-label")!.textContent = next ? "收起" : "更多玩法 · 手感";
+      root.dataset.sheet = (open ?? root.dataset.sheet !== "open") ? "open" : "closed";
+      view?.sheetChanged();
     },
-    setFeel(open) {
-      // on a phone the feel panel lives in the bottom sheet, so F opens the sheet
-      if (window.matchMedia("(max-width: 720px)").matches) return ctx.setSheet(open);
-      const next = open ?? root.dataset.feel !== "open";
-      root.dataset.feel = next ? "open" : "closed";
-    },
-    dialogOpen: () => dialogs.isOpen(),
-    closeDialog: () => dialogs.closeTop(),
+    dialogOpen: () => view?.dialogs.isOpen() ?? false,
+    closeDialog: () => view?.dialogs.closeTop(),
   };
-  ctx.setSheet(false);
-  const openHelp = createHelp(ctx, dialogs);
 
-  // Desktop: everything floats in `layer` and the sheet wrapper is transparent to layout; phone: the sheet is a
-  // bottom sheet holding the dock, the mode panels and the feel panel.
-  const pip = createPip(layer);
-  const dance = createDancePanel(ctx, sheet, opts.dances);
-  const parts: Part[] = [
-    createTopbar(ctx, layer, theme),
-    createCounter(ctx, layer),
-    createPokeHint(layer),
-    pip.part,
-    createDock(ctx, sheet),
-    createCameraPanel(ctx, sheet),
-    createVideoPanel(ctx, sheet),
-    dance,
-    createFeel(ctx, sheet),
-    createRecordingSheet(ctx, dialogs),
-    createLoading(overlays),
-  ];
-  createDropTarget(ctx, overlays);
+  function build(lang: Lang): View {
+    setLang(lang);
+    const T = copy(lang);
+    const layer = h("div", { class: "nw-layer" });
+    const sheet = h("div", { class: "nw-sheet" });
+    const overlays = h("div", { class: "nw-overlays" });
+    root.replaceChildren(layer, sheet, overlays);
+
+    // Phone: the sheet's head holds the transport, the readouts and the two tabs; tapping the open tab closes it.
+    const tabs = (["motion", "sim"] as Tab[]).map((t) =>
+      h(
+        "button",
+        {
+          class: "nw-tab",
+          "data-tab": t,
+          onclick: () => {
+            const open = root.dataset.sheet === "open";
+            if (open && root.dataset.tab === t) ctx.setSheet(false);
+            else {
+              root.dataset.tab = t;
+              ctx.setSheet(true);
+            }
+          },
+        },
+        icon(t === "motion" ? "motion" : "sliders"),
+        T.tabs[t],
+        icon("chevronDown", "nw-icon nw-tab-chevron"),
+      ),
+    );
+    const head = h("div", { class: "nw-sheet-head" }, h("div", { class: "nw-tabs", role: "group", "aria-label": T.sheetToggle }, ...tabs));
+    sheet.append(head);
+
+    const toast = createToasts(overlays);
+    const dialogs = createDialogs(overlays);
+    // Desktop: the panels and the transport float on their own (the sheet wrapper is transparent to layout).
+    const parts: Part[] = [
+      createTopbar(ctx, layer, theme),
+      createTransport(ctx, head),
+      createReadouts(head),
+      createMotionPanel(ctx, sheet, layer, preview, opts.dances),
+      createSimulationPanel(ctx, sheet),
+      createRecordingSheet(ctx, dialogs),
+      createLoading(overlays),
+    ];
+    head.prepend(head.querySelector(".nw-transport")!);
+    const disposeDrop = createDropTarget(ctx, overlays);
+    const insets = watchInsets(root, (i) => insetListeners.forEach((cb) => cb(i)));
+    const sheetChanged = () => {
+      const open = root.dataset.sheet === "open";
+      for (const b of tabs) b.setAttribute("aria-expanded", String(open && root.dataset.tab === b.dataset.tab));
+      insets.refresh();
+    };
+    sheetChanged();
+    return {
+      lang,
+      parts,
+      toast,
+      dialogs,
+      openHelp: createHelp(ctx, dialogs),
+      sheetChanged,
+      insets,
+      dispose() {
+        for (const p of parts) p.dispose?.();
+        disposeDrop();
+        insets.dispose();
+      },
+    };
+  }
 
   const render = (s: AppState, prev: AppState | null) => {
+    if (!view || s.lang !== view.lang) {
+      // the language toggle had focus: give it back in the new build
+      const refocus = view !== null && root.contains(document.activeElement);
+      view?.dispose();
+      view = build(s.lang);
+      prev = null;
+      if (refocus) root.querySelector<HTMLElement>("[data-lang-toggle]")?.focus();
+    }
     if (!prev || s.theme !== prev.theme) applyTheme();
     root.dataset.mode = s.mode;
-    root.dataset.recording = String(s.recording.active);
     root.dataset.loading = String(s.loading.active);
-    for (const p of parts) p.update(s, prev);
+    for (const p of view.parts) p.update(s, prev);
+    view.insets.refresh();
   };
   render(store.get(), null);
   const unsubscribe = store.subscribe(render);
@@ -131,17 +195,22 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
   const unbindKeys = bindKeys(ctx, theme);
 
   return {
-    preview: pip.preview,
-    toast,
+    preview,
+    toast: ctx.toast,
     theme,
     onTheme(cb) {
       themeListeners.add(cb);
       return () => themeListeners.delete(cb);
     },
-    setDances: (list) => dance.setDances(list),
+    insets: () => view!.insets.now(),
+    onInsets(cb) {
+      insetListeners.add(cb);
+      return () => insetListeners.delete(cb);
+    },
     dispose() {
       unsubscribe();
       unbindKeys();
+      view?.dispose();
       dark.removeEventListener("change", onSystemTheme);
       root.replaceChildren();
       root.classList.remove("nw-ui");

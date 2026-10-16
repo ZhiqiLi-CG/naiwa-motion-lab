@@ -11,23 +11,24 @@ export function formatClock(ms: number): string {
   return hr > 0 ? `${hr}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
-/** "3 秒", "1 分 05 秒". */
-export function formatDuration(ms: number): string {
-  const t = Math.max(1, Math.round(ms / 1000));
-  return t < 60 ? `${t} 秒` : `${Math.floor(t / 60)} 分 ${String(t % 60).padStart(2, "0")} 秒`;
+/** A value with its unit: "0.85", "9.81 m/s²", "1.35×". */
+export function formatValue(v: number, digits: number, unit: string): string {
+  const n = v.toFixed(digits);
+  return unit === "" ? n : unit === "×" ? `${n}×` : `${n} ${unit}`;
 }
 
-/** The live value next to a slider: 0..1 knobs as percent, multipliers as ×. */
-export function formatParam(key: keyof PhysicsParams, v: number): string {
-  if (key === "gravity") return `${v.toFixed(2).replace(/0$/, "")} g`;
-  if (key === "bellySize") return `×${v.toFixed(2)}`;
-  return `${Math.round(v * 100)}%`;
-}
+/** Readouts: "1,234" (grouped), "2.1" (ms, one decimal under 10, none above). */
+export const formatCount = (n: number) => Math.round(n).toLocaleString("en-US");
+export const formatMs = (ms: number) => (ms < 10 ? ms.toFixed(1) : String(Math.round(ms)));
 
-/** The preset whose params the current ones still equal (null once the player changed something). */
+/** The five global knobs (regionSoftness is a map). */
+export type ScalarParam = Exclude<keyof PhysicsParams, "regionSoftness">;
+export const SCALAR_PARAMS: ScalarParam[] = ["softness", "bounciness", "gravity", "bellySize", "stubbornness"];
+
+/** The preset whose knobs the current ones still equal (null once one changed; material by region is tuned on top of
+ *  any preset and does not count). */
 export function matchingPreset(params: PhysicsParams, presets: MaterialPreset[]): string | null {
-  const same = (a: PhysicsParams, b: PhysicsParams) =>
-    (Object.keys(a) as (keyof PhysicsParams)[]).every((k) => Math.abs(a[k] - b[k]) < 1e-6);
+  const same = (a: PhysicsParams, b: PhysicsParams) => SCALAR_PARAMS.every((k) => Math.abs(a[k] - b[k]) < 1e-6);
   return presets.find((p) => same(p.params, params))?.id ?? null;
 }
 
