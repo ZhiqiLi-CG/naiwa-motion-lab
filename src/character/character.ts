@@ -17,24 +17,21 @@ import {
 import { CharacterAssetError } from "./asset";
 import { aimEye, makeEye, makeRivet, updateRivet, type Eye, type Rivet } from "./face";
 import { buildFlesh, showFlesh, type FleshPiece, type FleshSet } from "./flesh";
-import { Life, type Mood } from "./life";
+import { Life } from "./life";
 import { boneExtents, findSkeleton, forwardKinematics, restPoints, type RestSkeleton } from "./rig";
 import { softSkinMaterial, tieRoots, type RootTie } from "./skin";
-import { Stance, type ArmRest } from "./stance";
+import { Stance } from "./stance";
 import type { SurfaceReport } from "./surface";
 
 /** The character with what the contract does not cover yet (all optional to use). */
 export interface NaiwaCharacter extends Character {
   /** Where it came from: the GLB, or the placeholder built in code because there was no GLB. */
   readonly source: "glb" | "placeholder";
-  readonly mood: Mood;
-  /** Called when the mood changes (e.g. play the giggle / laugh sound). */
-  onMood(cb: (mood: Mood, prev: Mood) => void): () => void;
   /** Topology of the welded Body handed to the simulation, and how many render vertices it came from. */
   readonly bodyReport: SurfaceReport & { renderVertices: number };
   /** Which limbs are soft flesh (closed shells in the asset) and, for rigid ones, why not. */
   readonly limbReport: { soft: string[]; rigid: { mesh: string; reasons: string[] }[] };
-  /** Turn its own life (blinking, breathing, moods, idle motion, reactions) on or off, e.g. for stills. */
+  /** Turn its own life (blinking, breathing, idle motion, the startle) on or off, e.g. for stills. */
   setLively(on: boolean): void;
 }
 
@@ -87,7 +84,6 @@ class NaiwaFrog implements NaiwaCharacter {
   readonly spec: RigSpec;
   readonly bodyReport: SurfaceReport & { renderVertices: number };
   readonly limbReport: { soft: string[]; rigid: { mesh: string; reasons: string[] }[] } = { soft: [], rigid: [] };
-  mood: Mood = "calm";
 
   private skel: RestSkeleton;
   private body: FleshSet;
@@ -108,13 +104,11 @@ class NaiwaFrog implements NaiwaCharacter {
   private lastTargets = new Map<BoneName, THREE.Matrix4>();
   private haveTargets = false;
   private centerPos = new THREE.Vector3();
-  private upright = 1;
 
   private requested: ExpressionWeights = {};
   private weights: Record<Expression, number> = { ...NO_EXPRESSION };
   private lookTarget: THREE.Vector3 | null = null;
   private cameraPos = new THREE.Vector3(0, 0.6, 3);
-  private moodListeners = new Set<(m: Mood, p: Mood) => void>();
   private materials = new Set<THREE.Material>();
 
   constructor(
@@ -260,8 +254,7 @@ class NaiwaFrog implements NaiwaCharacter {
       o.castShadow = o.receiveShadow = true;
     });
 
-    // ---- Idle stance: arms know where the belly is, to hold it when laughing.
-    this.stance = new Stance(skel, this.armRests(bodyRest, bodyIdx));
+    this.stance = new Stance(skel);
 
     this.object.add(scene);
     this.render();
@@ -272,34 +265,6 @@ class NaiwaFrog implements NaiwaCharacter {
     mesh.geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(index, 4));
     mesh.geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weight, 4));
     mesh.bind(new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4())), mesh.matrixWorld.clone());
-  }
-
-  private armRests(rest: Float32Array, indices: Uint32Array): ArmRest[] {
-    const s = this.skel;
-    const pos = (n: BoneName) => new THREE.Vector3().setFromMatrixPosition(s.byName.get(n)!.restWorld);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(rest, 3));
-    geo.setIndex(new THREE.BufferAttribute(indices, 1));
-    const probe = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
-    const ray = new THREE.Raycaster();
-    const spineInv = s.byName.get("spine")!.restWorld.clone().invert();
-    const out: ArmRest[] = [];
-    for (const [sgn, sfx] of [[1, "L"], [-1, "R"]] as const) {
-      const upper = `upperarm_${sfx}` as const, fore = `forearm_${sfx}` as const, hand = `hand_${sfx}` as const;
-      ray.set(pos("spine").add(new THREE.Vector3(0, 0.01, 0)), new THREE.Vector3(sgn * 0.62, -0.08, 0.78).normalize());
-      const hit = ray.intersectObject(probe)[0];
-      if (!hit?.face) continue;
-      out.push({
-        side: sgn, upper, fore, hand,
-        l1: pos(upper).distanceTo(pos(fore)),
-        l2: pos(fore).distanceTo(pos(hand)),
-        spot: hit.point.clone().applyMatrix4(spineInv),
-        normal: hit.face.normal.clone().transformDirection(spineInv),
-      });
-    }
-    geo.dispose();
-    (probe.material as THREE.Material).dispose();
-    return out;
   }
 
   // ------------------------------------------------------------------------------------------------ contract API
@@ -352,19 +317,14 @@ class NaiwaFrog implements NaiwaCharacter {
   }
 
   react(e: FrogEvent): void {
-    this.life.react(e, this.upright);
+    this.life.react(e);
   }
 
   update(dt: number, camera: THREE.Camera): void {
     dt = Math.min(dt, 0.1);
     this.time += dt;
     camera.getWorldPosition(this.cameraPos);
-    const life = this.life.update(dt, this.upright);
-    if (this.life.mood !== this.mood) {
-      const prev = this.mood;
-      this.mood = this.life.mood;
-      for (const cb of this.moodListeners) cb(this.mood, prev);
-    }
+    const life = this.life.update(dt);
 
     // Expressions: the motion's requests and the frog's own life, the mouth shapes sharing one mouth.
     const tgt = { ...NO_EXPRESSION };
@@ -390,13 +350,9 @@ class NaiwaFrog implements NaiwaCharacter {
 
     this.render();
 
-    // Eyes look at the target (or the camera); dizzy, they roll in opposite circles.
+    // Eyes look at the target (or the camera).
     const target = this.lookTarget ?? this.cameraPos;
-    const spin = life.gaze.spin;
-    this.eyes.forEach((eye, k) => {
-      const a = this.time * 2 * Math.PI * 1.3 * (k === 0 ? 1 : -1);
-      aimEye(eye, target, life.gaze.yaw + 0.5 * spin * Math.cos(a), life.gaze.pitch + 0.5 * spin * Math.sin(a), 24, dt);
-    });
+    for (const eye of this.eyes) aimEye(eye, target, life.gaze.yaw, life.gaze.pitch, 24, dt);
   }
 
   center(out: THREE.Vector3): THREE.Vector3 {
@@ -405,11 +361,6 @@ class NaiwaFrog implements NaiwaCharacter {
 
   setLively(on: boolean): void {
     this.life.lively = on;
-  }
-
-  onMood(cb: (mood: Mood, prev: Mood) => void): () => void {
-    this.moodListeners.add(cb);
-    return () => this.moodListeners.delete(cb);
   }
 
   dispose(): void {
@@ -428,7 +379,6 @@ class NaiwaFrog implements NaiwaCharacter {
   // ------------------------------------------------------------------------------------------------ rendering
 
   private _q = new THREE.Quaternion();
-  private _q2 = new THREE.Quaternion();
   private _m = new THREE.Matrix4();
   private _v = new THREE.Vector3();
   private headTurn = new THREE.Quaternion();
@@ -452,9 +402,6 @@ class NaiwaFrog implements NaiwaCharacter {
 
     const head = s.byName.get("head")!;
     this.headTurn.setFromRotationMatrix(this.boneWorld.get("head")!).multiply(this._q.copy(head.restWorldQuat).invert());
-    const hips = s.byName.get("hips")!;
-    this._q.setFromRotationMatrix(this.boneWorld.get("hips")!).multiply(this._q2.copy(hips.restWorldQuat).invert());
-    this.upright = this._v.set(0, 1, 0).applyQuaternion(this._q).y;
 
     const deform = (p: FleshPiece, weights: Record<Expression, number>, breath: number, tie?: { roots: RootTie; residual: Float32Array }) => {
       p.slots.forEach((name, k) => {

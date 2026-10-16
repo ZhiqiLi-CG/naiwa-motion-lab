@@ -1,6 +1,6 @@
 /**
  * Dev page for the character (dev/character.html): the frog on a neutral studio floor like the references, driven
- * by the real simulation. Hover: the eyes follow; click: poke; drag: grab and throw; F: feather (tickle) mode.
+ * by the real simulation. Hover: the eyes follow; click: poke; drag: grab and throw.
  * URL: ?view=front|three|side|back|laugh|upper|face|faceside, ?placeholder, ?nosim (rest surface), ?mode=free, ?pose=wave|peace,
  * ?clean, ?still (no life), ?preset=jelly|mochi|…, ?stage (the app's stage instead of the studio), ?raw (the GLB as three.js
  * loads it, without this module).
@@ -32,7 +32,13 @@ if (!stage) {
   document.body.prepend(renderer.domElement);
   scene.background = new THREE.Color(0xe9e9e6);
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const env = () => (scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
+  env();
+  // A lost GL context (the GPU is shared) takes the rendered environment with it.
+  renderer.domElement.addEventListener("webglcontextrestored", () => {
+    console.warn("WebGL context restored: rebuilding the environment");
+    env();
+  });
   scene.environmentIntensity = 0.55;
   scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc6b0, 0.9));
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -41,7 +47,8 @@ if (!stage) {
   key.shadow.mapSize.set(2048, 2048);
   Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 1.5, bottom: -1.5, near: 0.5, far: 8 });
   key.shadow.radius = 4;
-  key.shadow.bias = -0.0005;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.02;
   scene.add(key);
   const rim = new THREE.DirectionalLight(0xfff4e0, 1.1);
   rim.position.set(0.5, 2, -3);
@@ -151,8 +158,6 @@ let pose: string | null = params.get("pose");
 
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
-let feather = false;
-let lastTickle = 0;
 let press: { x: number; y: number; hit: ReturnType<FrogSim["raycast"]>; grab: ReturnType<FrogSim["grab"]> | null; depth: number; trail: [number, THREE.Vector3][] } | null = null;
 
 function rayAt(e: PointerEvent): THREE.Ray {
@@ -174,10 +179,6 @@ addEventListener("pointermove", (e) => {
   const ray = rayAt(e);
   const hit = sim?.raycast(ray.clone()) ?? null;
   character.lookAt(hit ? hit.point : ray.at(1.6, new THREE.Vector3()));
-  if (feather && hit && performance.now() - lastTickle > 70) {
-    lastTickle = performance.now();
-    character.react({ kind: "tickle", point: hit.point, strength: 0.6, region: hit.region });
-  }
   if (!press || !sim) return;
   if (!press.grab && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) press.grab = sim.grab(press.hit!);
   if (press.grab) {
@@ -205,7 +206,6 @@ function toggle(e: Expression) {
 }
 const KEYS: Record<string, () => void> = {
   "1": () => toggle("laugh"), "2": () => toggle("tongue"), "3": () => toggle("surprise"), "4": () => toggle("blink"),
-  f: () => (feather = !feather),
   r: () => sim?.reset(),
   p: () => (pose = pose === null ? "wave" : pose === "wave" ? "peace" : null),
   m: () => sim?.setMode((mode = mode === "free" ? "driven" : "free")),
@@ -213,7 +213,7 @@ const KEYS: Record<string, () => void> = {
 let mode = params.get("mode") === "free" ? "free" : "driven";
 addEventListener("keydown", (e) => KEYS[e.key]?.());
 const hud = document.getElementById("hud")!;
-for (const [k, label] of [["1", "laugh"], ["2", "tongue"], ["3", "surprise"], ["4", "blink"], ["f", "feather"], ["p", "pose"], ["m", "free/driven"], ["r", "reset"]]) {
+for (const [k, label] of [["1", "laugh"], ["2", "tongue"], ["3", "surprise"], ["4", "blink"], ["p", "pose"], ["m", "free/driven"], ["r", "reset"]]) {
   const b = document.createElement("button");
   b.textContent = `${k} ${label}`;
   b.onclick = () => KEYS[k]();
@@ -254,7 +254,8 @@ function frame(now: number) {
     sim.readBones(bones);
     sim.readLimbs?.(limbs);
     character.applySim(bones, sim.readBody(), limbs);
-  } else character.applySim(targets, character.spec.body.positions);
+  }
+  // Without a simulation the character shows the targets with its flesh skinned to them.
   character.update(dt, camera);
   frameMs += (performance.now() - t0 - frameMs) * 0.05;
   if (stage) {
@@ -269,7 +270,7 @@ function frame(now: number) {
     `${character.source}  body ${r.renderVertices}→${r.vertices} v, ${r.triangles} t, χ=${r.euler}  ` +
     `soft limbs ${character.limbReport.soft.join(",") || "none"}  ` +
     `${fps.toFixed(0)} fps, character+sim ${frameMs.toFixed(2)} ms\n` +
-    `mood ${character.mood}  mode ${mode}${feather ? "  FEATHER" : ""}${pose ? `  pose ${pose}` : ""}` +
+    `mode ${mode}${pose ? `  pose ${pose}` : ""}` +
     (sim ? `  particles ${sim.stats().particles} jiggle ${(sim.stats().deformation * 1000).toFixed(1)} mm` : "") +
     `\n${events.join("  |  ")}`;
   requestAnimationFrame(frame);

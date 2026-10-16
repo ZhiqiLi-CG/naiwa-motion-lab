@@ -9,7 +9,6 @@ import { buildPlaceholder } from "./placeholder";
 
 export { CharacterAssetError } from "./asset";
 export type { NaiwaCharacter } from "./character";
-export type { Mood } from "./life";
 
 /** Load the frog. Rejects with CharacterAssetError when the GLB exists but breaks the asset contract. */
 export async function loadCharacter(url: string = CHARACTER_URL): Promise<NaiwaCharacter> {
