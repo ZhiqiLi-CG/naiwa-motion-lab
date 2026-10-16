@@ -11,7 +11,10 @@ compare the person and the frog side by side, record the result. Everything runs
 The user's words (2026-10-16): "我们只是给我们的动作迁移 + simulation 一个页面，不是再做一个小游戏", "3D界面先保持干净",
 "我们是做simulation的", "你现在这些有点太游戏了". So: a clean viewport where the simulation is the show (the polka-dot floor and lily-pad stage may
 stay — the user likes them — but no comic text, bursts, screen shakes, speech bubbles or extra props); lab-style controls with precise values and units where they exist;
-simulation readouts (step time, particles/cells, fps); restrained copy without jokes; sound off by default. The
+simulation readouts (step time, particles/cells, fps); restrained copy without jokes; sound off by default.
+Progressive disclosure (the user: "模拟器阿 模拟器参数阿 这些应该默认是隐藏起来的…有需求的时候才展开"): the first view is the
+fun part — the frog moving, the motion choices, touching it; the simulator, its parameters, readouts and the code
+editor sit behind one "实验室 / Lab" control, collapsed by default. The
 interface switches between 中文 and English (src/i18n.ts: keep every user-visible string as { zh, en } and show it
 with tr()).
 
