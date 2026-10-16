@@ -33,17 +33,44 @@ export interface Band {
   rz: number;
 }
 
+/**
+ * A point on a limb kept out of the body: `len` from the segment's base joint. It needs its flesh thickness of
+ * clearance. Points buried at rest (the limb roots: the shoulders sit deep in the body, the thighs under the belly)
+ * may stay as deep against the torso below the shoulders, never against the neck and head; points that only touch the
+ * body at rest (an elbow on the belly) may do so near their rest spot only.
+ */
+interface LimbSample {
+  len: number;
+  radius: number;
+  /** Rest position, its clearance there, and the torso bone it rides on (chest for arms, hips for legs). */
+  rest: V3;
+  restClear: number;
+  frame: BoneName;
+}
+
+/** Clearance a limb point at p needs from the body part (band) it is nearest to. */
+function needed(b: Binding, D: Map<BoneName, Q>, P: Map<BoneName, V3>, sm: LimbSample, p: V3, band: Band | null): number {
+  if (sm.restClear >= sm.radius || !band || band.y0 >= b.neckY) return sm.radius;
+  if (sm.restClear < 0) return sm.restClear;
+  const moved = toRest(b, D, P, sm.frame, p).distanceTo(sm.rest);
+  const k = Math.min(1, Math.max(0, (moved - 0.02) / 0.06));
+  return sm.restClear + (sm.radius - sm.restClear) * k * k * (3 - 2 * k);
+}
+
 interface ArmRest {
   upper: number;
   fore: number;
+  /** Wrist to finger tips. */
   hand: number;
   dirUpper: V3;
   dirFore: V3;
   /** Rest finger direction and palm normal of the hand (world). */
   finger: V3;
   palm: V3;
-  /** Allowed clearance from the body for elbow, wrist and hand tip (m; negative = may sink in as in the rest pose). */
-  margin: [number, number, number];
+  /** Along the upper arm from the shoulder, the forearm from the elbow, the hand from the wrist. */
+  upperS: LimbSample[];
+  foreS: LimbSample[];
+  handS: LimbSample[];
 }
 
 interface LegRest {
@@ -51,7 +78,8 @@ interface LegRest {
   shin: number;
   dirThigh: V3;
   dirShin: V3;
-  margin: [number, number];
+  thighS: LimbSample[];
+  shinS: LimbSample[];
   /** |x| of the rest knee and ankle: they keep at least half of it so the legs never cross. */
   kneeX: number;
   ankleX: number;
@@ -64,11 +92,14 @@ export interface Binding {
   bodySource: "mesh" | "bones";
   arm: Record<Side, ArmRest>;
   leg: Record<Side, LegRest>;
-  fingers: Record<Side, { name: BoneName; dir: V3; curlAxis: V3; spreadAxis: V3 | null; slot: number }[]>;
+  /** Finger bones: rest direction, curl and spread axes (world), slot in the curl list, and length to the tip. */
+  fingers: Record<Side, { name: BoneName; dir: V3; curlAxis: V3; spreadAxis: V3 | null; slot: number; len: number }[]>;
   height: number;
   restFootY: number;
   /** Top of the head (rest pose), carried by the head bone. */
   headTop: V3;
+  /** Height of the shoulder joints: above it the body is neck and head, where no limb may sink in. */
+  neckY: number;
 }
 
 const TORSO: BoneName[] = ["hips", "spine", "chest", "head"];
@@ -104,6 +135,7 @@ export function bindRig(rig: RigInfo): Binding {
 
   const meshBands = bandsFromMesh(top, origin, rest);
   const bands = meshBands ?? bandsFromBones(rest, rig.height);
+  const flesh = limbFlesh(top, origin, rest);
 
   const fingers: Binding["fingers"] = { L: [], R: [] };
   const arm = {} as Record<Side, ArmRest>;
@@ -115,33 +147,38 @@ export function bindRig(rig: RigInfo): Binding {
     const centre = knuckles.length ? knuckles.reduce((a, b) => a.clone().add(b)).divideScalar(knuckles.length) : null;
     const upper = el.distanceTo(sh), fore = wr.distanceTo(el);
     const finger = centre ? sub(centre, wr).normalize() : sub(wr, el).normalize();
-    // Relaxed hands hang with the palms towards the body.
-    const palm = new THREE.Vector3(-sideSign(s), 0, 0);
-    palm.addScaledVector(finger, -palm.dot(finger)).normalize();
+    const palm = palmNormal(s, finger, knuckles, rest.has(`thumb_${s}`) ? P(`thumb_${s}`) : null, centre);
+    const hand = flesh.get(`hand_${s}`) ?? (centre ? centre.distanceTo(wr) * 1.8 : fore * 0.5);
+    const along = (len: number, ks: number[]) => ks.map((k): LimbSample => ({ len: len * k, radius: 0, rest: v(), restClear: 0, frame: "chest" }));
     arm[s] = {
       upper,
       fore,
-      hand: centre ? centre.distanceTo(wr) * 1.8 : fore * 0.5,
+      hand,
       dirUpper: sub(el, sh).normalize(),
       dirFore: sub(wr, el).normalize(),
       finger,
       palm,
-      margin: [0, 0, 0],
+      upperS: along(upper, [0.5, 0.75, 1]),
+      foreS: along(fore, [0.33, 0.66, 1]),
+      handS: along(hand, [0.45, 0.9]),
     };
     for (const f of own) {
       const name = `${f}_${s}` as BoneName;
       const d = f === "thumb" ? sub(P(name), wr).normalize() : finger.clone();
       const pair = f === "index" ? "middle" : f === "middle" ? "index" : null;
       const spreadAxis = pair && rest.has(`${pair}_${s}`) ? d.clone().cross(sub(P(name), P(`${pair}_${s}`))).normalize() : null;
-      fingers[s].push({ name, dir: d, curlAxis: d.clone().cross(palm).normalize(), spreadAxis, slot: FINGER_SLOT[f] });
+      const len = Math.max(0.02, hand - P(name).distanceTo(wr));
+      fingers[s].push({ name, dir: d, curlAxis: d.clone().cross(palm).normalize(), spreadAxis, slot: FINGER_SLOT[f], len });
     }
     const hip = P(`thigh_${s}`), knee = P(`shin_${s}`), ankle = P(`foot_${s}`);
+    const thigh = knee.distanceTo(hip), shin = ankle.distanceTo(knee);
     leg[s] = {
-      thigh: knee.distanceTo(hip),
-      shin: ankle.distanceTo(knee),
+      thigh,
+      shin,
       dirThigh: sub(knee, hip).normalize(),
       dirShin: sub(ankle, knee).normalize(),
-      margin: [0, 0],
+      thighS: [0.5, 1].map((k): LimbSample => ({ len: thigh * k, radius: 0, rest: v(), restClear: 0, frame: "hips" })),
+      shinS: [0.5, 1].map((k): LimbSample => ({ len: shin * k, radius: 0, rest: v(), restClear: 0, frame: "hips" })),
       kneeX: Math.abs(knee.x),
       ankleX: Math.abs(ankle.x),
     };
@@ -157,19 +194,84 @@ export function bindRig(rig: RigInfo): Binding {
     height: rig.height,
     restFootY: Math.min(P("foot_L").y, P("foot_R").y),
     headTop: ((t: Band) => new THREE.Vector3(t.cx, t.y1, t.cz))(bands.reduce((a, c) => (c.y1 > a.y1 ? c : a))),
+    neckY: Math.min(P("upperarm_L").y, P("upperarm_R").y),
   };
-  // Margins: limbs keep about their own thickness away from the body, but never need more room than the rest pose has.
+  // Margins: each limb point keeps its flesh thickness away from the body, but never needs more room than the rest
+  // pose gives it.
   const D = restDeltas();
+  // The bands only approximate the skinned body: keep a centimetre more than the flesh thickness.
+  const fit = (list: LimbSample[], from: V3, dir: V3, radius: number) => {
+    for (const sm of list) {
+      sm.radius = radius + 0.01;
+      sm.rest = from.clone().addScaledVector(dir, sm.len);
+      sm.restClear = clearance(b, D, sm.rest).c - 0.004;
+    }
+  };
+  const r = (name: BoneName, fallback: number) => flesh.get(name) ?? fallback;
   for (const s of SIDES) {
-    const a = arm[s];
-    const thick = 0.3 * a.upper;
-    const e = P(`forearm_${s}`), w = P(`hand_${s}`), t = w.clone().addScaledVector(a.dirFore, a.hand * 0.7);
-    a.margin = [e, w, t].map((p) => Math.min(thick, clearance(b, D, p).c - 0.004)) as ArmRest["margin"];
-    const l = leg[s];
-    const lt = 0.3 * l.thigh;
-    l.margin = [P(`shin_${s}`), P(`foot_${s}`)].map((p) => Math.min(lt, clearance(b, D, p).c - 0.004)) as LegRest["margin"];
+    const a = arm[s], l = leg[s];
+    fit(a.upperS, P(`upperarm_${s}`), a.dirUpper, r(`upperarm_${s}`, 0.28 * a.upper));
+    fit(a.foreS, P(`forearm_${s}`), a.dirFore, r(`forearm_${s}`, 0.24 * a.fore));
+    fit(a.handS, P(`hand_${s}`), a.finger, r(`forearm_${s}`, 0.24 * a.fore));
+    fit(l.thighS, P(`thigh_${s}`), l.dirThigh, r(`thigh_${s}`, 0.3 * l.thigh));
+    fit(l.shinS, P(`shin_${s}`), l.dirShin, r(`shin_${s}`, 0.25 * l.shin));
   }
   return b;
+}
+
+/**
+ * Flesh around the limb bones, measured on the Arms and Legs meshes at rest: per segment the thickness (90th
+ * percentile distance of its vertices from the bone), and for hand_* the reach from the wrist to the finger tips.
+ */
+function limbFlesh(top: THREE.Object3D, origin: V3, rest: Map<BoneName, RestBone>): Map<BoneName, number> {
+  const next: Partial<Record<BoneName, BoneName>> = {};
+  for (const s of SIDES) {
+    next[`upperarm_${s}`] = `forearm_${s}`;
+    next[`forearm_${s}`] = `hand_${s}`;
+    next[`thigh_${s}`] = `shin_${s}`;
+    next[`shin_${s}`] = `foot_${s}`;
+  }
+  const dist = new Map<BoneName, number[]>();
+  const add = (n: BoneName, d: number) => (dist.get(n) ?? dist.set(n, []).get(n)!).push(d);
+  const p = v(), si = new THREE.Vector4(), sw = new THREE.Vector4(), seg = new THREE.Line3(), q = v();
+  for (const meshName of [MESH_NAMES.arms, MESH_NAMES.legs]) {
+    top.getObjectByName(meshName)?.traverse((o) => {
+      const mesh = o as THREE.SkinnedMesh;
+      if (!mesh.isSkinnedMesh) return;
+      const g = mesh.geometry;
+      for (let i = 0; i < g.getAttribute("position").count; i++) {
+        si.fromBufferAttribute(g.getAttribute("skinIndex") as THREE.BufferAttribute, i);
+        sw.fromBufferAttribute(g.getAttribute("skinWeight") as THREE.BufferAttribute, i);
+        let k = 0;
+        for (let c = 1; c < 4; c++) if (sw.getComponent(c) > sw.getComponent(k)) k = c;
+        let name = mesh.skeleton.bones[si.getComponent(k)]?.name as BoneName;
+        if (name?.match(/^(thumb|index|middle|ring)_/)) name = `hand_${name.slice(-1)}` as BoneName;
+        if (!name || !rest.has(name)) continue;
+        mesh.getVertexPosition(i, p).applyMatrix4(mesh.matrixWorld).sub(origin);
+        const to = next[name];
+        if (to) add(name, seg.set(rest.get(name)!.pos, rest.get(to)!.pos).closestPointToPoint(p, true, q).distanceTo(p));
+        else if (name.startsWith("hand_")) add(name, p.distanceTo(rest.get(name)!.pos));
+      }
+    });
+  }
+  const out = new Map<BoneName, number>();
+  for (const [n, d] of dist) if (d.length > 20) out.set(n, d.sort((a, b) => a - b)[Math.floor(d.length * 0.9)]);
+  return out;
+}
+
+/**
+ * The palm's normal: across the knuckle row, on the thumb's side. Without fingers to tell, a relaxed hand is taken to
+ * face the body.
+ */
+function palmNormal(s: Side, finger: V3, knuckles: V3[], thumb: V3 | null, centre: V3 | null): V3 {
+  const towardsBody = new THREE.Vector3(-sideSign(s), 0, 0);
+  let n = towardsBody;
+  if (knuckles.length >= 2) {
+    const across = sub(knuckles[knuckles.length - 1], knuckles[0]);
+    n = finger.clone().cross(across);
+    if (thumb && centre ? sub(thumb, centre).dot(n) < 0 : n.dot(towardsBody) < 0) n.negate();
+  }
+  return n.addScaledVector(finger, -n.dot(finger)).normalize();
 }
 
 function restDeltas(): Map<BoneName, Q> {
@@ -296,6 +398,29 @@ function pushOut(b: Binding, s: Posed, p: V3, margin: number, side: Side): V3 | 
   return fromRest(b, s.D, s.P, band.bone, new THREE.Vector3(band.cx + dx * k, q.y, band.cz + dz * k));
 }
 
+/**
+ * Aim a segment from `base` along `dir` so none of its sample points sinks into the body: the worst one is pushed
+ * out first and the segment turned towards it, until all are clear.
+ */
+function clearSegment(b: Binding, s: Posed, base: V3, dir: V3, list: LimbSample[], side: Side): V3 {
+  let d = dir;
+  for (let it = 0; it < 10; it++) {
+    let worst: { p: V3; margin: number } | null = null, depth = 0.001;
+    for (const sm of list) {
+      const p = base.clone().addScaledVector(d, sm.len);
+      const c = clearance(b, s.D, p, s.P);
+      const margin = needed(b, s.D, s.P, sm, p, c.band);
+      const over = margin - c.c;
+      if (over > depth) (depth = over), (worst = { p, margin });
+    }
+    if (!worst) break;
+    const q = pushOut(b, s, worst.p, worst.margin + 0.003, side);
+    if (!q) break;
+    d = sub(q, base).normalize();
+  }
+  return d;
+}
+
 function bandAt(b: Binding, y: number): Band {
   let best = b.bands[0];
   for (const band of b.bands) if (Math.abs((band.y0 + band.y1) / 2 - y) < Math.abs((best.y0 + best.y1) / 2 - y)) best = band;
@@ -318,6 +443,18 @@ function frameRotation(f0: V3, n0: V3, f1: V3, n1: V3): Q {
   return new THREE.Quaternion().setFromRotationMatrix(m);
 }
 
+/** Two-bone IK: upper arm and forearm directions from S reaching W (straight towards it when out of reach), the
+ *  elbow bending towards `pole`. */
+function twoBone(S: V3, W: V3, upper: number, fore: number, pole: V3) {
+  const d = Math.min(Math.max(W.distanceTo(S), Math.abs(upper - fore) + 1e-4), upper + fore - 1e-4);
+  const axis = sub(W, S).normalize();
+  const cosA = (upper * upper + d * d - fore * fore) / (2 * upper * d);
+  const perp = pole.clone().addScaledVector(axis, -pole.dot(axis)).normalize();
+  const E = S.clone().addScaledVector(axis, upper * cosA).addScaledVector(perp, upper * Math.sqrt(Math.max(0, 1 - cosA * cosA)));
+  const Wr = S.clone().addScaledVector(axis, d);
+  return { upper: sub(E, S).normalize(), fore: sub(Wr, E).normalize() };
+}
+
 /** Two-bone IK onto a spot of the belly: upper/forearm directions, palm normal and finger direction (world). */
 function bellyArm(b: Binding, s: Posed, side: Side, hold: BellyHold, S: V3) {
   const a = b.arm[side];
@@ -329,7 +466,7 @@ function bellyArm(b: Binding, s: Posed, side: Side, hold: BellyHold, S: V3) {
   const spot = fromRest(b, s.D, s.P, band.bone, new THREE.Vector3(band.cx + sg * band.rx * sn, qy, band.cz + band.rz * cs));
   const R = s.D.get(band.bone)!;
   const N = new THREE.Vector3((sg * sn) / band.rx, 0, cs / band.rz).normalize().applyQuaternion(R);
-  const clear = Math.max(a.margin[1], 0.25 * a.upper) + hold.lift;
+  const clear = a.foreS[a.foreS.length - 1].radius + hold.lift;
   let W = spot.addScaledVector(N, clear);
   const reach = 0.97 * (a.upper + a.fore);
   for (let k = 0; k < 6; k++) {
@@ -338,18 +475,11 @@ function bellyArm(b: Binding, s: Posed, side: Side, hold: BellyHold, S: V3) {
     W = S.clone().addScaledVector(sub(W, S), reach / d);
     W = pushOut(b, s, W, clear, side) ?? W;
   }
-  const dSW = W.distanceTo(S);
-  const d = Math.min(Math.max(dSW, Math.abs(a.upper - a.fore) + 1e-4), a.upper + a.fore - 1e-4);
-  const axis = sub(W, S).normalize();
-  const cosA = (a.upper * a.upper + d * d - a.fore * a.fore) / (2 * a.upper * d);
-  const pole = new THREE.Vector3(sg * 0.8, -0.3, -0.5).applyQuaternion(s.D.get("chest")!);
-  const perp = pole.addScaledVector(axis, -pole.dot(axis)).normalize();
-  const E = S.clone().addScaledVector(axis, a.upper * cosA).addScaledVector(perp, a.upper * Math.sqrt(Math.max(0, 1 - cosA * cosA)));
+  const ik = twoBone(S, W, a.upper, a.fore, new THREE.Vector3(sg * 0.8, -0.3, -0.5).applyQuaternion(s.D.get("chest")!));
   // Fingers lie along the belly, towards its front centre and a little down.
   const tangent = new THREE.Vector3(-sg * band.rx * cs, 0, band.rz * sn).normalize().add(new THREE.Vector3(0, -0.6, 0)).applyQuaternion(R);
   return {
-    upper: sub(E, S).normalize(),
-    fore: sub(W, E).normalize(),
+    ...ik,
     palm: N.clone().negate(),
     finger: tangent.addScaledVector(N, -tangent.dot(N)).normalize(),
   };
@@ -379,34 +509,30 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
       u = nlerp(u, ik.upper, w);
       f = nlerp(f, ik.fore, w);
     }
-    // Hands above the person's head go above the frog's head: its arms are short for its head, so raise them
-    // towards straight up just as much as it takes.
+    // Hands above the person's head go above the frog's head: its arms are short for its head, so they reach (IK)
+    // for a spot just above it, beside the middle, elbows out.
     if (goal.overhead > 0) {
-      const want = fromRest(b, D, P, "head", b.headTop).y + 0.02;
       const sg = sideSign(side);
-      const upU = new THREE.Vector3(0.3 * sg, 1, 0.1).normalize().applyQuaternion(chest);
-      const upF = new THREE.Vector3(0.05 * sg, 1, 0.1).normalize().applyQuaternion(chest);
-      const wristY = (k: number) => S.y + nlerp(u, upU, k).y * a.upper + nlerp(f, upF, k).y * a.fore;
-      if (wristY(0) < want) {
-        let lo = 0, hi = 1;
-        for (let k = 0; k < 7; k++) {
-          const mid = (lo + hi) / 2;
-          if (wristY(mid) < want) lo = mid;
-          else hi = mid;
-        }
-        const k = hi * Math.min(goal.overhead, 1);
-        u = nlerp(u, upU, k);
-        f = nlerp(f, upF, k);
-      }
+      const W = fromRest(b, D, P, "head", b.headTop).add(new THREE.Vector3(0.07 * sg, 0.05, 0.02).applyQuaternion(chest));
+      const up = twoBone(S, W, a.upper, a.fore, new THREE.Vector3(sg, 0.3, -0.2).applyQuaternion(chest));
+      const k = Math.min(goal.overhead, 1);
+      u = nlerp(u, up.upper, k);
+      f = nlerp(f, up.fore, k);
     }
-    for (let k = 0; k < 3; k++) {
+    // Keep every point of the arm and hand out of the body. The hand lies along the forearm, or along the belly when
+    // holding it (then a hand point in the body moves the wrist).
+    const along = a.handS.map((sm) => ({ ...sm, len: a.fore + sm.len }));
+    for (let k = 0; k < 2; k++) {
+      u = clearSegment(b, s, S, u, a.upperS, side);
       const E = S.clone().addScaledVector(u, a.upper);
-      const e2 = pushOut(b, s, E, a.margin[0], side);
-      if (e2) u = sub(e2, S).normalize();
-      const E1 = S.clone().addScaledVector(u, a.upper);
-      for (const [len, m] of [[a.fore, a.margin[1]], [a.fore + a.hand * 0.7, a.margin[2]]]) {
-        const w2 = pushOut(b, s, E1.clone().addScaledVector(f, len), m, side);
-        if (w2) f = sub(w2, E1).normalize();
+      f = clearSegment(b, s, E, f, ik ? a.foreS : [...a.foreS, ...along], side);
+      if (!ik) continue;
+      const hd = nlerp(f, ik.finger, w);
+      for (const sm of a.handS) {
+        const W = E.clone().addScaledVector(f, a.fore);
+        const p = W.clone().addScaledVector(hd, sm.len);
+        const q = pushOut(b, s, p, needed(b, D, P, sm, p, clearance(b, D, p, P).band) + 0.003, side);
+        if (q) f = W.add(q).sub(p).sub(E).normalize();
       }
     }
     const up = `upperarm_${side}` as const, fo = `forearm_${side}` as const, ha = `hand_${side}` as const;
@@ -422,11 +548,23 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
     if (goal.palm && goal.palm.weight > 0) tn = nlerp(tn, goal.palm.dir.clone().applyQuaternion(chest), Math.min(goal.palm.weight, 1));
     const Dha = tf === curF && tn === curN ? Dfo.clone() : frameRotation(curF, curN, tf, tn).multiply(Dfo);
     D.set(ha, Dha);
+    // Fingers curl as asked, less where the tips would go into the body (a fist on the hip).
     const [, , , , spread] = goal.fingers;
     for (const fg of b.fingers[side]) {
-      const q = new THREE.Quaternion().setFromAxisAngle(fg.curlAxis, goal.fingers[fg.slot]);
-      if (fg.spreadAxis && spread) q.premultiply(new THREE.Quaternion().setFromAxisAngle(fg.spreadAxis, spread));
-      D.set(fg.name, Dha.clone().multiply(q));
+      const base = place(b, s, fg.name);
+      const at = (k: number) => {
+        const q = new THREE.Quaternion().setFromAxisAngle(fg.curlAxis, goal.fingers[fg.slot] * k);
+        if (fg.spreadAxis && spread) q.premultiply(new THREE.Quaternion().setFromAxisAngle(fg.spreadAxis, spread));
+        return Dha.clone().multiply(q);
+      };
+      const clearAt = (k: number) => clearance(b, D, base.clone().addScaledVector(fg.dir.clone().applyQuaternion(at(k)), fg.len), P).c > 0.012;
+      let k = 1;
+      if (goal.fingers[fg.slot] > 0 && !clearAt(1)) {
+        let lo = 0;
+        for (let i = 0; i < 6; i++) if (clearAt((lo + k) / 2)) lo = (lo + k) / 2; else k = (lo + k) / 2;
+        k = lo;
+      }
+      D.set(fg.name, at(k));
     }
   }
 
@@ -438,21 +576,25 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
     const H = place(b, s, `thigh_${side}`);
     let t = goal.thigh.clone().normalize();
     let sh = goal.shin.clone().normalize();
-    // Alternate between pushing out of the body and keeping the bone lengths (a few rounds converge). A knee raised
-    // into the belly where the thigh is too short to get round it swings down and out instead (a fat frog's squat).
+    // Keep the thigh and shin out of the body, alternating with the bone lengths. A knee raised into the belly where
+    // the thigh is too short to get round it swings down and out instead (a fat frog's squat).
     const escape = new THREE.Vector3(0.7 * sg, -1, 0.3).normalize();
-    for (let k = 0; k < 5; k++) {
-      let K = H.clone().addScaledVector(t, l.thigh);
-      K = pushOut(b, s, K, l.margin[0], side) ?? K;
-      if (sg * K.x < 0.5 * l.kneeX) K.x = 0.5 * l.kneeX * sg;
-      t = sub(K, H).normalize();
-      for (let j = 1; j <= 8 && clearance(b, D, H.clone().addScaledVector(t, l.thigh), P).c < l.margin[0] - 0.003; j++)
+    const knee = l.thighS[l.thighS.length - 1];
+    for (let k = 0; k < 3; k++) {
+      t = clearSegment(b, s, H, t, l.thighS, side);
+      const K = H.clone().addScaledVector(t, l.thigh);
+      if (sg * K.x < 0.5 * l.kneeX) (K.x = 0.5 * l.kneeX * sg), (t = sub(K, H).normalize());
+      const kneeAt = () => H.clone().addScaledVector(t, l.thigh);
+      const kneeShort = () => {
+        const c = clearance(b, D, kneeAt(), P);
+        return c.c < needed(b, D, P, knee, kneeAt(), c.band) - 0.003;
+      };
+      for (let j = 1; j <= 8 && kneeShort(); j++)
         t = nlerp(t, escape, 0.15);
-      K = H.clone().addScaledVector(t, l.thigh);
-      let A = K.clone().addScaledVector(sh, l.shin);
-      A = pushOut(b, s, A, l.margin[1], side) ?? A;
-      if (sg * A.x < 0.5 * l.ankleX) A.x = 0.5 * l.ankleX * sg;
-      sh = sub(A, K).normalize();
+      const K2 = H.clone().addScaledVector(t, l.thigh);
+      sh = clearSegment(b, s, K2, sh, l.shinS, side);
+      const A = K2.clone().addScaledVector(sh, l.shin);
+      if (sg * A.x < 0.5 * l.ankleX) (A.x = 0.5 * l.ankleX * sg), (sh = sub(A, K2).normalize());
     }
     const th = `thigh_${side}` as const, sn = `shin_${side}` as const, ft = `foot_${side}` as const;
     D.set(th, swing(l.dirThigh.clone().applyQuaternion(D.get("hips")!), t).multiply(D.get("hips")!));
@@ -472,7 +614,7 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
   for (const [k, x] of Object.entries(pose.expressions)) if (x > 0.01) expressions[k as keyof typeof expressions] = Math.min(x, 1);
   return {
     bones,
-    rootOffset: new THREE.Vector3(0, b.restFootY - lowest + Math.max(0, pose.lift), 0),
+    rootOffset: new THREE.Vector3(pose.shift, b.restFootY - lowest + Math.max(0, pose.lift), 0),
     rootYaw: Math.atan2(Math.sin(pose.yaw), Math.cos(pose.yaw)),
     expressions,
   };
@@ -505,15 +647,21 @@ export function jointPositions(b: Binding, frame: PoseFrame): Map<BoneName, V3> 
 export function limbPenetration(b: Binding, frame: PoseFrame): number {
   const s = fk(b, frame);
   let worst = 0;
-  const check = (p: V3, margin: number) => (worst = Math.max(worst, margin - clearance(b, s.D, p, s.P).c));
+  const check = (from: V3, dir: V3, list: LimbSample[]) => {
+    for (const sm of list) {
+      const p = from.clone().addScaledVector(dir, sm.len);
+      const c = clearance(b, s.D, p, s.P);
+      worst = Math.max(worst, needed(b, s.D, s.P, sm, p, c.band) - c.c);
+    }
+  };
   for (const side of SIDES) {
-    const a = b.arm[side];
-    const E = s.P.get(`forearm_${side}`)!, W = s.P.get(`hand_${side}`)!;
-    check(E, a.margin[0]);
-    check(W, a.margin[1]);
-    check(W.clone().addScaledVector(sub(W, E).normalize(), a.hand * 0.7), a.margin[2]);
-    check(s.P.get(`shin_${side}`)!, b.leg[side].margin[0]);
-    check(s.P.get(`foot_${side}`)!, b.leg[side].margin[1]);
+    const a = b.arm[side], l = b.leg[side];
+    const at = (n: BoneName) => s.P.get(n)!;
+    check(at(`upperarm_${side}`), sub(at(`forearm_${side}`), at(`upperarm_${side}`)).normalize(), a.upperS);
+    check(at(`forearm_${side}`), sub(at(`hand_${side}`), at(`forearm_${side}`)).normalize(), a.foreS);
+    check(at(`hand_${side}`), a.finger.clone().applyQuaternion(s.D.get(`hand_${side}`)!), a.handS);
+    check(at(`thigh_${side}`), sub(at(`shin_${side}`), at(`thigh_${side}`)).normalize(), l.thighS);
+    check(at(`shin_${side}`), sub(at(`foot_${side}`), at(`shin_${side}`)).normalize(), l.shinS);
   }
   return worst;
 }

@@ -52,11 +52,11 @@ const hold = (height: number, around: number, lift = 0, weight = 1): BellyHold =
 /** Palm towards the camera. */
 const palmFront = () => ({ dir: new THREE.Vector3(0, 0, 1), weight: 1 });
 
-/** Bend spread over hips, spine and chest (a fat body bends everywhere a bit). */
+/** A round body tips forward mostly at the hips (folding at the spine would crush the belly); twists spread. */
 function torso(p: BodyPose, bend: number, lean = 0, turn = 0) {
-  p.hips = rot(bend * 0.25, lean * 0.3, turn * 0.3);
-  p.spine = rot(bend * 0.35, lean * 0.35, turn * 0.35);
-  p.chest = rot(bend * 0.4, lean * 0.35, turn * 0.35);
+  p.hips = rot(bend * 0.6, lean * 0.5, turn * 0.3);
+  p.spine = rot(bend * 0.2, lean * 0.25, turn * 0.35);
+  p.chest = rot(bend * 0.2, lean * 0.25, turn * 0.35);
 }
 
 const peaceArm = (side: Side, kick = 0): ArmGoal =>

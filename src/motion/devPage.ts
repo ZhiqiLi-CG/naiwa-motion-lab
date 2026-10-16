@@ -8,9 +8,12 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CHARACTER_URL, CORE_BONES, EXPRESSIONS, FINGER_BONES, type BoneName, type MotionSource, type MotionStatus, type PoseFrame, type RigInfo } from "../contracts";
+import type { Track } from "./track";
 import { PROCEDURAL_DANCES } from "./dances";
 import { createMotion } from "./index";
+import { MeshAudit } from "./meshAudit";
 import { limbPenetration, solve } from "./rig";
+import { TrackPlayer } from "./track";
 import { buildTestFrog } from "./testFrog";
 
 const params = new URLSearchParams(location.search);
@@ -136,7 +139,67 @@ const dev = {
   source: null as MotionSource | null,
   frames: 0,
 };
-(window as unknown as { motionDev: typeof dev & { audit: typeof audit } }).motionDev = Object.assign(dev, { audit });
+(window as unknown as { motionDev: typeof dev & { audit: typeof audit; meshAudit: typeof meshAudit; showInside: typeof showInside } }).motionDev = Object.assign(dev, { audit, meshAudit, showInside });
+
+let frogRef: Frog | null = null;
+let auditor: MeshAudit | null = null;
+/**
+ * The real-mesh check over a whole dance (a procedural or track id, or "video" for the analysed upload), posed frame
+ * by frame on the loaded rig: worst extra depth of limb vertices in the Body, when, and on which bone.
+ */
+async function meshAudit(id: string, step = 1 / 30) {
+  const frog = frogRef!;
+  if (!auditor) {
+    applyFrame(frog, null);
+    auditor = new MeshAudit(frog.object);
+  }
+  const b = motion.binding()!;
+  let poseAt: (t: number, dt: number) => PoseFrame | null;
+  let duration: number;
+  if (id === "video") {
+    const player = new TrackPlayer((dev.source as { track(): Track }).track());
+    duration = player.track.duration;
+    poseAt = (t, dt) => ((p) => (p ? solve(b, p) : null))(player.pose(t, dt, false));
+  } else {
+    const src = motion.startDance(id);
+    duration = motion.dances().find((d) => d.id === id)!.duration;
+    await new Promise((r) => setTimeout(r, 100));
+    src.update(0, 1); // past the fade-in, into the second loop
+    for (let t = 0; t < duration - 1 + 1e-9; t += 0.05) src.update(0, Math.min(0.05, duration - 1 - t));
+    poseAt = (_t, dt) => src.update(0, dt);
+  }
+  let worst = { depth: 0, t: 0, where: "" }, bad = 0, frames = 0;
+  const parts: Record<string, number> = {};
+  for (let t = 0; t < duration; t += step) {
+    const f = poseAt(t, step);
+    if (!f) continue;
+    applyFrame(frog, f);
+    const m = auditor.measure();
+    frames++;
+    if (m.depth > 0.01) bad++;
+    if (m.depth > worst.depth) worst = { depth: m.depth, t, where: m.where };
+    for (const [k, d] of Object.entries(m.parts)) parts[k] = Math.max(parts[k] ?? 0, d);
+  }
+  applyFrame(frog, dev.frame);
+  return { id, frames, bad, worst: +worst.depth.toFixed(3), at: +worst.t.toFixed(2), where: worst.where, parts };
+}
+
+// Limb points found inside the body in the shown frame (?inside=1), drawn as red dots.
+const insideDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0xff2020, size: 5, sizeAttenuation: false, depthTest: false }));
+insideDots.renderOrder = 12;
+insideDots.frustumCulled = false;
+scene.add(insideDots);
+function showInside() {
+  const frog = frogRef!;
+  if (!auditor) {
+    applyFrame(frog, null);
+    auditor = new MeshAudit(frog.object);
+    applyFrame(frog, dev.frame);
+  }
+  const m = auditor.measure();
+  insideDots.geometry.setAttribute("position", new THREE.Float32BufferAttribute(m.inside.flatMap((p) => p.toArray()), 3));
+  return { depth: m.depth, where: m.where, parts: m.parts };
+}
 
 /** Worst limb penetration (m) and when, per procedural dance, on the loaded rig. */
 function audit() {
@@ -165,6 +228,7 @@ function use(src: MotionSource) {
 
 async function main() {
   const frog = await loadFrog();
+  frogRef = frog;
   scene.add(frog.object);
   motion.bind(frog.rig);
   await motion.ready();

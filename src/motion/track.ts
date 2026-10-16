@@ -40,11 +40,17 @@ export function frameAt(track: DanceTrack, t: number): LandmarkFrame {
   return { world: lerpLandmarks(A.world, B.world, w), image: lerpLandmarks(A.image, B.image, w) };
 }
 
+/** Where the hips usually are across the picture (image x × aspect): the dancer's home spot. */
+export function trackHome(frames: LandmarkFrame[], aspect: number): number | undefined {
+  const xs = frames.filter((f) => f.image.length >= 33).map((f) => ((f.image[23][0] + f.image[24][0]) / 2) * aspect);
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined;
+}
+
 /** Plays a track at its own pace (or at a given time, for videos in sync). */
 export class TrackPlayer {
   private readonly retarget: Retargeter;
   constructor(readonly track: Track) {
-    this.retarget = new Retargeter({ floor: trackFloor(track.frames) });
+    this.retarget = new Retargeter({ floor: trackFloor(track.frames), home: trackHome(track.frames, track.aspect ?? 1) });
   }
   pose(t: number, dt: number, mirror: boolean): BodyPose | null {
     return this.retarget.pose(frameAt(this.track, t), this.track.aspect ?? 1, dt, mirror);

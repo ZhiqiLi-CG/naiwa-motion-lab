@@ -31,26 +31,34 @@ const ramp = (x: number, a: number, b: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Person-to-frog scale of vertical motion: a person's torso (~0.5 m) moving by 1 → this many frog meters. */
+/** Person-to-frog scale of motion: the person moving by one torso length (~0.5 m) → this many frog meters. */
 const HOP_GAIN = 0.5;
+const TRAVEL_GAIN = 0.3;
+const MAX_TRAVEL = 0.8;
 /** The nose sits a little below the ear line in a level head; undo that so a level head is level. */
 const HEAD_LEVEL = -0.19;
 
 export interface RetargetOptions {
   /** Fixed floor line (image y of the feet when standing), known for recorded tracks; live it is tracked. */
   floor?: number;
+  /** Fixed home of the hips (image x × aspect), known for recorded tracks; live it follows slowly. */
+  home?: number;
 }
 
 export class Retargeter {
   private yaw: number | null = null;
   private floor: number | null;
   private hipBase: number | null = null;
+  private home: number | null;
   private readonly fixedFloor: boolean;
+  private readonly fixedHome: boolean;
   private readonly expr: Record<Expression, number> = { laugh: 0, tongue: 0, blink: 0, surprise: 0 };
 
   constructor(opts: RetargetOptions = {}) {
     this.floor = opts.floor ?? null;
     this.fixedFloor = opts.floor !== undefined;
+    this.home = opts.home ?? null;
+    this.fixedHome = opts.home !== undefined;
   }
 
   /** The frog pose for one frame (dt seconds after the previous), or null when no usable person is in it. */
@@ -73,7 +81,7 @@ export class Retargeter {
     const p = idlePose();
     p.yaw = yaw;
 
-    // Torso: the chest frame from the shoulders and the hip→shoulder line; the hips take part of the bend.
+    // Torso: the chest frame from the shoulders and the hip→shoulder line.
     const hipMid = Q[LM.hipL].clone().add(Q[LM.hipR]).multiplyScalar(0.5);
     const shMid = Q[LM.shoulderL].clone().add(Q[LM.shoulderR]).multiplyScalar(0.5);
     const torsoLen = Math.max(1e-3, shMid.distanceTo(hipMid));
@@ -83,7 +91,8 @@ export class Retargeter {
     const bend = Math.atan2(up.z, up.y);
     limitAngle(C, 1.1);
     const pelvis = Q[LM.hipL].clone().sub(Q[LM.hipR]).normalize();
-    const H = rot(bend * 0.3, -0.8 * Math.asin(clamp(pelvis.y, -0.5, 0.5)), 0.6 * Math.atan2(-pelvis.z, pelvis.x));
+    // A round body tips at the hips rather than folding its belly: the hips take most of the bend.
+    const H = rot(bend * 0.6, -0.8 * Math.asin(clamp(pelvis.y, -0.5, 0.5)), 0.6 * Math.atan2(-pelvis.z, pelvis.x));
     const S = H.clone().slerp(C, 0.5);
     p.hips = H;
     p.spine = H.clone().invert().multiply(S);
@@ -163,6 +172,11 @@ export class Retargeter {
       if (squat > 0) for (const s of SIDES) p.leg[s] = bentLeg(s, Math.min(1.1, squat * 2.5), 0.4);
     }
     p.lift = Math.min(0.35, hop * HOP_GAIN);
+
+    // Side steps: the hips moving across the picture (image right = the person's left = the frog's left).
+    const hipX = ((image[LM.hipL][0] + image[LM.hipR][0]) / 2) * aspect;
+    if (!this.fixedHome) this.home = this.home === null ? hipX : this.home + (hipX - this.home) * (1 - Math.exp(-dt / 3));
+    p.shift = clamp((((hipX - (this.home ?? hipX)) / torsoImg) * TRAVEL_GAIN), -MAX_TRAVEL, MAX_TRAVEL);
 
     // Big gestures → faces: hands on the belly (more so bent over) laugh, both hands up by the head (peace signs) stick the
     // tongue out,

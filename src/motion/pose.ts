@@ -69,6 +69,8 @@ export interface BodyPose {
   leg: Record<Side, LegGoal>;
   /** Height above the planted feet (m), e.g. a hop. */
   lift: number;
+  /** Sideways step from home (m, + towards its left = the viewer's right). */
+  shift: number;
   /** Heading around +Y (rad, + turns to its left). */
   yaw: number;
   expressions: ExpressionWeights;
@@ -113,6 +115,7 @@ export function idlePose(): BodyPose {
     arm: { L: restArm("L"), R: restArm("R") },
     leg: { L: straightLeg("L"), R: straightLeg("R") },
     lift: 0,
+    shift: 0,
     yaw: 0,
     expressions: {},
   };
@@ -174,6 +177,7 @@ export function blendPose(a: BodyPose, b: BodyPose, w: number): BodyPose {
     arm: { L: blendArm(a.arm.L, b.arm.L, w), R: blendArm(a.arm.R, b.arm.R, w) },
     leg: { L: blendLeg(a.leg.L, b.leg.L, w), R: blendLeg(a.leg.R, b.leg.R, w) },
     lift: a.lift + (b.lift - a.lift) * w,
+    shift: a.shift + (b.shift - a.shift) * w,
     yaw: a.yaw + dyaw * w,
     expressions,
   };
@@ -201,6 +205,7 @@ export function mirrorPose(p: BodyPose): BodyPose {
     arm: { L: mirrorArm(p.arm.R), R: mirrorArm(p.arm.L) },
     leg: { L: mirrorLeg(p.leg.R), R: mirrorLeg(p.leg.L) },
     lift: p.lift,
+    shift: -p.shift,
     yaw: -p.yaw,
     expressions: { ...p.expressions },
   };
