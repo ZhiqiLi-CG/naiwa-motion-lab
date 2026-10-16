@@ -11,6 +11,8 @@ export interface RecorderOptions {
   maxSide?: number;
   /** Called with the clip when the length cap stopped the recording (stop() then resolves with the same clip). */
   onAutoStop?: (rec: Recording) => void;
+  /** The browser's recorder failed (the encoder gave up): the recorder is idle again and stop() rejects. */
+  onError?: (err: Error) => void;
 }
 
 /** MP4 (H.264, AAC where the browser can encode it) plays and shares best on phones and in WeChat; WebM otherwise. */
@@ -83,12 +85,20 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
+      const idle = () => {
+        // Only the frame track is ours; the audio tracks belong to the sfx stream and keep running.
+        for (const t of stream.getVideoTracks()) t.stop();
+        comp.stop();
+        clearTimeout(cap);
+        rec = null;
+        stopping = null;
+        stopRec = null;
+      };
+      let failed = false;
       const finished = new Promise<Recording>((resolve, reject) => {
         mr.onstop = () => {
-          // Only the frame track is ours; the audio tracks belong to the sfx stream and keep running.
-          for (const t of stream.getVideoTracks()) t.stop();
-          comp.stop();
-          clearTimeout(cap);
+          if (failed) return;
+          idle();
           const type = mr.mimeType || mimeType || "video/webm";
           const blob = new Blob(chunks, { type });
           if (last) URL.revokeObjectURL(last.url);
@@ -99,13 +109,18 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
             url: URL.createObjectURL(blob),
             fileName: fileName(new Date(), type),
           };
-          rec = null;
-          stopping = null;
-          stopRec = null;
           resolve(last);
         };
-        mr.onerror = (e) => reject((e as ErrorEvent).error ?? new Error("recording failed"));
+        mr.onerror = (e) => {
+          failed = true;
+          idle();
+          const err = (e as ErrorEvent).error ?? new Error("recording failed");
+          reject(err);
+          opts.onError?.(err);
+        };
       });
+      // A failure is reported through onError; a stop() never called must not leave an unhandled rejection.
+      finished.catch(() => undefined);
       const stopNow = () => {
         if (!stopping) {
           stopping = finished;
