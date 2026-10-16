@@ -41,14 +41,15 @@ const encode = (dir, fps, out) =>
   ffmpeg(["-framerate", String(fps), "-i", path.join(dir, "%05d.jpg"), "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
     "-c:v", "libx264", "-crf", "22", "-pix_fmt", "yuv420p", out]);
 
-export async function renderChecks({ session, dir, id, fps, raw, track, log }) {
+/** reference: one raw run (per frame { image, world } or null), drawn thin under the cleaned track. */
+export async function renderChecks({ session, dir, id, fps, reference, track, log }) {
   const view = viewOf(track.window.image);
-  const fwd = raw.forward;
+  const fwd = reference;
   const tmp = path.join(dir, "panels");
   const a = track.loopStart;
   const len = track.frames.length;
 
-  // The whole window: the forward run (thin) and the cleaned track (thick), the loop marked.
+  // The whole window: the reference run (thin) and the cleaned track (thick), the loop marked.
   const win = track.window.world.map((_, i) => ({
     frame: i,
     label: `${i}${i >= a && i < a + len ? ` loop ${i - a}` : ""}`,
