@@ -86,6 +86,18 @@ describe("encodeConfig / decodeConfig", () => {
     expect(Object.keys(future.params!)).toHaveLength(5);
   });
 
+  it("round-trips region softness by name and skips unknown regions", () => {
+    const params = { ...initialState().params, regionSoftness: { belly: 1, arm: 0.2, foot: 0 } };
+    const hash = encodeConfig(state({ params }));
+    expect(hash).toContain("g=belly:100,arm:20,foot:0");
+    expect(decodeConfig(hash).params).toEqual(params);
+    expect(decodeConfig("#g=belly:150,tail:30,arm:x,leg").params).toEqual({
+      ...initialState().params,
+      regionSoftness: { belly: 1 },
+    });
+    expect(encodeConfig(state())).not.toContain("g=");
+  });
+
   it("takes a preset's params when the link has a preset but no k", () => {
     const d = decodeConfig("#p=rubber");
     expect(d.params).toEqual(MATERIAL_PRESETS.find((p) => p.id === "rubber")!.params);

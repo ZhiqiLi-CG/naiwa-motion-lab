@@ -1,4 +1,7 @@
-/** Sound effects: one AudioContext, every effect through the limiting master bus, to the speakers and to a stream. */
+/**
+ * Sound: one AudioContext; every effect and the attached video's music go through the master bus, then to the
+ * speakers and to a stream for recording.
+ */
 import type { Sfx, SfxKind } from "../contracts";
 import { VOICES, createMaster } from "./synth";
 
@@ -24,7 +27,12 @@ const RESUME_GRACE_MS = 1000;
 export function createSfx(): Sfx {
   let ctx: AudioContext | null = null;
   let bus: GainNode | null = null;
+  let music: GainNode | null = null;
+  let mute: GainNode | null = null;
   let streamDest: MediaStreamAudioDestinationNode | null = null;
+  // A media element can feed WebAudio only once in its life, so its source node is kept for re-attaching.
+  const musicSources = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
+  let musicEl: HTMLMediaElement | null = null;
   let enabled = true;
   let unlockedAt = -Infinity;
   let speechEnd = 0;
@@ -36,12 +44,14 @@ export function createSfx(): Sfx {
     if (typeof AudioContext === "undefined") return null;
     ctx = new AudioContext({ latencyHint: "interactive" });
     const master = createMaster(ctx);
-    bus = ctx.createGain();
-    bus.gain.value = enabled ? 1 : 0;
-    bus.connect(master.input);
+    bus = master.input;
+    music = master.music;
+    mute = ctx.createGain();
+    mute.gain.value = enabled ? 1 : 0;
     streamDest = ctx.createMediaStreamDestination();
-    master.output.connect(ctx.destination);
-    master.output.connect(streamDest);
+    master.output.connect(mute);
+    mute.connect(ctx.destination);
+    mute.connect(streamDest);
     return ctx;
   }
 
@@ -59,7 +69,7 @@ export function createSfx(): Sfx {
     },
     setEnabled(on) {
       enabled = on;
-      if (ctx && bus) bus.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.02);
+      if (ctx && mute) mute.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.02);
     },
     play(kind, strength = 0.6) {
       if (!enabled || !ctx || !bus) return;
@@ -82,6 +92,23 @@ export function createSfx(): Sfx {
     get stream() {
       ensure();
       return streamDest?.stream ?? null;
+    },
+    attachMusic(el) {
+      if (el === musicEl) return;
+      // Once captured, an element sounds only through the graph: the detached one falls silent, no echo is possible.
+      if (musicEl) musicSources.get(musicEl)?.disconnect();
+      musicEl = el;
+      const c = el && ensure();
+      if (!el || !c || !music) return;
+      let src = musicSources.get(el);
+      if (!src) {
+        src = c.createMediaElementSource(el);
+        musicSources.set(el, src);
+      }
+      // Its sound is wanted now (a muted element would feed silence); loudness is the mix's business.
+      el.muted = false;
+      src.connect(music);
+      if (c.state !== "running" && performance.now() - unlockedAt < RESUME_GRACE_MS) void c.resume();
     },
   };
 }

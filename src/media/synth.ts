@@ -450,8 +450,11 @@ const laugh: VoiceFn = (v) => {
 
 export const VOICES: Record<SfxKind, VoiceFn> = { boing, squish, slap, pop, whoosh, land, giggle, laugh, pump, ball };
 
-/** The bus every effect goes through: rumble filter, compressor, and a soft clipper so the sum never clips. */
-export function createMaster(ctx: BaseAudioContext): { input: GainNode; output: AudioNode } {
+/**
+ * The mix. Effects go through a rumble filter and a compressor; music (a video's own sound) joins after the
+ * compressor so it neither pumps the effects nor is squashed by them; a soft clipper on the sum means nothing clips.
+ */
+export function createMaster(ctx: BaseAudioContext): { input: GainNode; music: GainNode; output: AudioNode } {
   const input = ctx.createGain();
   input.gain.value = 0.9;
   const rumble = filter(ctx, "highpass", 35);
@@ -461,14 +464,21 @@ export function createMaster(ctx: BaseAudioContext): { input: GainNode; output: 
   comp.ratio.value = 10;
   comp.attack.value = 0.002;
   comp.release.value = 0.18;
+  // The shaper's curve spans ±2 of signal over its ±1 input, so everything enters it at half level.
   const makeup = ctx.createGain();
-  // The shaper's curve spans ±2 of signal over its ±1 input.
   makeup.gain.value = 0.5 * 1.25;
+  const music = ctx.createGain();
+  music.gain.value = 0.5 * MUSIC_LEVEL;
   const clip = ctx.createWaveShaper();
   clip.curve = softClipCurve();
   clip.oversample = "2x";
-  return { input, output: chain(input, rumble, comp, makeup, clip) };
+  chain(input, rumble, comp, makeup, clip);
+  music.connect(clip);
+  return { input, music, output: clip };
 }
+
+/** Mastered music peaks near full scale; this leaves the effects room on top of it. */
+const MUSIC_LEVEL = 0.6;
 
 /** Linear to 0.6, then a tanh knee that never passes 0.97, over signal ±2. */
 function softClipCurve(): Float32Array<ArrayBuffer> {
