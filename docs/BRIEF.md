@@ -14,7 +14,9 @@ text, a face). The UI is in Chinese.
 merging into a huge body, cream belly patch, small green eyes on the sides of the head, wide mouth (big open laugh
 with teeth, or grinning with the tongue out), short arms with dark olive-grey hands, short thick legs with dark frog
 feet; its signature move is holding its belly and laughing. **Do not turn it into another character.** It is a
-**soft body + skeleton** simulation: rigid bones inside, jelly flesh outside.
+**soft body + skeleton** simulation: rigid bones inside, jelly flesh outside. The soft body is the product's
+signature feature: volume kept, believable jiggle and decay, smooth local dents, hands sinking into the belly, squash
+on landing, nothing passing through it, no jitter at rest.
 
 The 3D model (mesh, skeleton, skin weights, shape keys) is being built in Blender by a Codex session and lands at
 `public/models/naiwa.glb` following `docs/character-contract.md` (an early version first, refined later). Until it
