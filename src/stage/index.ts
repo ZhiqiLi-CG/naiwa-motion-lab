@@ -28,12 +28,16 @@ export interface PlayStage extends Stage {
   setGestureHandler(h: StageGestureHandler): void;
   /** Ease back to the default view (orbit and zoom), e.g. when the frog is reset. */
   resetView(): void;
+  /** Ease to a view (radians; yaw 0 = in front of the frog, π/2 = its left side; zoom 1 = default framing), e.g. for
+   *  front / side / top buttons. Unset fields keep their value. */
+  setView(v: { yaw?: number; pitch?: number; zoom?: number }): void;
   readonly info: StageInfo;
 }
 
-/** Key light relative to the camera's heading: up and to the camera's left, so the side you see is lit and the
- *  shadow falls behind to the right whichever way the stage is turned. */
-const KEY_OFFSET = new THREE.Vector3(-2.6, 3.4, 1.7);
+/** Key light relative to the camera's heading: up and well to the camera's left, so the side you see is lit, the
+ *  shadow falls behind to the right whichever way the stage is turned, and the belly is lit at a raking angle where
+ *  every dent and bulge changes its shading (the themes keep the ambient environment low for the same reason). */
+const KEY_OFFSET = new THREE.Vector3(-3.3, 2.7, 1.0);
 const SHADOW_HALF = 2.4;
 /** Phones get a lower pixel-ratio cap: the frog and the physics need the budget more than extra pixels. */
 const DPR_CAP_DESKTOP = 2;
@@ -196,6 +200,7 @@ export function createStage(container: HTMLElement): PlayStage {
     setBalls: (b) => balls.set(b),
     setTheme,
     resetView: () => rig.reset(),
+    setView: (v) => rig.setView(v),
     frame(dt) {
       const t0 = performance.now();
       dt = Math.min(Math.max(dt, 0), 0.1);

@@ -116,11 +116,20 @@ export class CameraRig {
     this.trauma = clamp(this.trauma + amount, 0, 1);
   }
 
-  reset(): void {
-    this.yawGoal = DEFAULT_YAW;
-    this.pitchGoal = DEFAULT_PITCH;
-    this.zoomGoal = 1;
+  /** Ease to a view: yaw around the frog (0 = in front of it), pitch above the horizontal, zoom (1 = default). */
+  setView(v: { yaw?: number; pitch?: number; zoom?: number }): void {
     this.yawRate = this.pitchRate = 0;
+    if (v.yaw !== undefined) {
+      // The short way round from where the camera is now.
+      const d = Math.atan2(Math.sin(v.yaw - this.yawGoal), Math.cos(v.yaw - this.yawGoal));
+      this.yawGoal += d;
+    }
+    if (v.pitch !== undefined) this.pitchGoal = clamp(v.pitch, PITCH_MIN, PITCH_MAX);
+    if (v.zoom !== undefined) this.zoomGoal = clamp(v.zoom, ZOOM_MIN, ZOOM_MAX);
+  }
+
+  reset(): void {
+    this.setView({ yaw: DEFAULT_YAW, pitch: DEFAULT_PITCH, zoom: 1 });
   }
 
   /** Jump to the goals and the focus (first frame). */

@@ -48,8 +48,8 @@ export const THEMES: Record<ThemeName, StageTheme> = {
     pool: 0xfff3d6,
     poolStrength: 0.1,
     keyColor: 0xfff1dc,
-    keyIntensity: 3.2,
-    envIntensity: 0.55,
+    keyIntensity: 5,
+    envIntensity: 0.28,
     exposure: 1,
     env: {
       top: 0xbfe2ff,
@@ -57,11 +57,14 @@ export const THEMES: Record<ThemeName, StageTheme> = {
       ground: 0x8fa597,
       domeIntensity: 0.9,
       panels: [
-        // Big warm softbox front-left above (same side as the key light), a cool fill, a rim behind, a top light.
-        { color: 0xfff1de, intensity: 5, position: [-3.2, 4.2, 3.6], size: [4, 3] },
+        // Positions are relative to the camera's heading (+z towards the camera): a big warm softbox on the key
+        // light's side, a cool fill, a rim strip behind, a top light, and a thin strip above the camera whose
+        // reflection runs across the belly and bends with every dent.
+        { color: 0xfff1de, intensity: 5, position: [-4.2, 3.4, 1.8], size: [4, 3] },
         { color: 0xe4f0ff, intensity: 1.1, position: [4.5, 1.8, 2.6], size: [3, 3] },
         { color: 0xffffff, intensity: 4.5, position: [1.5, 3.2, -4.8], size: [6, 1.6] },
         { color: 0xffffff, intensity: 1.4, position: [0, 6, 0], size: [3, 3] },
+        { color: 0xffffff, intensity: 4, position: [0, 2.8, 4.6], size: [3.6, 0.45] },
       ],
     },
   },
@@ -78,8 +81,8 @@ export const THEMES: Record<ThemeName, StageTheme> = {
     pool: 0xffd59a,
     poolStrength: 0.9,
     keyColor: 0xfff0dc,
-    keyIntensity: 2.8,
-    envIntensity: 0.75,
+    keyIntensity: 4.4,
+    envIntensity: 0.42,
     exposure: 1,
     env: {
       top: 0x2a2f6e,
@@ -87,9 +90,10 @@ export const THEMES: Record<ThemeName, StageTheme> = {
       ground: 0x2c2442,
       domeIntensity: 0.5,
       panels: [
-        { color: 0xfff0dc, intensity: 4.6, position: [-3.2, 4.2, 3.6], size: [3.5, 3] },
+        { color: 0xfff0dc, intensity: 4.6, position: [-4.2, 3.4, 1.8], size: [3.5, 3] },
         { color: 0xbfc8ff, intensity: 1.1, position: [4.5, 1.8, 2.6], size: [3, 3] },
         { color: 0x9fd8ff, intensity: 3.6, position: [0.5, 3.2, -4.8], size: [6, 1.6] },
+        { color: 0xffffff, intensity: 3, position: [0, 2.8, 4.6], size: [3.6, 0.45] },
       ],
     },
   },

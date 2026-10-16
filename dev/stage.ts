@@ -89,17 +89,18 @@ const react = (kind: FrogEvent["kind"], point: THREE.Vector3, strength: number, 
 /** A stand-in for the simulation's dent: the poked spot is pushed in (Gaussian), springs back and overshoots into
  *  a bulge, with a raised ring around it. Only to judge how dents and jiggle read under the stage's lighting. */
 const dent = { at: new THREE.Vector3(), dir: new THREE.Vector3(), amp: 0, vel: 0, held: false };
-const DENT_SIGMA = 0.11;
+const DENT_SIGMA = 0.06;
 
-function poke(hit: THREE.Intersection, strength: number, ray: THREE.Ray) {
+function poke(hit: THREE.Intersection, strength: number, ray: THREE.Ray, hold = false) {
   const at = hit.point;
-  react("poke", at, strength, region(hit));
+  if (!hold) react("poke", at, strength, region(hit));
   const inv = toy.clone().invert();
   dent.at.copy(at).applyMatrix4(inv);
   dent.dir.copy(ray.direction).transformDirection(inv);
-  dent.amp = 0.07 * strength;
+  dent.amp = 0.045 * strength;
   dent.vel = 0;
-  frog.squashVel += 2 * strength;
+  dent.held = hold;
+  if (!hold) frog.squashVel += 2 * strength;
 }
 
 /* ---------------------------------------------------------------------------------------------------------------- */
@@ -199,8 +200,11 @@ const pct = (a: number[], q: number) => (a.length ? [...a].sort((x, y) => x - y)
 
 let last = performance.now();
 let wasAir = false;
+/** Frozen: the frog's own time stands still (for before/after screenshots of a dent); the stage keeps running. */
+let frozen = false;
 function tick(now: number) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const frameDt = Math.min(0.05, (now - last) / 1000);
+  const dt = frozen ? 0 : frameDt;
   push(samples.frame, now - last);
   last = now;
 
@@ -252,7 +256,7 @@ function tick(now: number) {
     let x = restBody[i], y = restBody[i + 1], z = restBody[i + 2];
     if (Math.abs(dent.amp) > 1e-4) {
       const r2 = (x - da.x) ** 2 + (y - da.y) ** 2 + (z - da.z) ** 2;
-      const k = dent.amp * (Math.exp(-r2 / s2) - 0.3 * Math.exp(-r2 / (s2 * 3.6)));
+      const k = dent.amp * (Math.exp(-r2 / s2) - 0.35 * Math.exp(-r2 / (s2 * 2.2)));
       x += dd.x * k;
       y += dd.y * k;
       z += dd.z * k;
@@ -297,7 +301,7 @@ function tick(now: number) {
     query = gl.createQuery()!;
     gl.beginQuery(timerExt.TIME_ELAPSED_EXT, query);
   }
-  stage.frame(dt);
+  stage.frame(frameDt);
   if (query && timerExt) {
     gl.endQuery(timerExt.TIME_ELAPSED_EXT);
     pending.push(query);
@@ -362,13 +366,15 @@ Object.assign(window, {
       const r = stage.canvas.getBoundingClientRect();
       return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height];
     },
+    freeze(on = true) {
+      frozen = on;
+    },
     /** Poke the frog where the camera's view through (ndcX, ndcY) hits it (default: the belly), for screenshots. */
     poke(ndcX = 0.02, ndcY = -0.05, strength = 1, hold = false) {
       const r = new THREE.Raycaster();
       r.setFromCamera(new THREE.Vector2(ndcX, ndcY), stage.camera);
       const hit = hitFrog(r.ray);
-      if (hit) poke(hit, strength, r.ray);
-      dent.held = hold;
+      if (hit) poke(hit, strength, r.ray, hold);
       return !!hit;
     },
     /** Pop a showcase of effects and resolve once they are mid-flight. */
