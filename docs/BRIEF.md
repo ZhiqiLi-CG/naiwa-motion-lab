@@ -8,7 +8,8 @@ A web page. Someone opens the link and plays with 奶蛙: pokes and slaps its bi
 throws it, changes how soft and bouncy it is, makes it dance with their webcam or an uploaded dance video (or one of
 the built-in dances), and records a funny clip to share. No install, no server GPU, no training: everything runs in
 the browser. **Fun comes first**: every touch should feel squishy and get a reaction (wobble, sound, comic "DUANG~"
-text, a face). The UI is in Chinese.
+text, a face). The interface switches between 中文 and English (src/i18n.ts: keep every user-visible string as
+{ zh, en } and show it with tr()).
 
 ## The character
 
