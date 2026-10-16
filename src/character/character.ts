@@ -1,4 +1,4 @@
-/** The rendered 奶蛙 built from a contract scene (the GLB or the placeholder): rig spec, soft Body, face and life. */
+/** The rendered 奶蛙 built from a contract scene (the GLB or the placeholder): rig spec, soft flesh, face and life. */
 import * as THREE from "three";
 import {
   EXPRESSIONS,
@@ -7,6 +7,7 @@ import {
   type Character,
   type Expression,
   type ExpressionWeights,
+  type FleshRegion,
   type FrogEvent,
   type PoseFrame,
   type RigBone,
@@ -15,11 +16,12 @@ import {
 } from "../contracts";
 import { CharacterAssetError } from "./asset";
 import { aimEye, makeEye, makeRivet, updateRivet, type Eye, type Rivet } from "./face";
+import { buildFlesh, showFlesh, type FleshPiece, type FleshSet } from "./flesh";
 import { Life, type Mood } from "./life";
 import { boneExtents, findSkeleton, forwardKinematics, restPoints, type RestSkeleton } from "./rig";
-import { BodySkin, softSkinMaterial, tieRoots, type RootTie } from "./skin";
+import { softSkinMaterial, tieRoots, type RootTie } from "./skin";
 import { Stance, type ArmRest } from "./stance";
-import { checkSurface, surfaceProblems, weld, type SurfaceReport } from "./surface";
+import type { SurfaceReport } from "./surface";
 
 /** The character with what the contract does not cover yet (all optional to use). */
 export interface NaiwaCharacter extends Character {
@@ -30,6 +32,8 @@ export interface NaiwaCharacter extends Character {
   onMood(cb: (mood: Mood, prev: Mood) => void): () => void;
   /** Topology of the welded Body handed to the simulation, and how many render vertices it came from. */
   readonly bodyReport: SurfaceReport & { renderVertices: number };
+  /** Which limbs are soft flesh (closed shells in the asset) and, for rigid ones, why not. */
+  readonly limbReport: { soft: string[]; rigid: { mesh: string; reasons: string[] }[] };
   /** Turn its own life (blinking, breathing, moods, idle motion, reactions) on or off, e.g. for stills. */
   setLively(on: boolean): void;
 }
@@ -39,6 +43,7 @@ type Part = THREE.SkinnedMesh;
 /** Expression easing (1/s): quick to come, slower to go. */
 const ATTACK = 22;
 const RELEASE = 9;
+const NO_EXPRESSION: Record<Expression, number> = { laugh: 0, tongue: 0, blink: 0, surprise: 0 };
 
 export function createCharacter(scene: THREE.Object3D, source: "glb" | "placeholder", url: string): NaiwaCharacter {
   scene.updateMatrixWorld(true);
@@ -68,19 +73,27 @@ export function createCharacter(scene: THREE.Object3D, source: "glb" | "placehol
   return new NaiwaFrog(scene, source, url, skel, parts);
 }
 
+const side = (c: THREE.Vector3) => (c.x >= 0 ? "L" : "R");
+function bodyRegion(bone: BoneName, softness: number | undefined): FleshRegion {
+  if (bone === "head") return "head";
+  return softness !== undefined && softness >= 0.6 ? "belly" : "body";
+}
+const armRegion = (bone: BoneName): FleshRegion => (/^(hand|thumb|index|middle|ring)_/.test(bone) ? "hand" : "arm");
+const legRegion = (bone: BoneName): FleshRegion => (/^foot_/.test(bone) ? "foot" : "leg");
+
 class NaiwaFrog implements NaiwaCharacter {
   readonly object = new THREE.Group();
   readonly rig: RigInfo;
   readonly spec: RigSpec;
   readonly bodyReport: SurfaceReport & { renderVertices: number };
+  readonly limbReport: { soft: string[]; rigid: { mesh: string; reasons: string[] }[] } = { soft: [], rigid: [] };
   mood: Mood = "calm";
 
   private skel: RestSkeleton;
-  private skin: BodySkin;
-  private bodyParts: { mesh: THREE.Mesh; map: Uint32Array }[] = [];
-  private skinBones: BoneName[];
-  private deltas: THREE.Matrix4[];
-  private limbs: { mesh: Part; tie: RootTie; offset: THREE.BufferAttribute; toLocal: THREE.Matrix3 }[] = [];
+  private body: FleshSet;
+  private softLimbs: FleshSet[] = [];
+  /** Limb meshes that stay rigid skinned meshes, their roots moved with the Body on the GPU. */
+  private rigidLimbs: { tie: RootTie; offset: THREE.BufferAttribute; toLocal: THREE.Matrix3 }[] = [];
   private rivets: Rivet[] = [];
   private eyes: Eye[] = [];
   private morphMeshes: { mesh: THREE.Mesh; slot: Partial<Record<Expression, number>> }[] = [];
@@ -89,7 +102,6 @@ class NaiwaFrog implements NaiwaCharacter {
   private time = 0;
 
   // Latest simulated state (copied in applySim) and what the bones show.
-  private simBody: Float32Array;
   private simBones = new Map<BoneName, THREE.Matrix4>();
   private haveSim = new Set<BoneName>();
   private boneWorld = new Map<BoneName, THREE.Matrix4>();
@@ -99,14 +111,14 @@ class NaiwaFrog implements NaiwaCharacter {
   private upright = 1;
 
   private requested: ExpressionWeights = {};
-  private weights: Record<Expression, number> = { laugh: 0, tongue: 0, blink: 0, surprise: 0 };
+  private weights: Record<Expression, number> = { ...NO_EXPRESSION };
   private lookTarget: THREE.Vector3 | null = null;
   private cameraPos = new THREE.Vector3(0, 0.6, 3);
   private moodListeners = new Set<(m: Mood, p: Mood) => void>();
   private materials = new Set<THREE.Material>();
 
   constructor(
-    private scene: THREE.Object3D,
+    scene: THREE.Object3D,
     readonly source: "glb" | "placeholder",
     url: string,
     skel: RestSkeleton,
@@ -114,106 +126,55 @@ class NaiwaFrog implements NaiwaCharacter {
   ) {
     this.skel = skel;
     this.object.name = "Naiwa";
+    const notContract = (set: FleshSet) =>
+      set.pieces.flatMap((p) => p.slots).filter((n) => !skel.byName.has(n)).map((n) => `skinned to ${n}, not a contract bone`);
 
-    // ---- The Body: weld the render vertices into the closed surface the simulation fills.
-    const bodyPts = parts.body.map((p) => restPoints(p));
-    const counts = bodyPts.map((b) => b.dominant.length);
-    const total = counts.reduce((a, b) => a + b, 0);
-    const all = new Float32Array(3 * total);
-    const allIdx: number[] = [];
-    let off = 0;
-    parts.body.forEach((p, k) => {
-      all.set(bodyPts[k].positions, 3 * off);
-      const idx = p.geometry.index;
-      const n = counts[k];
-      if (idx) for (let i = 0; i < idx.count; i++) allIdx.push(idx.getX(i) + off);
-      else for (let i = 0; i < n; i++) allIdx.push(i + off);
-      off += n;
-    });
-    const w = weld(all, allIdx, 1e-5);
-    const report = checkSurface(w.positions, w.indices);
-    const bad = surfaceProblems(report);
-    if (bad.length) throw new CharacterAssetError(url, bad.map((b) => `Body is not one closed manifold: ${b}`));
-    this.bodyReport = { ...report, renderVertices: total };
-    const nw = w.positions.length / 3;
+    // ---- The Body: one closed surface (seams welded), the flesh the simulation fills.
+    const body = buildFlesh(parts.body, () => "body", bodyRegion);
+    if (!body.flesh) throw new CharacterAssetError(url, body.problems.map((p) => p.replace(/^body/, "Body")));
+    if (body.flesh.pieces.length !== 1) throw new CharacterAssetError(url, [`Body is ${body.flesh.pieces.length} separate pieces`]);
+    if (notContract(body.flesh).length) throw new CharacterAssetError(url, notContract(body.flesh).map((p) => `Body is ${p}`));
+    this.body = body.flesh;
+    const bodyPiece = this.body.pieces[0];
+    this.bodyReport = { ...bodyPiece.report, renderVertices: this.body.renderVertices };
+    const bodyRest = bodyPiece.part.positions;
+    const bodyMat = softSkinMaterial(parts.body[0].material as THREE.Material, false);
+    this.materials.add(bodyMat);
+    for (const m of this.body.meshes) (m.mesh.material = bodyMat), this.object.add(m.mesh);
 
-    // Per welded vertex data from one render vertex that maps to it.
-    const partOf = (gi: number): [number, number] => {
-      let k = 0, base = 0;
-      while (gi >= base + counts[k]) base += counts[k++];
-      return [k, gi - base];
-    };
-    const softness = new Float32Array(nw);
-    const skinBones: BoneName[] = [];
-    const slotOf = new Map<THREE.Bone, number>();
-    const skinIndex = new Uint16Array(4 * nw);
-    const skinWeight = new Float32Array(4 * nw);
-    const morphs = new Map<Expression, Float32Array>();
-    const toWorld = parts.body.map((p) => new THREE.Matrix3().setFromMatrix4(p.matrixWorld));
-    const v = new THREE.Vector3();
-    for (let j = 0; j < nw; j++) {
-      const [k, i] = partOf(w.first[j]);
-      const g = parts.body[k].geometry;
-      softness[j] = g.attributes._softness.getX(i);
-      const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
-      for (let c = 0; c < 4; c++) {
-        const bone = parts.body[k].skeleton.bones[si.getComponent(i, c)];
-        let slot = slotOf.get(bone);
-        if (slot === undefined) {
-          slot = skinBones.length;
-          slotOf.set(bone, slot);
-          skinBones.push(bone.name as BoneName);
+    // ---- Limbs: soft flesh when every arm (leg) is one closed shell, else rigid skinned meshes.
+    const limbPts = [...parts.arms, ...parts.legs].map((p) => restPoints(p));
+    for (const [key, kind, region] of [["arms", "arm", armRegion], ["legs", "leg", legRegion]] as const) {
+      const meshes = parts[key];
+      const built = buildFlesh(meshes, (c) => `${kind}_${side(c)}`, region);
+      const reasons = built.flesh ? notContract(built.flesh) : built.problems;
+      if (built.flesh && built.flesh.pieces.length !== 2) reasons.push(`${built.flesh.pieces.length} pieces, not one per side`);
+      if (built.flesh && !reasons.length) {
+        const set = built.flesh;
+        const mat = softSkinMaterial(meshes[0].material as THREE.Material, false);
+        this.materials.add(mat);
+        for (const p of set.pieces) {
+          p.roots = tieRoots(p.part.positions, bodyRest, bodyPiece.skin.normals);
+          this.limbReport.soft.push(p.part.name);
         }
-        skinIndex[4 * j + c] = slot;
-        skinWeight[4 * j + c] = sw.getComponent(i, c);
-      }
-      for (const e of EXPRESSIONS) {
-        const mesh = parts.body[k];
-        const slotE = mesh.morphTargetDictionary?.[e];
-        if (slotE === undefined) continue;
-        const attr = g.morphAttributes.position?.[slotE];
-        if (!attr) continue;
-        let d = morphs.get(e);
-        if (!d) morphs.set(e, (d = new Float32Array(3 * nw)));
-        v.fromBufferAttribute(attr, i);
-        if (!g.morphTargetsRelative) v.sub(new THREE.Vector3().fromBufferAttribute(g.attributes.position, i));
-        v.applyMatrix3(toWorld[k]);
-        d.set([v.x, v.y, v.z], 3 * j);
+        for (const m of set.meshes) (m.mesh.material = mat), this.object.add(m.mesh);
+        this.softLimbs.push(set);
+        for (const m of meshes) m.removeFromParent();
+      } else {
+        this.limbReport.rigid.push({ mesh: MESH_NAMES[key], reasons });
+        for (const mesh of meshes) {
+          const k = [...parts.arms, ...parts.legs].indexOf(mesh);
+          const tie = tieRoots(limbPts[k].positions, bodyRest, bodyPiece.skin.normals);
+          const offset = new THREE.BufferAttribute(new Float32Array(3 * mesh.geometry.attributes.position.count), 3);
+          offset.setUsage(THREE.DynamicDrawUsage);
+          mesh.geometry.setAttribute("rootOffset", offset);
+          const mat = softSkinMaterial(mesh.material as THREE.Material, true);
+          this.materials.add(mat);
+          mesh.material = mat;
+          this.rigidLimbs.push({ tie, offset, toLocal: new THREE.Matrix3().setFromMatrix4(mesh.matrixWorld).invert() });
+        }
       }
     }
-    for (const name of skinBones) {
-      if (!skel.byName.has(name)) throw new CharacterAssetError(url, [`Body is skinned to ${name}, not a contract bone`]);
-    }
-    this.skinBones = skinBones;
-    this.deltas = skinBones.map(() => new THREE.Matrix4());
-    this.skin = new BodySkin({
-      rest: w.positions, indices: w.indices, skinIndex, skinWeight, boneCount: skinBones.length, softness, morphs,
-    });
-    this.simBody = w.positions.slice();
-
-    // Render meshes of the Body: world-space positions written every frame, same vertex colours and UVs.
-    const soft = softSkinMaterial(parts.body[0].material as THREE.Material, false);
-    this.materials.add(soft);
-    off = 0;
-    parts.body.forEach((p, k) => {
-      const src = p.geometry;
-      const geo = new THREE.BufferGeometry();
-      const n = counts[k];
-      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * n), 3).setUsage(THREE.DynamicDrawUsage));
-      geo.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(3 * n), 3).setUsage(THREE.DynamicDrawUsage));
-      for (const a of ["color", "uv"]) if (src.attributes[a]) geo.setAttribute(a, src.attributes[a].clone());
-      if (src.index) geo.setIndex(src.index.clone());
-      const mesh = new THREE.Mesh(geo, soft);
-      mesh.name = p.name;
-      mesh.matrixAutoUpdate = false;
-      mesh.frustumCulled = false;
-      mesh.castShadow = mesh.receiveShadow = true;
-      this.bodyParts.push({ mesh, map: w.map.subarray(off, off + n) });
-      this.object.add(mesh);
-      off += n;
-      p.removeFromParent();
-      src.dispose();
-    });
 
     // ---- Bones: the simulation writes their world matrices; local transforms stay at rest for retargeting.
     for (const b of skel.list) {
@@ -221,33 +182,28 @@ class NaiwaFrog implements NaiwaCharacter {
       this.boneWorld.set(b.name, b.restWorld.clone());
       this.simBones.set(b.name, b.restWorld.clone());
     }
-    const skeleton = parts.arms[0].skeleton;
-    const limbPts = [...parts.arms, ...parts.legs].map((p) => restPoints(p));
     let lo = Infinity, hi = -Infinity;
-    for (const pts of [...bodyPts, ...limbPts]) {
-      for (let i = 1; i < pts.positions.length; i += 3) (lo = Math.min(lo, pts.positions[i])), (hi = Math.max(hi, pts.positions[i]));
+    for (const p of [bodyRest, ...limbPts.map((l) => l.positions)]) {
+      for (let i = 1; i < p.length; i += 3) (lo = Math.min(lo, p[i])), (hi = Math.max(hi, p[i]));
     }
-    this.rig = { skeleton, bones: new Map(skel.list.map((b) => [b.name, b.bone])), height: hi - lo };
+    this.rig = { skeleton: parts.arms[0].skeleton, bones: new Map(skel.list.map((b) => [b.name, b.bone])), height: hi - lo };
 
     // ---- Rig spec for the simulation.
-    const ext = boneExtents(skel, [...bodyPts, ...limbPts]);
+    const ext = boneExtents(skel, [restPoints(parts.body[0]), ...limbPts]);
     const bones: RigBone[] = skel.list.map((b) => ({
       name: b.name, parent: b.parent, restWorld: b.restWorld.clone(),
       tail: ext.get(b.name)!.tail, radius: ext.get(b.name)!.radius,
     }));
-    this.spec = { bones, body: { positions: w.positions.slice(), indices: w.indices.slice(), softness } };
-
-    // ---- Limbs: skinned to the simulated bones; their roots ride on the flesh.
-    [...parts.arms, ...parts.legs].forEach((mesh, k) => {
-      const tie = tieRoots(limbPts[k].positions, w.positions, this.skin.normals);
-      const offset = new THREE.BufferAttribute(new Float32Array(3 * mesh.geometry.attributes.position.count), 3);
-      offset.setUsage(THREE.DynamicDrawUsage);
-      mesh.geometry.setAttribute("rootOffset", offset);
-      const mat = softSkinMaterial(mesh.material as THREE.Material, true);
-      this.materials.add(mat);
-      mesh.material = mat;
-      this.limbs.push({ mesh, tie, offset, toLocal: new THREE.Matrix3().setFromMatrix4(mesh.matrixWorld).invert() });
+    const copy = (p: FleshPiece) => ({
+      ...p.part, positions: p.part.positions.slice(), indices: p.part.indices.slice(),
+      softness: p.part.softness?.slice(), regions: p.part.regions?.slice(), bones: [...p.part.bones],
     });
+    const limbs = this.softLimbs.flatMap((s) => s.pieces.map(copy));
+    this.spec = { bones, body: copy(bodyPiece), ...(limbs.length ? { limbs } : {}) };
+    for (const p of parts.body) {
+      p.removeFromParent();
+      p.geometry.dispose();
+    }
 
     // ---- Face: eyes and mouth inside re-skinned onto rivets on the head surface.
     const head = skel.byName.get("head")!;
@@ -259,19 +215,19 @@ class NaiwaFrog implements NaiwaCharacter {
     });
     const eyeBones: THREE.Bone[] = [];
     const eyeSkin = eyePts.map((pts) => ({ index: new Uint16Array((4 * pts.length) / 3), weight: new Float32Array((4 * pts.length) / 3) }));
-    for (const side of sides) {
-      if (!side.verts.length) continue;
-      // Flatten to one point list for this eye.
-      const flat = new Float32Array(3 * side.verts.length);
-      side.verts.forEach(([k, i], n) => flat.set(eyePts[k].subarray(3 * i, 3 * i + 3), 3 * n));
+    const bodyIdx = bodyPiece.part.indices;
+    for (const s of sides) {
+      if (!s.verts.length) continue;
+      const flat = new Float32Array(3 * s.verts.length);
+      s.verts.forEach(([k, i], n) => flat.set(eyePts[k].subarray(3 * i, 3 * i + 3), 3 * n));
       const box = new THREE.Box3().setFromArray(flat);
       const size = box.getSize(new THREE.Vector3());
-      const rivet = makeRivet(`eye_${side.name}`, box.getCenter(new THREE.Vector3()), 0.9 * Math.max(size.x, size.y, size.z),
-        w.positions, w.indices, true);
-      const { eye, gazeWeight } = makeEye(rivet, `gaze_${side.name}`, flat, side.verts.map((_, n) => n), headCenter);
+      const rivet = makeRivet(`eye_${s.name}`, box.getCenter(new THREE.Vector3()), 0.9 * Math.max(size.x, size.y, size.z),
+        bodyRest, bodyIdx, true);
+      const { eye, gazeWeight } = makeEye(rivet, `gaze_${s.name}`, flat, s.verts.map((_, n) => n), headCenter);
       const base = eyeBones.length;
       eyeBones.push(rivet.bone, eye.gaze);
-      side.verts.forEach(([k, i], n) => {
+      s.verts.forEach(([k, i], n) => {
         const g = gazeWeight.get(n)!;
         eyeSkin[k].index.set([base, base + 1, 0, 0], 4 * i);
         eyeSkin[k].weight.set([1 - g, g, 0, 0], 4 * i);
@@ -282,34 +238,33 @@ class NaiwaFrog implements NaiwaCharacter {
     parts.eyes.forEach((mesh, k) => this.reskin(mesh, eyeBones, eyeSkin[k].index, eyeSkin[k].weight));
 
     const mouthBox = new THREE.Box3();
-    for (const p of parts.mouth) mouthBox.expandByPoint(new THREE.Box3().setFromArray(restPoints(p).positions).getCenter(v));
-    const mouthRivet = makeRivet("mouth", mouthBox.getCenter(new THREE.Vector3()), 0.06, w.positions, w.indices, false);
+    for (const p of parts.mouth) mouthBox.union(new THREE.Box3().setFromArray(restPoints(p).positions));
+    const mouthRivet = makeRivet("mouth", mouthBox.getCenter(new THREE.Vector3()), 0.06, bodyRest, bodyIdx, false);
     this.rivets.push(mouthRivet);
     for (const mesh of parts.mouth) {
       const n = mesh.geometry.attributes.position.count;
       this.reskin(mesh, [mouthRivet.bone], new Uint16Array(4 * n), new Float32Array(4 * n).map((_, i) => (i % 4 === 0 ? 1 : 0)));
     }
 
-    // Morph targets shown on the GPU (everything but the soft Body).
+    // Morph targets shown on the GPU (everything but the soft flesh).
     for (const mesh of [...parts.eyes, ...parts.mouth, ...parts.arms, ...parts.legs]) {
       const dict = mesh.morphTargetDictionary;
-      if (!dict) continue;
+      if (!dict || !mesh.parent) continue;
       const slot: Partial<Record<Expression, number>> = {};
       for (const e of EXPRESSIONS) if (dict[e] !== undefined) slot[e] = dict[e];
       this.morphMeshes.push({ mesh, slot });
     }
-
-    for (const p of [...parts.arms, ...parts.legs, ...parts.eyes, ...parts.mouth]) {
-      p.frustumCulled = false;
-      p.castShadow = true;
-      p.receiveShadow = true;
-    }
+    scene.traverse((o) => {
+      if (!(o as THREE.Mesh).isMesh) return;
+      o.frustumCulled = false;
+      o.castShadow = o.receiveShadow = true;
+    });
 
     // ---- Idle stance: arms know where the belly is, to hold it when laughing.
-    this.stance = new Stance(skel, this.armRests(w.positions, w.indices));
+    this.stance = new Stance(skel, this.armRests(bodyRest, bodyIdx));
 
     this.object.add(scene);
-    this.render(0);
+    this.render();
   }
 
   /** Bind a face mesh to its own little skeleton of rivet bones (all at identity at rest). */
@@ -327,25 +282,23 @@ class NaiwaFrog implements NaiwaCharacter {
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     const probe = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
     const ray = new THREE.Raycaster();
-    const spine = s.byName.get("spine")!;
-    const spineInv = spine.restWorld.clone().invert();
+    const spineInv = s.byName.get("spine")!.restWorld.clone().invert();
     const out: ArmRest[] = [];
-    for (const [side, sfx] of [[1, "L"], [-1, "R"]] as const) {
+    for (const [sgn, sfx] of [[1, "L"], [-1, "R"]] as const) {
       const upper = `upperarm_${sfx}` as const, fore = `forearm_${sfx}` as const, hand = `hand_${sfx}` as const;
-      const from = pos("spine").add(new THREE.Vector3(0, 0.01, 0));
-      ray.set(from, new THREE.Vector3(side * 0.62, -0.08, 0.78).normalize());
+      ray.set(pos("spine").add(new THREE.Vector3(0, 0.01, 0)), new THREE.Vector3(sgn * 0.62, -0.08, 0.78).normalize());
       const hit = ray.intersectObject(probe)[0];
       if (!hit?.face) continue;
-      const n = hit.face.normal.clone();
       out.push({
-        side, upper, fore, hand,
+        side: sgn, upper, fore, hand,
         l1: pos(upper).distanceTo(pos(fore)),
         l2: pos(fore).distanceTo(pos(hand)),
         spot: hit.point.clone().applyMatrix4(spineInv),
-        normal: n.transformDirection(spineInv),
+        normal: hit.face.normal.clone().transformDirection(spineInv),
       });
     }
     geo.dispose();
+    (probe.material as THREE.Material).dispose();
     return out;
   }
 
@@ -362,11 +315,20 @@ class NaiwaFrog implements NaiwaCharacter {
     this.haveTargets = true;
   }
 
-  applySim(bones: Map<BoneName, THREE.Matrix4>, body: Float32Array): void {
-    if (body.length !== this.simBody.length) {
-      throw new Error(`applySim: body has ${body.length / 3} vertices, the rig spec has ${this.simBody.length / 3}`);
+  applySim(bones: Map<BoneName, THREE.Matrix4>, body: Float32Array, limbs?: Map<string, Float32Array>): void {
+    const bp = this.body.pieces[0];
+    if (body.length !== bp.sim.length) {
+      throw new Error(`applySim: body has ${body.length / 3} vertices, the rig spec has ${bp.sim.length / 3}`);
     }
-    this.simBody.set(body);
+    bp.sim.set(body);
+    bp.simulated = true;
+    for (const set of this.softLimbs) {
+      for (const p of set.pieces) {
+        const l = limbs?.get(p.part.name);
+        p.simulated = !!l && l.length === p.sim.length;
+        if (p.simulated) p.sim.set(l!);
+      }
+    }
     this.haveSim.clear();
     for (const [name, m] of bones) {
       const own = this.simBones.get(name);
@@ -404,8 +366,8 @@ class NaiwaFrog implements NaiwaCharacter {
       for (const cb of this.moodListeners) cb(this.mood, prev);
     }
 
-    // Expressions: the motion's requests and the frog's own life, mouths sharing one mouth.
-    const tgt = { laugh: 0, tongue: 0, blink: 0, surprise: 0 } as Record<Expression, number>;
+    // Expressions: the motion's requests and the frog's own life, the mouth shapes sharing one mouth.
+    const tgt = { ...NO_EXPRESSION };
     for (const e of EXPRESSIONS) tgt[e] = 1 - (1 - life.expr[e]) * (1 - THREE.MathUtils.clamp(this.requested[e] ?? 0, 0, 1));
     const mouth = tgt.laugh + tgt.tongue + tgt.surprise;
     if (mouth > 1) (tgt.laugh /= mouth), (tgt.tongue /= mouth), (tgt.surprise /= mouth);
@@ -426,14 +388,13 @@ class NaiwaFrog implements NaiwaCharacter {
       }
     }
 
-    this.render(dt);
+    this.render();
 
     // Eyes look at the target (or the camera); dizzy, they roll in opposite circles.
     const target = this.lookTarget ?? this.cameraPos;
     const spin = life.gaze.spin;
     this.eyes.forEach((eye, k) => {
-      const dir = k === 0 ? 1 : -1;
-      const a = this.time * 2 * Math.PI * 1.3 * dir;
+      const a = this.time * 2 * Math.PI * 1.3 * (k === 0 ? 1 : -1);
       aimEye(eye, target, life.gaze.yaw + 0.5 * spin * Math.cos(a), life.gaze.pitch + 0.5 * spin * Math.sin(a), 24, dt);
     });
   }
@@ -455,14 +416,13 @@ class NaiwaFrog implements NaiwaCharacter {
     this.object.removeFromParent();
     this.object.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh) m.geometry.dispose();
+      if (m.isMesh) {
+        m.geometry.dispose();
+        (m.material as THREE.Material).dispose();
+      }
       if ((o as Part).isSkinnedMesh) (o as Part).skeleton.dispose();
     });
     for (const m of this.materials) m.dispose();
-    this.scene.traverse((o) => {
-      const mat = (o as THREE.Mesh).material as THREE.Material | undefined;
-      mat?.dispose();
-    });
   }
 
   // ------------------------------------------------------------------------------------------------ rendering
@@ -473,8 +433,8 @@ class NaiwaFrog implements NaiwaCharacter {
   private _v = new THREE.Vector3();
   private headTurn = new THREE.Quaternion();
 
-  /** Pose the bones, deform the Body, put the face on it, tie the limb roots to it. */
-  private render(_dt: number): void {
+  /** Pose the bones, deform the flesh, put the face on it, tie the limb roots to it. */
+  private render(): void {
     const s = this.skel;
     // Bones the simulation does not move keep the pose's (or rest) relation to their parent.
     for (const b of s.list) {
@@ -496,35 +456,32 @@ class NaiwaFrog implements NaiwaCharacter {
     this._q.setFromRotationMatrix(this.boneWorld.get("hips")!).multiply(this._q2.copy(hips.restWorldQuat).invert());
     this.upright = this._v.set(0, 1, 0).applyQuaternion(this._q).y;
 
-    this.skinBones.forEach((name, k) => {
-      this.deltas[k].multiplyMatrices(this.boneWorld.get(name)!, this._m.copy(s.byName.get(name)!.restWorld).invert());
-    });
-    this.skin.update(this.simBody, this.deltas, this.headTurn, this.weights, this.life.out.breath);
-
-    const P = this.skin.positions, N = this.skin.normals;
-    for (const { mesh, map } of this.bodyParts) {
-      const pa = mesh.geometry.attributes.position as THREE.BufferAttribute;
-      const na = mesh.geometry.attributes.normal as THREE.BufferAttribute;
-      const pos = pa.array as Float32Array, nor = na.array as Float32Array;
-      for (let i = 0; i < map.length; i++) {
-        const j = 3 * map[i];
-        pos[3 * i] = P[j]; pos[3 * i + 1] = P[j + 1]; pos[3 * i + 2] = P[j + 2];
-        nor[3 * i] = N[j]; nor[3 * i + 1] = N[j + 1]; nor[3 * i + 2] = N[j + 2];
-      }
-      pa.needsUpdate = true;
-      na.needsUpdate = true;
+    const deform = (p: FleshPiece, weights: Record<Expression, number>, breath: number, tie?: { roots: RootTie; residual: Float32Array }) => {
+      p.slots.forEach((name, k) => {
+        p.deltas[k].multiplyMatrices(this.boneWorld.get(name)!, this._m.copy(s.byName.get(name)!.restWorld).invert());
+      });
+      p.skin.update(p.simulated ? p.sim : null, p.deltas, this.headTurn, weights, breath, tie);
+    };
+    const body = this.body.pieces[0];
+    deform(body, this.weights, this.life.out.breath);
+    showFlesh(this.body);
+    const residual = body.skin.residual;
+    for (const set of this.softLimbs) {
+      for (const p of set.pieces) deform(p, NO_EXPRESSION, 0, { roots: p.roots!, residual });
+      showFlesh(set);
     }
 
-    for (const r of this.rivets) updateRivet(r, this.skin.surface, this.headTurn);
+    for (const r of this.rivets) updateRivet(r, body.skin.surface, this.headTurn);
 
-    const res = this.skin.residual;
-    const v = new THREE.Vector3();
-    for (const { tie, offset, toLocal } of this.limbs) {
+    const v = this._v;
+    for (const { tie, offset, toLocal } of this.rigidLimbs) {
       const o = offset.array as Float32Array;
       for (let k = 0; k < tie.vertex.length; k++) {
         const j = 3 * tie.body[k], w = tie.weight[k];
-        v.set(res[j] * w, res[j + 1] * w, res[j + 2] * w).applyMatrix3(toLocal);
-        o.set([v.x, v.y, v.z], 3 * tie.vertex[k]);
+        v.set(residual[j] * w, residual[j + 1] * w, residual[j + 2] * w).applyMatrix3(toLocal);
+        o[3 * tie.vertex[k]] = v.x;
+        o[3 * tie.vertex[k] + 1] = v.y;
+        o[3 * tie.vertex[k] + 2] = v.z;
       }
       offset.needsUpdate = true;
     }

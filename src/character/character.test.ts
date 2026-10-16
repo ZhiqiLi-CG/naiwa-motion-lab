@@ -56,6 +56,12 @@ function contractChecks(c: NaiwaCharacter) {
     expect(b.radius).toBeGreaterThanOrEqual(0);
     expect(b.tail.distanceTo(new THREE.Vector3().setFromMatrixPosition(b.restWorld))).toBeGreaterThan(0.005);
   }
+  for (const l of c.spec.limbs ?? []) {
+    const lr = checkSurface(l.positions, l.indices);
+    expect(surfaceProblems(lr), l.name).toEqual([]);
+    expect(l.regions!.length).toBe(l.positions.length / 3);
+    expect(l.bones.length).toBeGreaterThan(1);
+  }
   expect(c.rig.height).toBeGreaterThan(0.9);
   expect(c.rig.height).toBeLessThan(1.1);
   return r;
@@ -100,6 +106,7 @@ describe.skipIf(!fs.existsSync(GLB))("naiwa.glb", () => {
     const c = await loadGlb();
     contractChecks(c);
     console.log("glb body", JSON.stringify(c.bodyReport));
+    console.log("glb limbs", JSON.stringify(c.limbReport), (c.spec.limbs ?? []).map((l) => `${l.name}:${l.positions.length / 3}v soft=${!!l.softness}`).join(" "));
     console.log("glb bones", c.spec.bones.map((b) => `${b.name}:${b.radius.toFixed(3)}`).join(" "));
   });
 

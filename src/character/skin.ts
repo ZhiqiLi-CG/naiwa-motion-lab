@@ -1,14 +1,15 @@
 /**
- * Showing the simulated flesh: the rendered Body is the rest surface skinned to the simulated bones plus the
- * simulation's own deformation on top (the residual), lightly smoothed so a coarse simulation lattice never shows
- * as facets or creases; expressions are added in the head's frame; normals are recomputed every frame on the welded
- * surface, so no seam ever shows. The limbs' roots, sunk into the Body, follow the same residual.
+ * Showing the simulated flesh: each rendered piece (the Body, an arm, a leg) is its rest surface skinned to the
+ * simulated bones plus the simulation's own deformation on top (the residual), lightly smoothed so a coarse
+ * simulation lattice never shows as facets or creases; expressions are added in the head's frame; normals are
+ * recomputed every frame on the welded surface, so no seam ever shows. Limb roots sunk into the Body take the Body's
+ * residual, so the joins ride on the belly's wobble without gaps.
  */
 import * as THREE from "three";
 import type { Expression } from "../contracts";
 import { computeNormals } from "./surface";
 
-export interface BodySkinInit {
+export interface FleshInit {
   rest: Float32Array;
   indices: Uint32Array;
   /** Per welded vertex: four bone slots (indices into the bone list) and weights. */
@@ -28,7 +29,7 @@ const SMOOTH_RADIUS = 0.025;
 /** Breathing swells the soft belly by this much (meters, at softness 1). */
 const BREATH = 0.0035;
 
-export class BodySkin {
+export class FleshSkin {
   readonly count: number;
   readonly rest: Float32Array;
   readonly indices: Uint32Array;
@@ -50,7 +51,7 @@ export class BodySkin {
   private morphs: [Expression, Float32Array, Uint32Array][];
   private passes: number;
 
-  constructor(init: BodySkinInit) {
+  constructor(init: FleshInit) {
     const n = (this.count = init.rest.length / 3);
     this.rest = init.rest;
     this.indices = init.indices;
@@ -101,15 +102,17 @@ export class BodySkin {
   }
 
   /**
-   * sim: simulated surface (world, welded order); deltas: per bone world · rest⁻¹; headTurn: head rotation
-   * relative to rest; weights: expression weights; breath: −1…1.
+   * sim: simulated surface (world, welded order), null when the simulation does not move this piece; deltas: per
+   * bone world · rest⁻¹; headTurn: head rotation relative to rest; weights: expression weights; breath: −1…1;
+   * tie: vertices that take another piece's residual instead of their own (limb roots in the Body).
    */
   update(
-    sim: Float32Array,
+    sim: Float32Array | null,
     deltas: THREE.Matrix4[],
     headTurn: THREE.Quaternion,
     weights: Record<Expression, number>,
     breath: number,
+    tie?: { roots: RootTie; residual: Float32Array },
   ): void {
     const n = this.count;
     const rest = this.rest, res = this.residual, surf = this.surface, P = this.positions;
@@ -130,11 +133,12 @@ export class BodySkin {
         sz += w * (D[m + 2] * x + D[m + 6] * y + D[m + 10] * z + D[m + 14]);
       }
       surf[3 * i] = sx; surf[3 * i + 1] = sy; surf[3 * i + 2] = sz;
-      res[3 * i] = sim[3 * i] - sx; res[3 * i + 1] = sim[3 * i + 1] - sy; res[3 * i + 2] = sim[3 * i + 2] - sz;
+      if (sim) (res[3 * i] = sim[3 * i] - sx), (res[3 * i + 1] = sim[3 * i + 1] - sy), (res[3 * i + 2] = sim[3 * i + 2] - sz);
     }
+    if (!sim) res.fill(0);
     // Smooth the residual (not the shape: the rest detail stays crisp, only the simulated deformation is softened).
     const st = this.adjStart, adj = this.adj, tmp = this.tmp;
-    for (let pass = 0; pass < this.passes; pass++) {
+    for (let pass = 0; sim && pass < this.passes; pass++) {
       for (let i = 0; i < n; i++) {
         let ax = 0, ay = 0, az = 0;
         const s = st[i], e = st[i + 1];
@@ -148,6 +152,15 @@ export class BodySkin {
         tmp[3 * i + 2] = 0.5 * res[3 * i + 2] + az * inv;
       }
       res.set(tmp);
+    }
+    if (tie) {
+      const { vertex, body, weight } = tie.roots, other = tie.residual;
+      for (let k = 0; k < vertex.length; k++) {
+        const i = 3 * vertex[k], j = 3 * body[k], w = weight[k];
+        res[i] += (other[j] - res[i]) * w;
+        res[i + 1] += (other[j + 1] - res[i + 1]) * w;
+        res[i + 2] += (other[j + 2] - res[i + 2]) * w;
+      }
     }
     // Breathing along last frame's normals, mostly in the soft belly.
     const nrm = this.normals, soft = this.softness;

@@ -2,7 +2,8 @@
  * Dev page for the character (dev/character.html): the frog on a neutral studio floor like the references, driven
  * by the real simulation. Hover: the eyes follow; click: poke; drag: grab and throw; F: feather (tickle) mode.
  * URL: ?view=front|three|side|back|laugh|upper|face|faceside, ?placeholder, ?nosim (rest surface), ?mode=free, ?pose=wave|peace,
- * ?clean, ?still (no life), ?raw (the GLB as three.js loads it, without this module).
+ * ?clean, ?still (no life), ?preset=jelly|mochi|…, ?stage (the app's stage instead of the studio), ?raw (the GLB as three.js
+ * loads it, without this module).
  * window.dev drives it from scripts (tests/tools/shot.mjs --eval).
  */
 import * as THREE from "three";
@@ -10,45 +11,49 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { BoneName, Expression, ExpressionWeights, FrogEvent, FrogEventKind, FrogSim, HitRegion, PoseFrame } from "../contracts";
 import { createFrogSim, initPhysics } from "../sim";
+import { createStage } from "../stage";
 import { MATERIAL_PRESETS } from "../store";
 import { loadCharacter } from ".";
 
 const params = new URLSearchParams(location.search);
 if (params.has("clean")) document.body.classList.add("clean");
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-document.body.prepend(renderer.domElement);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe9e9e6);
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.55;
-scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc6b0, 0.9));
-const key = new THREE.DirectionalLight(0xffffff, 2.2);
-key.position.set(-1.6, 3, 2.4);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 1.5, bottom: -1.5, near: 0.5, far: 8 });
-key.shadow.radius = 4;
-key.shadow.bias = -0.0005;
-scene.add(key);
-const rim = new THREE.DirectionalLight(0xfff4e0, 1.1);
-rim.position.set(0.5, 2, -3);
-scene.add(rim);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.18 }));
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-
-const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
+/** The real stage (?stage: its lights, set and camera) or a neutral studio like the references. */
+const stage = params.has("stage") ? createStage(document.body) : null;
+const renderer = stage?.renderer ?? new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const scene = stage?.scene ?? new THREE.Scene();
+const camera = stage?.camera ?? new THREE.PerspectiveCamera(30, 1, 0.05, 50);
+if (!stage) {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  document.body.prepend(renderer.domElement);
+  scene.background = new THREE.Color(0xe9e9e6);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.55;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc6b0, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2);
+  key.position.set(-1.6, 3, 2.4);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 1.5, bottom: -1.5, near: 0.5, far: 8 });
+  key.shadow.radius = 4;
+  key.shadow.bias = -0.0005;
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0xfff4e0, 1.1);
+  rim.position.set(0.5, 2, -3);
+  scene.add(rim);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.18 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+}
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.enabled = !stage;
 
 /** Reference viewpoints: azimuth from +Z (front) towards +X (its left), elevation, distance, look-at height. */
 const VIEWS: Record<string, [number, number, number, [number, number, number]]> = {
@@ -73,6 +78,7 @@ function view(name: string) {
 view(params.get("view") ?? "front");
 
 function resize() {
+  if (stage) return;
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -95,7 +101,8 @@ if (params.has("still")) character.setLively(false);
 let sim: (FrogSim & { stats(): { particles: number; deformation: number } }) | null = null;
 if (!params.has("nosim")) {
   await initPhysics();
-  sim = createFrogSim(character.spec, { ...MATERIAL_PRESETS[0].params });
+  const preset = MATERIAL_PRESETS.find((p) => p.id === params.get("preset")) ?? MATERIAL_PRESETS[0];
+  sim = createFrogSim(character.spec, { ...preset.params });
   sim.setMode(params.get("mode") === "free" ? "free" : "driven");
   sim.onEvent((e) => {
     character.react(e);
@@ -225,6 +232,7 @@ function log(s: string) {
 
 const targets = new Map<BoneName, THREE.Matrix4>();
 const bones = new Map<BoneName, THREE.Matrix4>();
+const limbs = new Map<string, Float32Array>();
 let last = performance.now();
 let time = 0;
 let fps = 60;
@@ -244,15 +252,22 @@ function frame(now: number) {
     sim.setTargets(targets);
     sim.step(dt);
     sim.readBones(bones);
-    character.applySim(bones, sim.readBody());
+    sim.readLimbs?.(limbs);
+    character.applySim(bones, sim.readBody(), limbs);
   } else character.applySim(targets, character.spec.body.positions);
   character.update(dt, camera);
   frameMs += (performance.now() - t0 - frameMs) * 0.05;
-  controls.update();
-  renderer.render(scene, camera);
+  if (stage) {
+    stage.setFocus(character.center(new THREE.Vector3()));
+    stage.frame(dt);
+  } else {
+    controls.update();
+    renderer.render(scene, camera);
+  }
   const r = character.bodyReport;
   info.textContent =
     `${character.source}  body ${r.renderVertices}→${r.vertices} v, ${r.triangles} t, χ=${r.euler}  ` +
+    `soft limbs ${character.limbReport.soft.join(",") || "none"}  ` +
     `${fps.toFixed(0)} fps, character+sim ${frameMs.toFixed(2)} ms\n` +
     `mood ${character.mood}  mode ${mode}${feather ? "  FEATHER" : ""}${pose ? `  pose ${pose}` : ""}` +
     (sim ? `  particles ${sim.stats().particles} jiggle ${(sim.stats().deformation * 1000).toFixed(1)} mm` : "") +
