@@ -160,14 +160,15 @@ export class Retargeter {
     }
     p.lift = Math.min(0.35, hop * HOP_GAIN);
 
-    // Big gestures → faces: hands on the belly (more so bent over) laugh, peace-high hands stick the tongue out,
+    // Big gestures → faces: hands on the belly (more so bent over) laugh, both hands up by the head (peace signs) stick the
+    // tongue out,
     // hands on the cheeks or way up are a surprise.
     const onBelly = Math.min(holds.L, holds.R);
     const nose = Q[LM.nose];
     const cheeks = Math.min(...SIDES.map((s) => 1 - ramp(Q[ARM[s][2]].distanceTo(nose) / torsoLen, 0.25, 0.4)));
     const target: ExpressionWeights = {
       laugh: Math.max(onBelly * (0.45 + 0.55 * ramp(bend, 0.15, 0.5)), 0.5 * Math.max(holds.L, holds.R) * ramp(bend, 0.2, 0.5)),
-      tongue: Math.max(Math.min(peace.L, peace.R), 0.6 * Math.max(peace.L, peace.R)),
+      tongue: Math.min(peace.L, peace.R),
       surprise: Math.max(cheeks, 0.8 * Math.min(high.L, high.R), Math.min(1, hop * 3) * 0.5),
     };
     for (const k of ["laugh", "tongue", "surprise"] as const) {

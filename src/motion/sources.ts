@@ -200,7 +200,7 @@ export async function startCamera(mirror: boolean, preview: HTMLElement, binding
       const pose = presence.output(nowMs);
       if (presence.lost !== wasLost) {
         wasLost = presence.lost;
-        emit(wasLost ? { state: "lost", text: { zh: "找不到你啦，退后一点让全身入镜", en: "Can't see you. Step back so your whole body is in view." } } : { state: "tracking", text: WITH_YOU, fps });
+        emit(wasLost ? { state: "lost", text: { zh: "找不到你啦，退后一点让全身入镜", en: "Can't see you. Step back so your whole body is in view." } } : { state: "tracking", text: WITH_YOU, fps: fps || undefined });
       }
       const b = binding();
       return pose && b ? solve(b, pose) : null;
@@ -268,12 +268,14 @@ export async function startVideo(
   const aspect = video.videoWidth / Math.max(1, video.videoHeight);
   const length = Number.isFinite(video.duration) ? Math.min(video.duration, MAX_VIDEO_SECONDS) : MAX_VIDEO_SECONDS;
 
-  // Analyse: one detection per presented frame, the playback rate adapted so ~24 samples land per video second.
+  // Analyse: one detection per presented frame, the playback rate adapted so ~15–22 samples land per video second.
   await detector.setOptions({ numPoses: 3 });
   const samples: { t: number; frame: LandmarkFrame }[] = [];
   let prevHip: [number, number] | null = null;
   let rate = 2;
   let lastProgress = -1;
+  let detectMs = 0;
+  const started = performance.now();
   await new Promise<void>((resolve, reject) => {
     let lastMedia = -1;
     const watchdog = setTimeout(() => {
@@ -292,15 +294,17 @@ export async function startVideo(
         resolve();
         return;
       }
+      const d0 = performance.now();
       const res = detector.detectForVideo(video, stamp(now));
+      detectMs += performance.now() - d0;
       const frame = toFrame(res, pickPerson(res, aspect, prevHip));
       prevHip = hipOf(frame, aspect) ?? prevHip;
       samples.push({ t: mediaTime, frame });
       view.draw(frame.image.length ? frame.image : null);
       if (lastMedia >= 0) {
         const gap = mediaTime - lastMedia;
-        if (gap > 1 / 18) rate = Math.max(0.5, rate * 0.85);
-        else if (gap < 1 / 30) rate = Math.min(4, rate * 1.1);
+        if (gap > 1 / 15) rate = Math.max(0.5, rate * 0.9);
+        else if (gap < 1 / 22) rate = Math.min(4, rate * 1.05);
         video.playbackRate = rate;
       }
       lastMedia = mediaTime;
@@ -322,6 +326,8 @@ export async function startVideo(
   }).catch((e) => fail(e === CANCELLED ? CANCELLED : UNPLAYABLE));
   video.pause();
   await detector.setOptions({ numPoses: 1 });
+  const wall = (performance.now() - started) / 1000;
+  console.info(`motion: analysed ${samples.length} frames of ${length.toFixed(1)} s in ${wall.toFixed(1)} s (${(detectMs / Math.max(1, samples.length)).toFixed(1)} ms per detection, final rate ${rate.toFixed(2)}×)`);
 
   // Resample to 30 fps (gaps longer than half a second stay empty), then smooth with past and future frames.
   const fps = 30;
