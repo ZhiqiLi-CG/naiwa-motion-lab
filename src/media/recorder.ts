@@ -1,11 +1,14 @@
-/** Recording the canvas and the sound effects into one video file with MediaRecorder. */
+/** Recording the composited frame (stage, companion video, watermark) and the mix into one video file. */
 import type { Recorder, Recording } from "../contracts";
+import { createCompositor } from "./compose";
 
 export interface RecorderOptions {
   /** Longest clip (ms); the recorder stops itself there and calls onAutoStop. Default 30 s. */
   maxMs?: number;
   /** Capture frame rate. Default 30. */
   fps?: number;
+  /** Long side of the recorded frame (px). Default 1280: H.264 level 3.1, which every phone plays. */
+  maxSide?: number;
   /** Called with the clip when the length cap stopped the recording (stop() then resolves with the same clip). */
   onAutoStop?: (rec: Recording) => void;
 }
@@ -14,7 +17,7 @@ export interface RecorderOptions {
 const VIDEO_TYPES_WITH_AUDIO = [
   "video/mp4;codecs=avc1.4D401F,mp4a.40.2",
   "video/mp4;codecs=avc1.42E01F,mp4a.40.2",
-  "video/mp4;codecs=avc1,mp4a",
+  "video/mp4;codecs=avc1,mp4a.40.2",
   "video/mp4;codecs=avc1,opus",
   "video/mp4",
   "video/webm;codecs=vp9,opus",
@@ -39,6 +42,7 @@ export function pickMimeType(withAudio: boolean): string {
 export function createRecorder(opts: RecorderOptions = {}): Recorder {
   const maxMs = opts.maxMs ?? 30_000;
   const fps = opts.fps ?? 30;
+  const maxSide = opts.maxSide ?? 1280;
   let rec: MediaRecorder | null = null;
   let stopping: Promise<Recording> | null = null;
   let stopRec: (() => Promise<Recording>) | null = null;
@@ -48,8 +52,17 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
     get active() {
       return rec !== null && stopping === null;
     },
-    start(canvas, audio) {
+    start(stage, audio, recOpts) {
       if (rec) throw new Error("recorder already running");
+      const comp = createCompositor(stage, {
+        companion: recOpts?.companion ?? null,
+        layout: recOpts?.layout ?? "frog",
+        fps,
+        maxSide,
+        // The clip opens on the first composed frame, not on an empty one.
+        onFirstFrame: () => begin(),
+      });
+      const { canvas } = comp;
       const stream = canvas.captureStream(fps);
       const audioTracks = audio?.getAudioTracks() ?? [];
       for (const t of audioTracks) stream.addTrack(t);
@@ -61,14 +74,20 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
         audioBitsPerSecond: 128_000,
       });
       const chunks: Blob[] = [];
-      const startedAt = performance.now();
+      let startedAt = performance.now();
+      const begin = () => {
+        if (mr.state !== "inactive") return;
+        startedAt = performance.now();
+        mr.start(1000);
+      };
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
       const finished = new Promise<Recording>((resolve, reject) => {
         mr.onstop = () => {
-          // Only the canvas track is ours; the audio tracks belong to the sfx stream and keep running.
+          // Only the frame track is ours; the audio tracks belong to the sfx stream and keep running.
           for (const t of stream.getVideoTracks()) t.stop();
+          comp.stop();
           clearTimeout(cap);
           const type = mr.mimeType || mimeType || "video/webm";
           const blob = new Blob(chunks, { type });
@@ -90,6 +109,8 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
       const stopNow = () => {
         if (!stopping) {
           stopping = finished;
+          // Stopped before the first frame: start, so that stop() still delivers a (tiny) clip.
+          begin();
           mr.stop();
         }
         return finished;
@@ -97,7 +118,6 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
       const cap = setTimeout(() => void stopNow().then((r) => opts.onAutoStop?.(r)), maxMs);
       rec = mr;
       stopRec = stopNow;
-      mr.start(1000);
     },
     stop() {
       if (stopRec) return stopRec();

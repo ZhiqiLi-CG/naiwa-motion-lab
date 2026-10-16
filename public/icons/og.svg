@@ -8,10 +8,10 @@
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <image href="naiwa.svg" x="70" y="55" width="520" height="520"/>
-  <g font-family="Noto Sans CJK SC, PingFang SC, Microsoft YaHei, sans-serif">
-    <text x="650" y="270" font-size="104" font-weight="700" fill="#3b2a0c">奶蛙</text>
-    <text x="650" y="350" font-size="64" font-weight="700" fill="#3b2a0c">Playground</text>
-    <text x="652" y="440" font-size="38" fill="#6e5216">戳它 · 捏它 · 抛起它</text>
-    <text x="652" y="496" font-size="38" fill="#6e5216">再带它跳舞，录下来分享</text>
+  <g font-family="Noto Sans CJK SC, PingFang SC, Microsoft YaHei, sans-serif" fill="#3b2a0c" font-weight="700">
+    <text x="640" y="232" font-size="112">Naiwa</text>
+    <text x="640" y="318" font-size="72">Motion Lab</text>
+    <text x="643" y="408" font-size="36" font-weight="400" fill="#6e5216">戳戳奶蛙，捏捏它，带它跳舞</text>
+    <text x="643" y="460" font-size="32" font-weight="400" fill="#6e5216">Poke it, squish it, make it dance</text>
   </g>
 </svg>

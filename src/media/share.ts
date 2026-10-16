@@ -1,5 +1,6 @@
 /** Saving a clip: the system share sheet with the file on phones, a download elsewhere. */
 import type { Recording } from "../contracts";
+import { tr } from "../i18n";
 
 /**
  * Call from a user gesture (the share sheet needs one). Rejects with an AbortError when the user closes the share
@@ -11,7 +12,7 @@ export async function shareRecording(rec: Recording): Promise<"shared" | "downlo
   const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   if (touch && navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: "奶蛙 Playground" });
+      await navigator.share({ files: [file], title: "Naiwa Motion Lab", text: tr(SHARE_TEXT) });
       return "shared";
     } catch (e) {
       if ((e as DOMException).name === "AbortError") throw e;
@@ -27,3 +28,5 @@ export async function shareRecording(rec: Recording): Promise<"shared" | "downlo
   a.remove();
   return "downloaded";
 }
+
+const SHARE_TEXT = { zh: "看我的奶蛙！", en: "Look at my Naiwa!" };

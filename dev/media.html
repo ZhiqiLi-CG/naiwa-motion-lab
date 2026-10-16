@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>奶蛙 media dev</title>
+    <title>Naiwa Motion Lab · media dev</title>
     <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
     <style>
       :root { color-scheme: dark; --bg: #16130d; --fg: #f6efe0; --muted: #b8ad96; --accent: #ffd54a; --line: #3a3324; }
@@ -39,7 +39,16 @@
 
     <section>
       <h2>录制 Recording</h2>
-      <canvas id="stage" class="stage" width="1280" height="720"></canvas>
+      <div style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap">
+        <canvas id="stage" class="stage" width="1280" height="720"></canvas>
+        <video id="companion" src="/tests/e2e/media/dance-naenae.mp4" loop playsinline controls style="width: 180px; margin: 0"></video>
+      </div>
+      <div style="margin-top: 8px">
+        <label>布局 layout <select id="layout"><option>frog</option><option selected>pip</option><option>side-by-side</option></select></label>
+        <label><input id="mirror" type="checkbox" /> 镜像预览</label>
+        <label><input id="music" type="checkbox" checked /> 视频声音进混音 (attachMusic)</label>
+        <label>视频 <input id="file" type="file" accept="video/*" /></label>
+      </div>
       <div style="margin-top: 8px">
         <button id="rec">开始录制</button><button class="ghost" id="share" disabled>保存 / 分享</button>
         <span id="recInfo"></span>
@@ -101,6 +110,8 @@
         return { x: Math.sin(t * 0.9) * 1.2, y: 4 * phase * (1 - phase) * 1.2, squash: 1 + 0.35 * Math.exp(-phase * 12) };
       };
       let scene3d = "webgl";
+      let startInFrame = null;
+      let setStageSize = (w, h) => { canvas.width = w; canvas.height = h; };
       try {
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
         renderer.setPixelRatio(1);
@@ -119,7 +130,13 @@
         const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.MeshStandardMaterial({ color: "#e9dcb8" }));
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
+        setStageSize = (w, h) => {
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+        };
         renderer.setAnimationLoop((now) => {
+          if (startInFrame) { startInFrame(); startInFrame = null; }
           const b = bounce(now);
           blob.position.set(b.x, 0.6 / b.squash + b.y, 0);
           blob.scale.set(b.squash, 1 / b.squash, b.squash);
@@ -144,6 +161,12 @@
         requestAnimationFrame(loop);
       }
 
+      const companion = $("companion");
+      $("mirror").onchange = () => (companion.style.transform = $("mirror").checked ? "scaleX(-1)" : "");
+      $("music").onchange = () => sfx.attachMusic($("music").checked ? companion : null);
+      $("file").onchange = () => { const f = $("file").files[0]; if (f) { companion.src = URL.createObjectURL(f); companion.play(); } };
+      companion.onplay = () => { sfx.unlock(); if ($("music").checked) sfx.attachMusic(companion); };
+
       const recorder = createRecorder({ maxMs: 20000, onAutoStop: (r) => shown(r) });
       let lastRec = null;
       function shown(r) {
@@ -157,7 +180,7 @@
       $("rec").onclick = async () => {
         sfx.unlock();
         if (recorder.active) return shown(await recorder.stop());
-        recorder.start(canvas, sfx.stream);
+        recorder.start(canvas, sfx.stream, { companion, layout: $("layout").value });
         $("rec").textContent = "停止";
         $("recInfo").textContent = "录制中…";
       };
@@ -217,10 +240,24 @@
       }
       $("analyze").onclick = () => analyze();
 
-      /** Headless check: record the scene with sound for ms, hand the file back as base64. */
-      async function recordTest(ms = 3000) {
+      /**
+       * Headless check: record for ms and hand the file back as base64. layout/src/mirror set up the companion video
+       * (src with its own music, attached to the mix); stage resizes the 3D canvas (a phone's portrait one);
+       * inFrame starts the recorder inside the render loop's callback, before it renders (the hard case for reading a
+       * WebGL canvas).
+       */
+      async function recordTest(ms = 3000, { layout = "frog", src = null, mirror = false, stage = null, inFrame = false } = {}) {
         sfx.unlock();
-        recorder.start(canvas, sfx.stream);
+        if (stage) setStageSize(stage[0], stage[1]);
+        if (src) {
+          companion.src = src;
+          companion.style.transform = mirror ? "scaleX(-1)" : "";
+          await companion.play();
+          sfx.attachMusic(companion);
+        }
+        const opts = { companion: src ? companion : null, layout };
+        if (inFrame) await new Promise((r) => (startInFrame = () => { recorder.start(canvas, sfx.stream, opts); r(); }));
+        else recorder.start(canvas, sfx.stream, opts);
         const startedActive = recorder.active;
         await new Promise((r) => setTimeout(r, ms));
         const r = await recorder.stop();
