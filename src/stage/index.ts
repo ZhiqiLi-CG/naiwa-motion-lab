@@ -101,45 +101,49 @@ export function createStage(container: HTMLElement): PlayStage {
     if (!rt) envs.set(name, (rt = buildEnvironment(renderer, THEMES[name].env)));
     return rt.texture;
   };
+  // The environment map is made at the next frame, so a theme picked right after creation costs one map, not two.
   let themeName: ThemeName = "light";
+  let envDirty = true;
   const setTheme = (name: ThemeName) => {
     themeName = name;
     const t = THEMES[name];
     set.apply(t);
     key.color.set(t.keyColor);
     key.intensity = t.keyIntensity;
-    scene.environment = envFor(name);
     scene.environmentIntensity = t.envIntensity;
     renderer.toneMappingExposure = t.exposure;
+    envDirty = true;
   };
   setTheme("light");
   // A lost context (phones in the background, GPU resets) takes rendered textures with it; the environment maps
   // are rendered, so make them again. Everything else three re-uploads by itself or is redrawn every frame.
   const onRestored = () => {
     envs.clear(); // their GL objects died with the old context; disposing them would touch dead handles
-
-    setTheme(themeName);
+    envDirty = true;
   };
   canvas.addEventListener("webglcontextrestored", onRestored);
 
-  // Size: the container decides; the pixel ratio is capped.
+  // Size: the container decides; the pixel ratio is capped. Resizing the drawing buffer clears it, so only on change.
   const coarse = matchMedia("(pointer: coarse)");
   let rect = canvas.getBoundingClientRect();
+  const measure = () => (rect = canvas.getBoundingClientRect());
   const resize = () => {
     const w = Math.max(1, container.clientWidth);
     const h = Math.max(1, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse.matches ? DPR_CAP_TOUCH : DPR_CAP_DESKTOP));
-    renderer.setSize(w, h, false);
+    const dpr = Math.min(window.devicePixelRatio || 1, coarse.matches ? DPR_CAP_TOUCH : DPR_CAP_DESKTOP);
+    const size = renderer.getSize(new THREE.Vector2());
+    if (dpr !== renderer.getPixelRatio()) renderer.setPixelRatio(dpr);
+    if (size.x !== w || size.y !== h) renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    rect = canvas.getBoundingClientRect();
+    measure();
   };
   resize();
   const observer = new ResizeObserver(resize);
   observer.observe(container);
-  const onWindowChange = () => resize(); // pixel ratio changes (zoom, other screen) and page scroll move the rect
-  window.addEventListener("resize", onWindowChange);
-  window.addEventListener("scroll", onWindowChange, { passive: true });
+  // The window's resize also catches pixel ratio changes (browser zoom, another screen); scrolling moves the rect.
+  window.addEventListener("resize", resize);
+  window.addEventListener("scroll", measure, { passive: true });
 
   // Gestures.
   const raycaster = new THREE.Raycaster();
@@ -198,6 +202,10 @@ export function createStage(container: HTMLElement): PlayStage {
         started = true;
       }
       rig.update(dt);
+      if (envDirty) {
+        scene.environment = envFor(themeName);
+        envDirty = false;
+      }
 
       // Light and environment turn with the camera's heading (see KEY_OFFSET).
       keyOffset.copy(KEY_OFFSET).applyAxisAngle(yAxis, rig.yaw);
@@ -225,8 +233,8 @@ export function createStage(container: HTMLElement): PlayStage {
       unbind();
       canvas.removeEventListener("webglcontextrestored", onRestored);
       observer.disconnect();
-      window.removeEventListener("resize", onWindowChange);
-      window.removeEventListener("scroll", onWindowChange);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", measure);
       set.dispose();
       contact.dispose();
       balls.dispose();

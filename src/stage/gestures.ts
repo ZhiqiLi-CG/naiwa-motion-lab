@@ -87,11 +87,6 @@ export class GestureRecognizer {
 
   constructor(private readonly host: GestureHost) {}
 
-  /** Whether a gesture is in progress (for hover handling by the caller). */
-  get active(): boolean {
-    return this.phase !== null;
-  }
-
   down(id: number, x: number, y: number, t: number, type: string): void {
     if (this.tracks.size >= 2) return;
     const track: Track = { id, type, x0: x, y0: y, t0: t, x, y, t, samples: [{ x, y, t }] };
