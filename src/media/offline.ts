@@ -60,6 +60,9 @@ export interface Metrics {
   beats: number;
   /** Median pitch of voiced 40 ms frames by autocorrelation (Hz; 0 if none). */
   f0: number;
+  /** Peaks of the smoothed average spectrum above 250 Hz (the voice's formants), Hz, low to high, with how far each
+   *  stands above the lower of its two neighbouring valleys (dB). */
+  peaks: { hz: number; db: number }[];
 }
 
 export function measure(buf: AudioBuffer): Metrics {
@@ -137,7 +140,32 @@ export function measure(buf: AudioBuffer): Metrics {
     lowShare: den ? low / den : 0,
     beats: countBeats(env),
     f0: medianPitch(mono, env),
+    peaks: spectralPeaks(spectrum.power, spectrum.binHz),
   };
+}
+
+function spectralPeaks(power: Float32Array, binHz: number): { hz: number; db: number }[] {
+  const half = Math.round(230 / binHz);
+  const sm = new Float32Array(power.length);
+  for (let k = 0; k < power.length; k++) {
+    let s = 0;
+    let n = 0;
+    for (let j = Math.max(0, k - half); j <= Math.min(power.length - 1, k + half); j++, n++) s += power[j];
+    sm[k] = 10 * Math.log10(s / n + 1e-20);
+  }
+  const lo = Math.ceil(250 / binHz);
+  const hi = Math.floor(5000 / binHz);
+  const found: { hz: number; db: number }[] = [];
+  for (let k = lo; k < hi; k++) {
+    if (!(sm[k] > sm[k - 1] && sm[k] >= sm[k + 1])) continue;
+    let left = sm[k];
+    for (let j = k; j >= 1 && sm[j - 1] <= left + 0.01; j--) left = Math.min(left, sm[j - 1]);
+    let right = sm[k];
+    for (let j = k; j < sm.length - 1 && sm[j + 1] <= right + 0.01; j++) right = Math.min(right, sm[j + 1]);
+    const prominence = sm[k] - Math.max(left, right);
+    if (prominence > 3) found.push({ hz: Math.round(k * binHz), db: Math.round(prominence) });
+  }
+  return found.sort((a, b) => b.db - a.db).slice(0, 4).sort((a, b) => a.hz - b.hz);
 }
 
 const db = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
@@ -243,11 +271,11 @@ export function fft(re: Float32Array, im: Float32Array): void {
   }
 }
 
-/** Waveform (top) and spectrogram (bottom, 0–8 kHz, log power) of a buffer. */
-export function drawSound(canvas: HTMLCanvasElement, buf: AudioBuffer, title: string): void {
+/** Waveform (top) and spectrogram (bottom, 0–8 kHz, log power) of the first `seconds` of a buffer. */
+export function drawSound(canvas: HTMLCanvasElement, buf: AudioBuffer, title: string, seconds = buf.duration): void {
   const g = canvas.getContext("2d")!;
   const { width: w, height: h } = canvas;
-  const x = buf.getChannelData(0);
+  const x = buf.getChannelData(0).subarray(0, Math.min(buf.length, Math.round(seconds * RATE)));
   g.fillStyle = "#16130d";
   g.fillRect(0, 0, w, h);
   const waveH = Math.round(h * 0.35);
@@ -276,8 +304,11 @@ export function drawSound(canvas: HTMLCanvasElement, buf: AudioBuffer, title: st
   const im = new Float32Array(N);
   const img = g.createImageData(w, specH);
   const maxBin = Math.floor((8000 / RATE) * N);
+  const dbs = new Float32Array(w * specH);
+  let top = -Infinity;
   for (let px = 0; px < w; px++) {
-    const start = Math.floor(px * per);
+    // Centre the window on the column.
+    const start = Math.floor(px * per) - N / 2;
     for (let i = 0; i < N; i++) {
       re[i] = (x[start + i] ?? 0) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1)));
       im[i] = 0;
@@ -286,7 +317,14 @@ export function drawSound(canvas: HTMLCanvasElement, buf: AudioBuffer, title: st
     for (let py = 0; py < specH; py++) {
       const k = Math.floor(((specH - 1 - py) / specH) * maxBin);
       const p = 10 * Math.log10(re[k] * re[k] + im[k] * im[k] + 1e-12);
-      const v = Math.max(0, Math.min(1, (p + 40) / 60));
+      dbs[py * w + px] = p;
+      top = Math.max(top, p);
+    }
+  }
+  // 70 dB of range below the loudest bin.
+  for (let px = 0; px < w; px++) {
+    for (let py = 0; py < specH; py++) {
+      const v = Math.max(0, Math.min(1, (dbs[py * w + px] - top + 70) / 70));
       const o = (py * w + px) * 4;
       img.data[o] = 255 * Math.min(1, v * 1.6);
       img.data[o + 1] = 255 * Math.max(0, v * 1.4 - 0.4);

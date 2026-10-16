@@ -94,7 +94,7 @@ function chain(...nodes: AudioNode[]): AudioNode {
 /** "DUANG~": a rubbery spring. Harder = lower, longer and wobblier. */
 const boing: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
-  const f0 = lerp(560, 210, s) * vary(rnd, 0.08);
+  const f0 = lerp(560, 240, s) * vary(rnd, 0.12);
   const dur = lerp(0.38, 0.95, s) * vary(rnd, 0.1);
   const end = t + dur;
 
@@ -141,7 +141,7 @@ const squish: VoiceFn = (v) => {
   const bp = filter(ctx, "bandpass", 1, lerp(5, 3, s));
   bp.frequency.setValueAtTime(lerp(1900, 1300, s) * vary(rnd, 0.15), t);
   bp.frequency.exponentialRampToValueAtTime(280, end);
-  const env = perc(ctx, t, 0.012, lerp(0.7, 1.1, s), end);
+  const env = perc(ctx, t, 0.012, lerp(2.2, 3.2, s), end);
   // Bubbles: an irregular tremolo.
   const bubbles = ctx.createGain();
   bubbles.gain.value = 0.55;
@@ -154,9 +154,9 @@ const squish: VoiceFn = (v) => {
   chain(noise(v, t, end), bp, env, bubbles, v.out);
 
   const blorp = osc(v, "sine", t, end);
-  blorp.frequency.setValueAtTime(lerp(300, 170, s) * vary(rnd, 0.1), t);
-  blorp.frequency.exponentialRampToValueAtTime(lerp(110, 65, s), end);
-  chain(blorp, perc(ctx, t, 0.015, lerp(0.18, 0.32, s), end), v.out);
+  blorp.frequency.setValueAtTime(lerp(480, 340, s) * vary(rnd, 0.1), t);
+  blorp.frequency.exponentialRampToValueAtTime(lerp(190, 140, s), end);
+  chain(blorp, perc(ctx, t, 0.015, lerp(0.12, 0.18, s), end), v.out);
   return end;
 };
 
@@ -165,16 +165,16 @@ const slap: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
   const end = t + lerp(0.1, 0.2, s);
 
-  const hp = filter(ctx, "highpass", 700);
-  const tone = filter(ctx, "peaking", 2400 * vary(rnd, 0.15), 1.2);
-  tone.gain.value = 8;
-  const lp = filter(ctx, "lowpass", lerp(4000, 9000, s));
-  chain(noise(v, t, end), hp, tone, lp, perc(ctx, t, 0.001, lerp(0.45, 0.75, s), t + lerp(0.06, 0.12, s)), v.out);
+  const hp = filter(ctx, "highpass", 1000);
+  const tone = filter(ctx, "peaking", 2800 * vary(rnd, 0.15), 1.2);
+  tone.gain.value = 9;
+  const lp = filter(ctx, "lowpass", lerp(6000, 11000, s));
+  chain(noise(v, t, end), hp, tone, lp, perc(ctx, t, 0.001, lerp(0.8, 1.2, s), t + lerp(0.05, 0.1, s)), v.out);
 
   const thump = osc(v, "sine", t, end);
-  thump.frequency.setValueAtTime(lerp(240, 190, s) * vary(rnd, 0.1), t);
-  thump.frequency.exponentialRampToValueAtTime(80, t + 0.09);
-  chain(thump, perc(ctx, t, 0.002, lerp(0.3, 0.5, s), end), v.out);
+  thump.frequency.setValueAtTime(lerp(300, 240, s) * vary(rnd, 0.1), t);
+  thump.frequency.exponentialRampToValueAtTime(120, t + 0.08);
+  chain(thump, perc(ctx, t, 0.002, lerp(0.12, 0.22, s), end), v.out);
   return end;
 };
 
@@ -186,7 +186,7 @@ const pop: VoiceFn = (v) => {
   const o = osc(v, "sine", t, end);
   o.frequency.setValueAtTime(lerp(320, 240, s) * p, t);
   o.frequency.exponentialRampToValueAtTime(lerp(1000, 1400, s) * p, t + 0.05);
-  chain(o, perc(ctx, t, 0.003, lerp(0.35, 0.55, s), end), v.out);
+  chain(o, perc(ctx, t, 0.003, lerp(0.5, 0.75, s), end), v.out);
   chain(noise(v, t, t + 0.01), filter(ctx, "highpass", 2500), perc(ctx, t, 0.0005, 0.25, t + 0.008), v.out);
   return end;
 };
@@ -207,7 +207,7 @@ const whoosh: VoiceFn = (v) => {
   }
   const env = v.ctx.createGain();
   env.gain.setValueAtTime(0, t);
-  env.gain.linearRampToValueAtTime(lerp(0.9, 1.3, s), peakAt);
+  env.gain.linearRampToValueAtTime(lerp(0.7, 1.1, s), peakAt);
   env.gain.linearRampToValueAtTime(0, end);
   const whistleGain = ctx.createGain();
   whistleGain.gain.value = 0.5;
@@ -230,15 +230,15 @@ const land: VoiceFn = (v) => {
   const low = osc(v, "sine", t, end);
   low.frequency.setValueAtTime(lerp(120, 95, s) * vary(rnd, 0.08), t);
   low.frequency.exponentialRampToValueAtTime(42, end);
-  chain(low, perc(ctx, t, 0.004, lerp(0.5, 0.8, s), end), v.out);
+  chain(low, perc(ctx, t, 0.004, lerp(0.2, 0.32, s), end), v.out);
 
   const knock = osc(v, "triangle", t, t + 0.15);
-  knock.frequency.setValueAtTime(lerp(260, 200, s) * vary(rnd, 0.1), t);
-  knock.frequency.exponentialRampToValueAtTime(110, t + 0.15);
-  chain(knock, perc(ctx, t, 0.002, lerp(0.2, 0.3, s), t + 0.15), v.out);
+  knock.frequency.setValueAtTime(lerp(320, 250, s) * vary(rnd, 0.1), t);
+  knock.frequency.exponentialRampToValueAtTime(140, t + 0.15);
+  chain(knock, perc(ctx, t, 0.002, lerp(0.45, 0.65, s), t + 0.15), v.out);
 
-  const flub = filter(ctx, "bandpass", 420 * vary(rnd, 0.15), 2.5);
-  chain(noise(v, t, t + 0.2), flub, perc(ctx, t + 0.005, 0.006, lerp(0.5, 0.9, s), t + 0.2), v.out);
+  const flub = filter(ctx, "bandpass", 520 * vary(rnd, 0.15), 2);
+  chain(noise(v, t, t + 0.2), flub, perc(ctx, t + 0.005, 0.006, lerp(1.2, 1.8, s), t + 0.2), v.out);
   return end;
 };
 
@@ -250,7 +250,7 @@ const ball: VoiceFn = (v) => {
   const a = osc(v, "sine", t, end);
   a.frequency.setValueAtTime(f * 1.2, t);
   a.frequency.exponentialRampToValueAtTime(f, t + 0.012);
-  chain(a, perc(ctx, t, 0.001, lerp(0.35, 0.6, s), end), v.out);
+  chain(a, perc(ctx, t, 0.001, lerp(0.45, 0.7, s), end), v.out);
   const b = osc(v, "sine", t, t + 0.06);
   b.frequency.value = f * 2.63;
   chain(b, perc(ctx, t, 0.001, lerp(0.12, 0.2, s), t + 0.06), v.out);
@@ -269,8 +269,8 @@ const pump: VoiceFn = (v) => {
   air.frequency.exponentialRampToValueAtTime(1800, end);
   const airEnv = ctx.createGain();
   airEnv.gain.setValueAtTime(0, t);
-  airEnv.gain.linearRampToValueAtTime(0.8, t + 0.05);
-  airEnv.gain.setValueAtTime(0.8, end - 0.08);
+  airEnv.gain.linearRampToValueAtTime(0.35, t + 0.05);
+  airEnv.gain.setValueAtTime(0.35, end - 0.08);
   airEnv.gain.linearRampToValueAtTime(0, end);
   chain(noise(v, t, end), air, airEnv, v.out);
 
@@ -285,7 +285,7 @@ const pump: VoiceFn = (v) => {
   vib.connect(vibDepth).connect(squeak.frequency);
   const sqEnv = ctx.createGain();
   sqEnv.gain.setValueAtTime(0, t + 0.04);
-  sqEnv.gain.linearRampToValueAtTime(0.22, t + 0.1);
+  sqEnv.gain.linearRampToValueAtTime(0.16, t + 0.1);
   sqEnv.gain.linearRampToValueAtTime(0, end);
   chain(squeak, sqEnv, v.out);
   return end;
@@ -295,25 +295,26 @@ const pump: VoiceFn = (v) => {
 /* Voice: formant synthesis of a cartoon giggle and belly laugh                                                       */
 /* ---------------------------------------------------------------------------------------------------------------- */
 
-/** Formant frequency, bandwidth-ish Q and level of one vowel (scaled up from an adult's: a small, cute tract). */
-type Vowel = [freq: number, q: number, gain: number][];
+/** Formants of one vowel: frequency, Q and boost (dB) of each resonance. Scaled up from an adult's by about 1.15: a
+ *  small, cute vocal tract. */
+type Vowel = [freq: number, q: number, boostDb: number][];
 const VOWEL_A: Vowel = [
-  [880, 5, 1],
-  [1350, 7, 0.55],
-  [2850, 9, 0.22],
-  [3800, 10, 0.08],
+  [880, 3.5, 16],
+  [1350, 5, 15],
+  [2850, 7, 11],
+  [3800, 8, 6],
 ];
 const VOWEL_E: Vowel = [
-  [560, 5, 1],
-  [2050, 8, 0.5],
-  [2950, 9, 0.25],
-  [3900, 10, 0.08],
+  [560, 3.5, 14],
+  [2050, 5, 16],
+  [2950, 7, 12],
+  [3900, 8, 6],
 ];
 const VOWEL_I: Vowel = [
-  [380, 5, 1],
-  [2450, 8, 0.45],
-  [3250, 9, 0.22],
-  [4100, 10, 0.08],
+  [380, 3.5, 14],
+  [2450, 5, 16],
+  [3250, 7, 13],
+  [4100, 8, 6],
 ];
 
 interface Syllable {
@@ -329,7 +330,7 @@ interface Syllable {
 
 const glottalCache = new WeakMap<BaseAudioContext, PeriodicWave>();
 
-/** A glottal-ish source: harmonics falling a little faster than a sawtooth, softer and less buzzy. */
+/** A glottal-ish source: harmonics falling at about 7.5 dB per octave (softer than a sawtooth). */
 function glottal(ctx: BaseAudioContext): PeriodicWave {
   let wave = glottalCache.get(ctx);
   if (!wave) {
@@ -343,7 +344,10 @@ function glottal(ctx: BaseAudioContext): PeriodicWave {
   return wave;
 }
 
-/** Speak a run of syllables "h + vowel" (vowel gliding from `from` to `to` inside each syllable). */
+/**
+ * Speak a run of syllables "h + vowel", the vowel gliding from `from` to `to` inside each syllable. Source-filter
+ * model: voice and breath noise go through one cascade of formant resonances, so the "h" has the vowel's colour.
+ */
 function speak(v: VoiceArgs, syllables: Syllable[], from: Vowel, to: Vowel): number {
   const { ctx } = v;
   const first = syllables[0];
@@ -365,50 +369,48 @@ function speak(v: VoiceArgs, syllables: Syllable[], from: Vowel, to: Vowel): num
   voiceGain.gain.setValueAtTime(0, t0);
   breathGain.gain.setValueAtTime(0, t0);
   src.frequency.setValueAtTime(first.f0, t0);
-
   for (const syl of syllables) {
     const vt = syl.t + syl.h;
     const ve = vt + syl.voiced;
-    // "h": breath through the vowel's own resonances, overlapping the voice onset.
+    // "h": breath, overlapping the voice onset.
     breathGain.gain.setValueAtTime(0, syl.t);
-    breathGain.gain.linearRampToValueAtTime(0.9 * syl.amp, syl.t + syl.h * 0.6);
-    breathGain.gain.linearRampToValueAtTime(0.12 * syl.amp, vt + 0.02);
+    breathGain.gain.linearRampToValueAtTime(0.5 * syl.amp, syl.t + syl.h * 0.6);
+    breathGain.gain.linearRampToValueAtTime(0.08 * syl.amp, vt + 0.02);
     breathGain.gain.linearRampToValueAtTime(0, ve);
     // Voice: quick rise, a held vowel, a soft cut-off.
     voiceGain.gain.setValueAtTime(0, vt - 0.01);
     voiceGain.gain.linearRampToValueAtTime(syl.amp, vt + 0.025);
     voiceGain.gain.linearRampToValueAtTime(syl.amp * 0.75, ve - 0.03);
     voiceGain.gain.linearRampToValueAtTime(0, ve);
-    src.frequency.setValueAtTime(syl.f0, vt - 0.01);
+    // Each beat scoops up, then falls: lively and comic rather than flat.
+    src.frequency.setValueAtTime(syl.f0 * 0.9, vt - 0.01);
+    src.frequency.exponentialRampToValueAtTime(syl.f0 * 1.04, vt + 0.03);
     src.frequency.exponentialRampToValueAtTime(syl.f1, ve);
   }
-
-  const mix = ctx.createGain();
-  mix.gain.value = 1;
-  const breath = noise(v, t0, end);
-  const breathHp = filter(ctx, "highpass", 500);
-  chain(breath, breathHp, breathGain);
-  from.forEach(([f, q, g], i) => {
-    const bp = filter(ctx, "bandpass", f, q);
-    for (const syl of syllables) {
-      bp.frequency.setValueAtTime(f, syl.t);
-      bp.frequency.linearRampToValueAtTime(to[i][0], syl.t + syl.h + syl.voiced);
-    }
-    const lvl = ctx.createGain();
-    lvl.gain.value = g;
-    voiceGain.connect(bp);
-    breathGain.connect(bp);
-    chain(bp, lvl, mix);
-  });
   src.connect(voiceGain);
-  // A little of the source's low end, which the band-passes alone lose (keeps the voice round, not whistly).
-  const body = filter(ctx, "lowpass", 500);
-  const bodyGain = ctx.createGain();
-  bodyGain.gain.value = 0.18;
-  chain(voiceGain, body, bodyGain, mix);
-  mix.connect(v.out);
+  chain(noise(v, t0, end), filter(ctx, "highpass", 400), breathGain);
+
+  const tract = ctx.createGain();
+  voiceGain.connect(tract);
+  breathGain.connect(tract);
+  let node: AudioNode = tract;
+  from.forEach(([f, q, boost], i) => {
+    const pk = filter(ctx, "peaking", f, q);
+    pk.gain.value = boost;
+    for (const syl of syllables) {
+      pk.frequency.setValueAtTime(f, syl.t);
+      pk.frequency.linearRampToValueAtTime(to[i][0], syl.t + syl.h + syl.voiced);
+    }
+    node = node.connect(pk);
+  });
+  const level = ctx.createGain();
+  level.gain.value = VOICE_LEVEL;
+  chain(node, filter(ctx, "lowpass", 5500), level, v.out);
   return end;
 }
+
+/** The formant boosts add up to about +20 dB: bring the voice back to the other effects' level. */
+const VOICE_LEVEL = 0.16;
 
 /** "嘿嘿": a cheeky two- or three-beat snicker, high and quick. */
 const giggle: VoiceFn = (v) => {

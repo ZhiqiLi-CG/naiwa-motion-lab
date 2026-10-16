@@ -21,7 +21,7 @@
       td, th { padding: 2px 8px; border-bottom: 1px solid var(--line); text-align: right; }
       th:first-child, td:first-child { text-align: left; }
       .bad { color: #ff7a6b; font-weight: 700; }
-      #specs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 8px; }
+      #specs { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 8px; margin-top: 8px; }
       #specs canvas { width: 100%; border-radius: 6px; }
       code { color: var(--accent); word-break: break-all; }
     </style>
@@ -89,37 +89,60 @@
         for (let i = 0; i < 8; i++) setTimeout(() => sfx.play("boing", strength()), i * 220);
       };
 
-      // A WebGL scene like the stage's (default renderer: no preserveDrawingBuffer), to record.
+      // A WebGL scene like the stage's (default renderer: no preserveDrawingBuffer), to record; a 2D drawing when the
+      // GPU is busy and WebGL cannot start (the sound checks must not depend on it).
       const canvas = $("stage");
-      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-      renderer.setPixelRatio(1);
-      renderer.setSize(1280, 720, false);
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color("#fff3d1");
-      const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 50);
-      camera.position.set(0, 1.2, 4.5);
-      camera.lookAt(0, 0.6, 0);
-      scene.add(new THREE.HemisphereLight("#fff8e6", "#8a7a50", 1.6));
-      const sun = new THREE.DirectionalLight("#ffffff", 2);
-      sun.position.set(2, 4, 3);
-      scene.add(sun);
-      const blob = new THREE.Mesh(new THREE.SphereGeometry(0.6, 48, 32), new THREE.MeshStandardMaterial({ color: "#f5c842", roughness: 0.6 }));
-      scene.add(blob);
-      const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.MeshStandardMaterial({ color: "#e9dcb8" }));
-      floor.rotation.x = -Math.PI / 2;
-      scene.add(floor);
       let lastBounce = 0;
-      renderer.setAnimationLoop((now) => {
+      const bounce = (now) => {
         const t = now / 1000;
         const phase = (t * 1.6) % 1;
-        const y = 4 * phase * (1 - phase) * 1.2;
-        const squash = 1 + 0.35 * Math.exp(-phase * 12);
-        blob.position.set(Math.sin(t * 0.9) * 1.2, 0.6 / squash + y, 0);
-        blob.scale.set(squash, 1 / squash, squash);
         if (phase < lastBounce) sfx.play(Math.random() < 0.5 ? "boing" : "land", 0.4 + Math.random() * 0.5);
         lastBounce = phase;
-        renderer.render(scene, camera);
-      });
+        return { x: Math.sin(t * 0.9) * 1.2, y: 4 * phase * (1 - phase) * 1.2, squash: 1 + 0.35 * Math.exp(-phase * 12) };
+      };
+      let scene3d = "webgl";
+      try {
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(1);
+        renderer.setSize(1280, 720, false);
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color("#fff3d1");
+        const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 50);
+        camera.position.set(0, 1.2, 4.5);
+        camera.lookAt(0, 0.6, 0);
+        scene.add(new THREE.HemisphereLight("#fff8e6", "#8a7a50", 1.6));
+        const sun = new THREE.DirectionalLight("#ffffff", 2);
+        sun.position.set(2, 4, 3);
+        scene.add(sun);
+        const blob = new THREE.Mesh(new THREE.SphereGeometry(0.6, 48, 32), new THREE.MeshStandardMaterial({ color: "#f5c842", roughness: 0.6 }));
+        scene.add(blob);
+        const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.MeshStandardMaterial({ color: "#e9dcb8" }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+        renderer.setAnimationLoop((now) => {
+          const b = bounce(now);
+          blob.position.set(b.x, 0.6 / b.squash + b.y, 0);
+          blob.scale.set(b.squash, 1 / b.squash, b.squash);
+          renderer.render(scene, camera);
+        });
+      } catch (e) {
+        scene3d = "2d";
+        console.warn("media dev: no WebGL, recording a 2D drawing", e.message);
+        const g = canvas.getContext("2d");
+        const loop = (now) => {
+          const b = bounce(now);
+          g.fillStyle = "#fff3d1";
+          g.fillRect(0, 0, 1280, 720);
+          g.fillStyle = "#e9dcb8";
+          g.fillRect(0, 520, 1280, 200);
+          g.fillStyle = "#f5c842";
+          g.beginPath();
+          g.ellipse(640 + b.x * 300, 520 - 120 / b.squash - b.y * 250, 120 * b.squash, 120 / b.squash, 0, 0, Math.PI * 2);
+          g.fill();
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+      }
 
       const recorder = createRecorder({ maxMs: 20000, onAutoStop: (r) => shown(r) });
       let lastRec = null;
@@ -158,16 +181,16 @@
             rows[`${kind}@${s}`] = { ...m, rawPeak: raw.peak };
             if (draw && s === 0.5) {
               const c = document.createElement("canvas");
-              c.width = 600; c.height = 240;
-              drawSound(c, buf, `${kind} s=0.5`);
+              c.width = 640; c.height = 300;
+              drawSound(c, buf, `${kind} s=0.5 · ${(m.length + 0.1).toFixed(2)} s · 0–8 kHz`, m.length + 0.1);
               $("specs").append(c);
             }
           }
-          // Variation: the same call with five seeds.
+          // Variation: the same call with six seeds.
           const lens = [];
           const cents = [];
           const f0s = [];
-          for (let seed = 1; seed <= 5; seed++) {
+          for (let seed = 101; seed < 6 * 7919; seed += 7919) {
             const m = measure(await render([{ kind, at: 0.02, strength: 0.5 }], 2.5, seed));
             lens.push(m.length); cents.push(m.centroid); f0s.push(m.f0);
           }
@@ -206,7 +229,7 @@
         let bin = "";
         for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
         return { mimeType: r.mimeType, fileName: r.fileName, durationMs: r.durationMs, size: bytes.length, startedActive,
-          activeAfter: recorder.active, audioTracks: sfx.stream?.getAudioTracks().length ?? 0, ctx: sfx.stream ? "ok" : "none",
+          activeAfter: recorder.active, scene: scene3d, audioTracks: sfx.stream?.getAudioTracks().length ?? 0, ctx: sfx.stream ? "ok" : "none",
           base64: btoa(bin) };
       }
       window.mediaDev = { sfx, analyze, recordTest };
