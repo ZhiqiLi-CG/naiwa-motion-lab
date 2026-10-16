@@ -9,25 +9,36 @@ and replaceable and the problems are still solved together.
 ## The pipeline
 
 ```
-pose targets ─▶ skeleton ─▶ target shape ─▶ flesh solver ─▶ collision ─▶ surface output ─▶ render
- (motion)       (bones)     (skinning)       (dynamics      (contacts,     (embedding,
-                                              around the     targets        smoothing,
-                                              target)        kept outside)  features)
+pose targets ─▶ skeleton ◀─▶ coupling ◀─▶ flesh solver ─▶ collision ─▶ surface output ─▶ render
+ (motion)       (bones)      (bones as     (hyperelastic    (contacts)     (embedding,
+                             boundary,      cells; optional                 smoothing,
+                             two-way)       target shape)                   features)
                                      quality metrics read every stage
 ```
 
-The key idea: **the flesh simulates the difference from a good kinematic deformation**, not the whole shape. A
-skinning method gives, every step, where each piece of flesh would be if it were perfectly firm (the *target
-shape*); the solver adds the soft response around it (jiggle, dents, squash, inertia). Large bone rotations are then
-carried by the skinning, which never folds, and the physics only has to handle small, well-conditioned deviations.
-Today the free flesh is carried by physics alone, which is why the head and chest collapse when the spine bends.
+**Physics first.** The default is a physical model: hyperelastic flesh (corotational or neo-Hookean cells, which
+are rotation-invariant, so large bone rotations do not by themselves fold anything), the bones as boundary
+conditions (the layer of flesh against a bone moves with it), an implicit/FEM solve, and two-way coupling (the flesh
+pushes back on the bones, momentum is conserved), with parameters that mean something physically (Young's modulus,
+Poisson ratio, damping, density). The head and chest collapse seen today is not a limit of physics: it comes from the
+current set-up (Volume cells held only by edges, few particles riding on the head and chest bones, soft settings, an
+iterative solve that does not converge under large rotations), and is fixed there first.
+
+**A skinned target, only as a physically interpreted option.** The user asked whether simulating the deviation from
+a skinned shape is "不太物理" — it is, if done naively: the skinned shape is a geometric guess rather than a stress-free
+state, and pulling flesh towards it is an external force with no reaction on the bones (momentum and energy are not
+conserved). It is therefore offered only in two physically interpreted forms, both two-way: as connective tissue
+(distributed tethers from flesh to bones, their reaction forces applied to those bones by the skin weights), or as an
+active, pose-dependent rest shape (as muscles change the stress-free state; the elastic energy is measured against
+it). One weight parameter goes from 0 (pure physics, the default) upward, and the lab compares the two on the same
+motion: deformation quality, interpenetration, momentum and energy drift.
 
 ## Problems and where they are solved
 
 | Problem the user would see | Cause | Block | Approach |
 |---|---|---|---|
-| Joints collapse or twist like a candy wrapper (neck, shoulders, hips, wrists) | linear blend skinning averages rotations | target shape | dual-quaternion or centre-of-rotation skinning; twist spread along the limb |
-| The head and chest fold into the torso when bending | free flesh carried by physics alone, cells held only by edges | target shape + flesh solver | flesh springs towards the skinned target (goal / shape matching per region), FEM or corotational cells for what remains |
+| Joints collapse or twist like a candy wrapper (neck, shoulders, hips, wrists) | flesh at a joint bound to two bones that twist apart; for the optional target, linear blend skinning | coupling (+ target shape) | the flesh between two bones is free to deform elastically (not bound to either); twist spread along the limb; dual-quaternion or centre-of-rotation skinning for the optional target |
+| The head and chest fold into the torso when bending | Volume cells held only by edges, few particles on the head/chest bones, soft settings, a solve that does not converge | flesh solver + coupling | rotation-invariant hyperelastic cells (corotational / neo-Hookean), FEM solve, enough flesh bound to the bones; the skinned-target option only as tethers or an active rest shape, two-way |
 | A hard seam where flesh changes from "on the bone" to "free" | particles hard-attached to bones next to free ones | coupling | attachment strength falls off smoothly with the skin weights and the distance from the bone, no on/off boundary |
 | Flesh lags behind like syrup on fast moves, or slides around the body | damping and inertia in world space | flesh solver / coupling | damp velocities relative to the target's motion (simulation in the body's frame); inertia transfer as a parameter |
 | Arms enter the belly; the belly fights the arm and jitters | the target itself interpenetrates; collision and target pull against each other | collision (+ motion) | contacts win over target springs; targets inside another part are projected out; poses keep limbs outside (motion) |
