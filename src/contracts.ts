@@ -180,7 +180,8 @@ export interface FrogHit {
   region: HitRegion;
 }
 
-export type FrogEventKind = "poke" | "slap" | "grab" | "release" | "land" | "ball" | "squish";
+/** tickle: the feather rubbing over it (sent by the integration to Character.react, not by the simulation). */
+export type FrogEventKind = "poke" | "slap" | "grab" | "release" | "land" | "ball" | "squish" | "tickle";
 export interface FrogEvent {
   kind: FrogEventKind;
   point: THREE.Vector3;
@@ -267,6 +268,11 @@ export interface PointerInfo {
 export interface GestureHandler {
   /** Does a press here start an interaction (true) or orbit the camera (false)? */
   hitTest(ray: THREE.Ray): boolean;
+  /** A press accepted by hitTest begins / ends (also when it never moves: the pump is held this way). */
+  onPressStart?(p: PointerInfo): void;
+  onPressEnd?(p: PointerInfo): void;
+  /** A tap (press and release without dragging) anywhere, also where hitTest said false (the ball tool throws at
+   *  the background too). */
   onTap(p: PointerInfo): void;
   onDragStart(p: PointerInfo): void;
   onDragMove(p: PointerInfo): void;
