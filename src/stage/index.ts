@@ -31,6 +31,9 @@ export interface PlayStage extends Stage {
   /** Ease to a view (radians; yaw 0 = in front of the frog, π/2 = its left side; zoom 1 = default framing), e.g. for
    *  front / side / top buttons. Unset fields keep their value. */
   setView(v: { yaw?: number; pitch?: number; zoom?: number }): void;
+  /** How much of each canvas edge the UI covers (CSS px, as the UI's insets): the frog is framed in the free middle,
+   *  easing when panels open or close. */
+  setInsets(i: { top: number; right: number; bottom: number; left: number }): void;
   readonly info: StageInfo;
 }
 
@@ -149,6 +152,33 @@ export function createStage(container: HTMLElement): PlayStage {
   window.addEventListener("resize", resize);
   window.addEventListener("scroll", measure, { passive: true });
 
+  // UI insets: the frog is centred in the free part of the canvas (a shifted projection centre) and fitted to it.
+  const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  const shift = { x: 0, y: 0, w: 1, h: 1 };
+  const applyInsets = (k: number) => {
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
+    // Never frame into less than 40% of the canvas: a panel covering almost everything should not shrink the frog away.
+    const fw = Math.max(0.4, (w - insets.left - insets.right) / w);
+    const fh = Math.max(0.4, (h - insets.top - insets.bottom) / h);
+    const cx = ((insets.left - insets.right) / 2) / w;
+    const cy = ((insets.top - insets.bottom) / 2) / h;
+    shift.x += (cx - shift.x) * k;
+    shift.y += (cy - shift.y) * k;
+    shift.w += (fw - shift.w) * k;
+    shift.h += (fh - shift.h) * k;
+    rig.freeW = shift.w;
+    rig.freeH = shift.h;
+    const ox = Math.round(-shift.x * w * 10) / 10;
+    const oy = Math.round(-shift.y * h * 10) / 10;
+    const v = camera.view;
+    if (ox === 0 && oy === 0) {
+      if (v?.enabled) camera.clearViewOffset();
+    } else if (!v?.enabled || v.offsetX !== ox || v.offsetY !== oy || v.fullWidth !== w || v.fullHeight !== h) {
+      camera.setViewOffset(w, h, ox, oy, w, h);
+    }
+  };
+
   // Gestures.
   const raycaster = new THREE.Raycaster();
   const orbitPerPx = () => 2.8 / Math.max(1, Math.min(rect.width, rect.height));
@@ -201,9 +231,11 @@ export function createStage(container: HTMLElement): PlayStage {
     setTheme,
     resetView: () => rig.reset(),
     setView: (v) => rig.setView(v),
+    setInsets: (i) => Object.assign(insets, i),
     frame(dt) {
       const t0 = performance.now();
       dt = Math.min(Math.max(dt, 0), 0.1);
+      applyInsets(started ? 1 - Math.exp(-8 * dt) : 1);
       if (!started) {
         rig.snap();
         started = true;

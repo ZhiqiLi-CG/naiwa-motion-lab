@@ -51,10 +51,11 @@ function smoothDamp(cur: number, goal: number, vel: number[], i: number, time: n
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** Distance at which the default framing box fits a view of this aspect (width / height). */
-export function fitDistance(aspect: number, fovDeg = FOV): number {
+/** Distance at which the default framing box fits a view of this aspect (width / height), when only the fractions
+ *  freeW, freeH of the view's width and height are free (the rest is covered by the UI). */
+export function fitDistance(aspect: number, fovDeg = FOV, freeW = 1, freeH = 1): number {
   const t = Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2);
-  return Math.max(FRAME_HALF_H / t, FRAME_HALF_W / (t * aspect));
+  return Math.max(FRAME_HALF_H / (t * freeH), FRAME_HALF_W / (t * aspect * freeW));
 }
 
 export class CameraRig {
@@ -76,6 +77,9 @@ export class CameraRig {
   private time = 0;
   /** Shake is scaled down for people who asked for less motion. */
   shakeScale = 1;
+  /** Fractions of the view's width and height not covered by the UI (the frog is framed to fit in there). */
+  freeW = 1;
+  freeH = 1;
 
   constructor(readonly camera: THREE.PerspectiveCamera) {}
 
@@ -170,7 +174,7 @@ export class CameraRig {
 
     const cam = this.camera;
     const lift = Math.max(0, t.y - REST_Y) * (LIFT_BACKOFF / VERTICAL_FOLLOW);
-    const d = Math.max(MIN_DISTANCE, fitDistance(cam.aspect, cam.fov) * this.zoom) + lift;
+    const d = Math.max(MIN_DISTANCE, fitDistance(cam.aspect, cam.fov, this.freeW, this.freeH) * this.zoom) + lift;
     const cp = Math.cos(this.pitch);
     cam.position.set(
       t.x + d * cp * Math.sin(this.yaw),
