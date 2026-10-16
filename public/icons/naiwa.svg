@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 奶蛙 laughing with its tongue out, holding its belly (assets-src/naiwa/references/), app icon.
+       The PNGs beside it are rendered from it with librsvg (ffmpeg): icon-192/512 as is; apple-touch-icon (180) with
+       rx="0" (full bleed); icon-maskable-512 with rx="0" and the frog group scaled into the safe circle:
+       sed -e 's/rx="112"/rx="0"/' -e 's/<g id="frog">/<g id="frog" transform="translate(256 276) scale(0.82) translate(-256 -276)">/' -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#fff6dc"/>
+      <stop offset="1" stop-color="#ffe3a3"/>
+    </radialGradient>
+    <radialGradient id="skin" gradientUnits="userSpaceOnUse" cx="215" cy="190" r="400">
+      <stop offset="0" stop-color="#ffe57a"/>
+      <stop offset="0.5" stop-color="#f8c63c"/>
+      <stop offset="1" stop-color="#dc9a1e"/>
+    </radialGradient>
+    <radialGradient id="belly" cx="45%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#fbedc8"/>
+      <stop offset="1" stop-color="#ead096"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="45%" cy="40%" r="60%">
+      <stop offset="0" stop-color="#b7e39a"/>
+      <stop offset="1" stop-color="#78bb66"/>
+    </radialGradient>
+    <g id="handL" fill="#5f5b40" stroke="#5f5b40" stroke-linecap="round">
+      <path fill="none" stroke="#eab231" stroke-width="46" d="M114 300C92 344 104 394 146 420"/>
+      <circle cx="150" cy="424" r="25" stroke="none"/>
+      <path fill="none" stroke-width="15" d="M160 410L188 400M166 425L197 422M162 440L190 448M144 408L152 390"/>
+    </g>
+    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <g id="frog">
+    <!-- Pear body: small head merging into a huge body; the eyes bulge from the sides of the head. -->
+    <g fill="url(#skin)">
+      <path d="M256 84C320 84 356 126 362 180C368 236 448 290 458 388C466 466 452 540 436 600H76C60 540 46 466 54 388C64 290 144 236 150 180C156 126 192 84 256 84Z"/>
+      <circle cx="170" cy="168" r="40"/>
+      <circle cx="342" cy="168" r="40"/>
+    </g>
+    <ellipse cx="256" cy="452" rx="152" ry="122" fill="url(#belly)"/>
+    <use href="#handL"/>
+    <use href="#handL" transform="translate(512 0) scale(-1 1)"/>
+    <circle cx="170" cy="166" r="30" fill="url(#iris)" stroke="#3f6b35" stroke-width="3"/>
+    <circle cx="342" cy="166" r="30" fill="url(#iris)" stroke="#3f6b35" stroke-width="3"/>
+    <circle cx="174" cy="168" r="14" fill="#1b1b18"/>
+    <circle cx="338" cy="168" r="14" fill="#1b1b18"/>
+    <circle cx="168" cy="160" r="5" fill="#fff"/>
+    <circle cx="332" cy="160" r="5" fill="#fff"/>
+    <!-- The big open grin: teeth on top, tongue out. -->
+    <path fill="#4a1714" d="M184 214C220 226 292 226 328 214C330 268 300 300 256 300C212 300 182 268 184 214Z"/>
+    <path fill="#fffaf0" d="M188 216C222 228 290 228 324 216L322 234C290 244 222 244 190 234Z"/>
+    <path fill="#e8798a" d="M222 266C232 252 280 252 290 266C298 280 296 312 280 324C268 334 244 334 232 324C216 312 214 280 222 266Z"/>
+    <path fill="none" stroke="#c95a6c" stroke-width="3" stroke-linecap="round" d="M256 272V310"/>
+    </g>
+  </g>
+</svg>

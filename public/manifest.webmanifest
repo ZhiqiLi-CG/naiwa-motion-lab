@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "奶蛙 Playground",
+  "short_name": "奶蛙",
+  "description": "戳它、捏它、抛起它，再用摄像头带它跳舞：一只软体 + 骨骼的奶蛙。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fff3d1",
+  "theme_color": "#f8c63c",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/naiwa.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

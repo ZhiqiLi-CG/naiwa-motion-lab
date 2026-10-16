@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- 奶蛙, simplified from naiwa.svg to read at 16–32 px. -->
+  <defs>
+    <radialGradient id="s" gradientUnits="userSpaceOnUse" cx="26" cy="22" r="48">
+      <stop offset="0" stop-color="#ffe57a"/>
+      <stop offset="0.55" stop-color="#f8c63c"/>
+      <stop offset="1" stop-color="#e09f22"/>
+    </radialGradient>
+  </defs>
+  <path fill="url(#s)" stroke="#b97a12" stroke-width="2" d="M32 5C41 5 45 11 46 18C47 25 59 32 60 45C61 55 56 61 48 62H16C8 61 3 55 4 45C5 32 17 25 18 18C19 11 23 5 32 5Z"/>
+  <ellipse cx="32" cy="50" rx="17" ry="11" fill="#f6e2b0"/>
+  <circle cx="19.5" cy="17" r="7" fill="#9fd486" stroke="#2f5a28" stroke-width="1.6"/>
+  <circle cx="44.5" cy="17" r="7" fill="#9fd486" stroke="#2f5a28" stroke-width="1.6"/>
+  <circle cx="20.5" cy="17.5" r="3.4" fill="#151512"/>
+  <circle cx="43.5" cy="17.5" r="3.4" fill="#151512"/>
+  <path fill="#4a1714" d="M23 25C27 27 37 27 41 25C41 32 37 36 32 36C27 36 23 32 23 25Z"/>
+  <path fill="#e8798a" d="M28.5 31.5C30 29.5 34 29.5 35.5 31.5C36.5 34 35 37.5 32 37.5C29 37.5 27.5 34 28.5 31.5Z"/>
+</svg>

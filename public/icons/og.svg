@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <!-- Link preview (og:image). Rendered to og.png: ffmpeg -width 1200 -height 630 -i og.svg og.png -->
+  <defs>
+    <radialGradient id="bg" cx="30%" cy="40%" r="90%">
+      <stop offset="0" stop-color="#fff7de"/>
+      <stop offset="1" stop-color="#ffdf94"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <image href="naiwa.svg" x="70" y="55" width="520" height="520"/>
+  <g font-family="Noto Sans CJK SC, PingFang SC, Microsoft YaHei, sans-serif">
+    <text x="650" y="270" font-size="104" font-weight="700" fill="#3b2a0c">奶蛙</text>
+    <text x="650" y="350" font-size="64" font-weight="700" fill="#3b2a0c">Playground</text>
+    <text x="652" y="440" font-size="38" fill="#6e5216">戳它 · 捏它 · 抛起它</text>
+    <text x="652" y="496" font-size="38" fill="#6e5216">再带它跳舞，录下来分享</text>
+  </g>
+</svg>
