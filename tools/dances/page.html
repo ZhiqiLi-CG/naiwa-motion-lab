@@ -1,0 +1,123 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>dances tool</title>
+<link rel="icon" href="data:," />
+<script type="module">
+  // Driven by tools/dances/browser.mjs: runs the app's PoseLandmarker over extracted frames, and draws check panels.
+  import { FilesetResolver, PoseLandmarker } from "/vision/vision_bundle.mjs";
+
+  const frameUrl = (i) => `/frames/${String(i + 1).padStart(5, "0")}.jpg`;
+  const loadFrame = async (i) => createImageBitmap(await (await fetch(frameUrl(i))).blob());
+  const pack = (pts) => pts.map((p) => [p.x, p.y, p.z, p.visibility ?? 0]);
+
+  /** mode: "forward" | "backward" (VIDEO mode, tracking + the task's own smoothing, either time direction) | "image"
+   *  (IMAGE mode, every frame on its own). Returns per frame { image, world } or null when no person was found. */
+  window.extract = async ({ count, fps, mode }) => {
+    const fileset = await FilesetResolver.forVisionTasks("/vision/wasm");
+    const landmarker = await PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: "/model.task", delegate: "CPU" },
+      runningMode: mode === "image" ? "IMAGE" : "VIDEO",
+      numPoses: 1,
+    });
+    const order = [...Array(count).keys()];
+    if (mode === "backward") order.reverse();
+    const out = new Array(count).fill(null);
+    for (let k = 0; k < count; k++) {
+      const i = order[k];
+      const bmp = await loadFrame(i);
+      const r = mode === "image" ? landmarker.detect(bmp) : landmarker.detectForVideo(bmp, (k * 1000) / fps);
+      bmp.close();
+      if (r.landmarks.length) out[i] = { image: pack(r.landmarks[0]), world: pack(r.worldLandmarks[0]) };
+    }
+    landmarker.close();
+    return out;
+  };
+
+  const BONES = [
+    [11, 12], [11, 23], [12, 24], [23, 24],
+    [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
+    [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+    [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
+    [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
+    [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8], [9, 10],
+  ];
+  // MediaPipe odd indices are the person's left; colour the sides apart so left/right swaps show.
+  const side = (a, b) => (a % 2 === 1 && b % 2 === 1 ? "L" : a % 2 === 0 && b % 2 === 0 && a > 0 ? "R" : "C");
+
+  function skeleton(ctx, pts, map, style) {
+    ctx.lineCap = "round";
+    for (const [a, b] of BONES) {
+      const s = side(a, b);
+      ctx.strokeStyle = style.colors[s];
+      ctx.lineWidth = style.width;
+      ctx.globalAlpha = style.alpha * Math.max(0.35, Math.min(pts[a][3], pts[b][3]));
+      const [ax, ay] = map(pts[a]);
+      const [bx, by] = map(pts[b]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** One check panel: the video frame with the image landmarks drawn over it, then the world landmarks seen from the
+   *  front (x, y) and from the side (z, y). layers: [{ image, world, style }] drawn in order; view: the part of the
+   *  frame to show, [x0, y0, x1, y1] normalised. */
+  window.draw = async ({ frame, layers, label, height, view = [0, 0, 1, 1] }) => {
+    const bmp = await loadFrame(frame);
+    const [u0, v0, u1, v1] = view;
+    const vw = Math.round((height * (u1 - u0) * bmp.width) / ((v1 - v0) * bmp.height));
+    const pw = Math.round(height * 0.8);
+    const canvas = document.createElement("canvas");
+    canvas.width = vw + 2 * pw;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bmp, u0 * bmp.width, v0 * bmp.height, (u1 - u0) * bmp.width, (v1 - v0) * bmp.height, 0, 0, vw, height);
+    bmp.close();
+    ctx.fillStyle = "#15171c";
+    ctx.fillRect(vw, 0, 2 * pw, height);
+    const scale = height / 2.4; // 2.4 m of world fits the panel height
+    for (let p = 0; p < 2; p++) {
+      const x0 = vw + p * pw;
+      ctx.strokeStyle = "#2c313a";
+      ctx.lineWidth = 1;
+      for (let m = -1; m <= 1; m += 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(x0, height / 2 + m * scale);
+        ctx.lineTo(x0 + pw, height / 2 + m * scale);
+        ctx.moveTo(x0 + pw / 2 + m * scale, 0);
+        ctx.lineTo(x0 + pw / 2 + m * scale, height);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#8b93a1";
+      ctx.font = "13px sans-serif";
+      ctx.fillText(p === 0 ? "world front (x,y)" : "world side (z,y)", x0 + 6, height - 8);
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, vw, height);
+    ctx.clip();
+    for (const l of layers) if (l.image) skeleton(ctx, l.image, (q) => [((q[0] - u0) / (u1 - u0)) * vw, ((q[1] - v0) / (v1 - v0)) * height], l.style);
+    ctx.restore();
+    for (let p = 0; p < 2; p++) {
+      const x0 = vw + p * pw;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, 0, pw, height);
+      ctx.clip();
+      const map = (q) => [x0 + pw / 2 + (p === 0 ? q[0] : q[2]) * scale, height / 2 + q[1] * scale];
+      for (const l of layers) if (l.world) skeleton(ctx, l.world, map, l.style);
+      ctx.restore();
+    }
+    if (label) {
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, 0, ctx.measureText(label).width + 12, 24);
+      ctx.fillStyle = "#ffe14d";
+      ctx.fillText(label, 6, 17);
+    }
+    return canvas.toDataURL("image/jpeg", 0.85);
+  };
+  window.toolReady = true;
+</script>
