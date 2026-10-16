@@ -19,11 +19,16 @@ const CAMERA_MIN_Y = 0.08;
 /** Where the target may go: the frog's centre, kept a little off the floor and within the stage. */
 const TARGET_MIN_Y = 0.42;
 const TARGET_MAX_Y = 2.4;
+/** A frog thrown up is followed only partly in height, and the camera backs off as it rises (m per m), so the
+ *  flight stays in frame instead of the view swinging up to the sky. */
+const REST_Y = 0.5;
+const VERTICAL_FOLLOW = 0.6;
+const LIFT_BACKOFF = 0.9;
 const TARGET_MAX_R = 14;
 const EASE = 14; // 1/s, how fast the camera reaches its orbit goals
 const FLING_FRICTION = 3.5; // 1/s
-const FOLLOW_TIME_XZ = 0.22; // s, smoothing of the follow
-const FOLLOW_TIME_Y = 0.4;
+const FOLLOW_TIME_XZ = 0.18; // s, smoothing of the follow
+const FOLLOW_TIME_Y = 0.3;
 const SHAKE_DECAY = 1.6; // trauma per second
 const SHAKE_OFFSET = 0.07; // m at full trauma
 const SHAKE_ROLL = 0.05; // rad at full trauma
@@ -69,7 +74,8 @@ export class CameraRig {
   setFocus(p: THREE.Vector3): void {
     const r = Math.hypot(p.x, p.z);
     const s = r > TARGET_MAX_R ? TARGET_MAX_R / r : 1;
-    this.focus.set(p.x * s, clamp(p.y, TARGET_MIN_Y, TARGET_MAX_Y), p.z * s);
+    const y = REST_Y + (p.y - REST_Y) * VERTICAL_FOLLOW;
+    this.focus.set(p.x * s, clamp(y, TARGET_MIN_Y, TARGET_MAX_Y), p.z * s);
   }
 
   /** Orbit by angles (radians); stops any spin left from a flick. */
@@ -140,7 +146,8 @@ export class CameraRig {
     t.z = smoothDamp(t.z, this.focus.z, v, 2, FOLLOW_TIME_XZ, dt);
 
     const cam = this.camera;
-    const d = Math.max(MIN_DISTANCE, fitDistance(cam.aspect, cam.fov) * this.zoom);
+    const lift = Math.max(0, t.y - REST_Y) * (LIFT_BACKOFF / VERTICAL_FOLLOW);
+    const d = Math.max(MIN_DISTANCE, fitDistance(cam.aspect, cam.fov) * this.zoom) + lift;
     const cp = Math.cos(this.pitch);
     cam.position.set(
       t.x + d * cp * Math.sin(this.yaw),

@@ -355,6 +355,13 @@ Object.assign(window, {
     frog,
     acts,
     log,
+    /** Client coordinates of a world point (the frog's centre by default), for scripted input. */
+    screenOf(p?: [number, number, number]) {
+      const v = p ? new THREE.Vector3(...p) : character.center(new THREE.Vector3());
+      v.project(stage.camera);
+      const r = stage.canvas.getBoundingClientRect();
+      return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height];
+    },
     /** Pop a showcase of effects and resolve once they are mid-flight. */
     async showcase(ms = 260) {
       fx.popText(center().add(new THREE.Vector3(-0.25, 0.25, 0.3)), "DUANG~");

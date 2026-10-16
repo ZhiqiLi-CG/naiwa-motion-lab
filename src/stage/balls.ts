@@ -11,7 +11,7 @@ export interface Balls {
 }
 
 export function createBalls(): Balls {
-  const geo = new THREE.SphereGeometry(1, 32, 20);
+  const geo = new THREE.SphereGeometry(1, 24, 16); // balls are small on screen; three passes draw them
   const mat = new THREE.MeshPhysicalMaterial({
     roughness: 0.32,
     clearcoat: 1,
