@@ -11,11 +11,9 @@ import { createMotion } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
 import { mountUI, type UICommands } from "./ui";
 
-const POKE_WORDS = { zh: ["DUANG~", "噗!", "啵~", "Q弹!"], en: ["DUANG~", "boing!", "squish!", "jiggle!"] };
-const GIGGLE_WORDS = { zh: ["嘻嘻", "哈哈", "痒!", "嘿嘿"], en: ["hehe", "haha", "tickles!", "hee"] };
 const GRAVITY = 9.81;
-/** Inflating past this belly size pops it. */
-const POP_SIZE = 1.9;
+/** The pump inflates the flesh up to this volume factor. */
+const MAX_BELLY = 1.8;
 
 const store = createStore();
 store.set(decodeConfig(location.hash));
@@ -160,11 +158,10 @@ store.subscribe((s, prev) => {
   if (s.mode !== prev.mode || s.dance !== prev.dance || (mirrorMatters && s.mirror !== prev.mirror)) void switchMotion();
 });
 
-/* ---------------- pump: hold to inflate, it pops when overdone ---------------- */
+/* ---------------- pump: hold to inflate the flesh (volume factor), it relaxes back when let go ---------------- */
 
 let pumping = false;
 let pumpExtra = 0;
-let pumpSoundAt = 0;
 let sentBelly = -1;
 
 function effectiveParams() {
@@ -172,28 +169,11 @@ function effectiveParams() {
   return { ...p, bellySize: p.bellySize + pumpExtra };
 }
 
-function updatePump(dt: number, now: number) {
-  if (!sim || !character) return;
+function updatePump(dt: number) {
+  if (!sim) return;
   const base = store.get().params.bellySize;
-  if (pumping) {
-    pumpExtra += dt * 0.45;
-    if (now - pumpSoundAt > 380) {
-      sfx.play("pump", Math.min(1, 0.4 + pumpExtra));
-      pumpSoundAt = now;
-    }
-    if (base + pumpExtra > POP_SIZE) {
-      pumpExtra = 0;
-      pumping = false;
-      const at = character.center(new THREE.Vector3());
-      sfx.play("pop", 1);
-      stage.fx.popText(at.clone().add(new THREE.Vector3(0, 0.35, 0.3)), tr({ zh: "噗——!", en: "POP!" }), { size: 1.6, color: "#ff6b6b" });
-      stage.fx.burst(at, "drops", 24);
-      stage.fx.shake(0.6);
-      character.react({ kind: "squish", point: at, strength: 1 });
-    }
-  } else if (pumpExtra > 0) {
-    pumpExtra = Math.max(0, pumpExtra - dt * 0.12);
-  }
+  if (pumping) pumpExtra = Math.min(pumpExtra + dt * 0.45, Math.max(0, MAX_BELLY - base));
+  else if (pumpExtra > 0) pumpExtra = Math.max(0, pumpExtra - dt * 0.12);
   const belly = base + pumpExtra;
   if (Math.abs(belly - sentBelly) > 0.01) {
     sentBelly = belly;
@@ -208,16 +188,11 @@ const dragPlane = new THREE.Plane();
 let grab: GrabHandle | null = null;
 let pressHit: FrogHit | null = null;
 let tickleAt = 0;
-let giggleAt = 0;
 const trail: { p: THREE.Vector3; t: number }[] = [];
 
 function bump(stat: "pokes" | "throws") {
   const stats = store.get().stats;
   store.set({ stats: { ...stats, [stat]: stats[stat] + 1 } });
-}
-
-function pick<T>(list: T[]): T {
-  return list[Math.floor(Math.random() * list.length)];
 }
 
 function throwBallAt(p: PointerInfo) {
@@ -229,7 +204,6 @@ function throwBallAt(p: PointerInfo) {
   const velocity = target.clone().sub(origin).divideScalar(flight);
   velocity.y += 0.5 * g * flight;
   sim.throwBall(origin, velocity, 0.1);
-  sfx.play("whoosh", 0.4);
 }
 
 function tickle(p: PointerInfo) {
@@ -239,11 +213,6 @@ function tickle(p: PointerInfo) {
   tickleAt = p.time;
   sim.poke(hit, 0.12, p.ray.direction);
   character?.react({ kind: "tickle", point: hit.point, strength: 0.35, region: hit.region });
-  if (p.time - giggleAt > 650) {
-    giggleAt = p.time;
-    sfx.play("giggle", 0.6);
-    stage.fx.popText(hit.point.clone().addScaledVector(hit.normal, 0.12), pick(GIGGLE_WORDS[store.get().lang]), { color: "#ff8fb1" });
-  }
 }
 
 /** A screen velocity (px/s) as a world velocity at the depth of point. */
@@ -314,11 +283,7 @@ stage.setGestureHandler({
     const velocity = last.p.clone().sub(first.p).divideScalar(span).clampLength(0, 12);
     grab.release(velocity);
     grab = null;
-    if (velocity.length() > 3) {
-      bump("throws");
-      sfx.play("whoosh", Math.min(1, velocity.length() / 10));
-      stage.fx.popText(last.p.clone().add(new THREE.Vector3(0, 0.3, 0)), tr({ zh: "飞~", en: "Wheee~" }), { color: "#5fb3ff" });
-    }
+    if (velocity.length() > 3) bump("throws");
   },
   onHover(p) {
     if (!character) return;
@@ -328,43 +293,20 @@ stage.setGestureHandler({
   },
 });
 
-/* ---------------- what happens to the frog → sound, comic effects, face ---------------- */
+/* ---------------- what happens to the frog → its face and (optional) impact sounds ---------------- */
+
+const IMPACT_SOUND: Partial<Record<FrogEvent["kind"], Parameters<typeof sfx.play>[0]>> = {
+  poke: "boing",
+  slap: "slap",
+  squish: "squish",
+  land: "land",
+  ball: "ball",
+};
 
 function onFrogEvent(e: FrogEvent) {
   character?.react(e);
-  const above = e.point.clone().add(new THREE.Vector3(0, 0.15, 0.1));
-  switch (e.kind) {
-    case "poke":
-      sfx.play("boing", e.strength);
-      stage.fx.popText(above, pick(POKE_WORDS[store.get().lang]), { size: 0.8 + e.strength * 0.6 });
-      break;
-    case "slap":
-      sfx.play("slap", e.strength);
-      stage.fx.popText(above, tr({ zh: "啪!", en: "SLAP!" }), { size: 1 + e.strength * 0.8, color: "#ff6b6b" });
-      stage.fx.burst(e.point, "stars", 6 + Math.round(e.strength * 10));
-      stage.fx.shake(0.25 * e.strength);
-      break;
-    case "grab":
-      sfx.play("squish", 0.5);
-      break;
-    case "squish":
-      sfx.play("squish", e.strength);
-      break;
-    case "land":
-      if (e.strength < 0.15) break;
-      sfx.play("land", e.strength);
-      if (e.strength > 0.5) {
-        stage.fx.popText(above, tr({ zh: "咚!", en: "THUD!" }), { size: 1.2 });
-        stage.fx.shake(0.4 * e.strength);
-      }
-      break;
-    case "ball":
-      sfx.play("ball", e.strength);
-      if (e.strength > 0.5) stage.fx.popText(above, tr({ zh: "嘭!", en: "BONK!" }), { size: 0.9 });
-      break;
-    default:
-      break;
-  }
+  const sound = IMPACT_SOUND[e.kind];
+  if (sound && e.strength >= 0.15) sfx.play(sound, e.strength);
 }
 
 /* ---------------- boot and the frame loop ---------------- */
@@ -378,10 +320,6 @@ async function boot() {
   motion.bind(character.rig);
   sim = createFrogSim(character.spec, effectiveParams());
   sim.onEvent(onFrogEvent);
-  character.onMood((mood) => {
-    if (mood === "giggling") sfx.play("giggle", 0.7);
-    else if (mood === "laughing") sfx.play("laugh", 0.9);
-  });
   store.set({ loading: { active: false, message: "" } });
   await switchMotion();
 
@@ -402,7 +340,7 @@ async function boot() {
     character.targetsFromPose(pose, targets);
     sim.setTargets(targets);
     character.setExpressions(pose?.expressions);
-    updatePump(dt, now);
+    updatePump(dt);
     sim.step(dt);
     sim.readBones(bones);
     sim.readLimbs?.(limbs);

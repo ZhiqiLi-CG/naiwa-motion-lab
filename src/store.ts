@@ -27,7 +27,7 @@ export function initialState(): AppState {
     preset: MATERIAL_PRESETS[0].id,
     dance: "belly-laugh",
     mirror: true,
-    sound: true,
+    sound: false,
     theme: "system",
     lang: getLang(),
     recording: { active: false, startedAt: null },

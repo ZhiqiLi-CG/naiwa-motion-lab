@@ -2,14 +2,18 @@
 
 ## What it is
 
-The product is called **Naiwa Motion Lab** (the user's name for it; 奶蛙 is the character).
+The product is called **Naiwa Motion Lab**. It is a page for our **motion transfer + simulation**, not a game: a
+person's motion (webcam, an uploaded video, or a preset motion captured from real videos) is transferred onto 奶蛙,
+whose body is simulated as soft flesh over a skeleton, and the page shows that simulation clearly and lets you
+examine it — set the material per body region, perturb the body (poke, push, drag) to see how the flesh responds,
+compare the person and the frog side by side, record the result. Everything runs in the browser.
 
-A web page. Someone opens the link and plays with 奶蛙: pokes and slaps its big soft belly, squeezes it, grabs it and
-throws it, changes how soft and bouncy it is, makes it dance with their webcam or an uploaded dance video (or one of
-the built-in dances), and records a funny clip to share. No install, no server GPU, no training: everything runs in
-the browser. **Fun comes first**: every touch should feel squishy and get a reaction (wobble, sound, comic "DUANG~"
-text, a face). The interface switches between 中文 and English (src/i18n.ts: keep every user-visible string as
-{ zh, en } and show it with tr()).
+The user's words (2026-10-16): "我们只是给我们的动作迁移 + simulation 一个页面，不是再做一个小游戏", "3D界面先保持干净",
+"我们是做simulation的", "你现在这些有点太游戏了". So: a clean viewport where the simulation is the show (no comic text,
+bursts, screen shakes, cartoon floors or props); lab-style controls with precise values and units where they exist;
+simulation readouts (step time, particles/cells, fps); restrained copy without jokes; sound off by default. The
+interface switches between 中文 and English (src/i18n.ts: keep every user-visible string as { zh, en } and show it
+with tr()).
 
 ## The character
 
@@ -78,10 +82,10 @@ edit files outside your folder.
 
 Learn from RobotGen Studio (`/home/zhiqili/robotgen-studio/apps/studio/src/styles/`, live at http://127.0.0.1:8960):
 colours only through tokens with a light and a dark theme, every text token readable (WCAG AA) on its surfaces, a
-clear type scale on a 4 px grid, compact precise controls, a dark media viewport with scrims for text over it,
-status chips, toasts, keyboard shortcuts, restrained motion that respects reduced-motion. Do **not** copy its heavy
-workbench (page sidebars, data tables, React/Radix). This is a toy: warm 奶蛙-yellow accent, rounded friendly
-shapes, bouncy micro-interactions, playful copy.
+clear type scale on a 4 px grid, compact precise controls, a clean media viewport with scrims for text over it,
+status chips, toasts, keyboard shortcuts, restrained motion that respects reduced-motion. Do not copy its heavy
+workbench (page sidebars, data tables, React/Radix): one page, the viewport first. A simulation tool's look, with
+the 奶蛙 yellow as a restrained accent.
 
 ## Reporting
 
