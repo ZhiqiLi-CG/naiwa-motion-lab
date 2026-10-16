@@ -1,6 +1,7 @@
 /**
- * Sound: one AudioContext; every effect and the attached video's music go through the master bus, then to the
- * speakers and to a stream for recording.
+ * Sound: one AudioContext; the effects and the attached video's music go through the master bus, then to the
+ * speakers and to a stream for recording. setEnabled switches the effects only: the video's music is the video's own
+ * sound (its element's volume and muted still apply) and is heard and recorded either way.
  */
 import type { Sfx, SfxKind } from "../contracts";
 import { VOICES, createMaster } from "./synth";
@@ -28,7 +29,6 @@ export function createSfx(): Sfx {
   let ctx: AudioContext | null = null;
   let bus: GainNode | null = null;
   let music: GainNode | null = null;
-  let mute: GainNode | null = null;
   let streamDest: MediaStreamAudioDestinationNode | null = null;
   // A media element can feed WebAudio only once in its life, so its source node is kept for re-attaching.
   const musicSources = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
@@ -44,14 +44,13 @@ export function createSfx(): Sfx {
     if (typeof AudioContext === "undefined") return null;
     ctx = new AudioContext({ latencyHint: "interactive" });
     const master = createMaster(ctx);
-    bus = master.input;
+    bus = ctx.createGain();
+    bus.gain.value = enabled ? 1 : 0;
+    bus.connect(master.input);
     music = master.music;
-    mute = ctx.createGain();
-    mute.gain.value = enabled ? 1 : 0;
     streamDest = ctx.createMediaStreamDestination();
-    master.output.connect(mute);
-    mute.connect(ctx.destination);
-    mute.connect(streamDest);
+    master.output.connect(ctx.destination);
+    master.output.connect(streamDest);
     return ctx;
   }
 
@@ -69,7 +68,7 @@ export function createSfx(): Sfx {
     },
     setEnabled(on) {
       enabled = on;
-      if (ctx && mute) mute.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.02);
+      if (ctx && bus) bus.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.02);
     },
     play(kind, strength = 0.6) {
       if (!enabled || !ctx || !bus) return;

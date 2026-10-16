@@ -75,8 +75,8 @@
       import { SFX_KINDS, render, measure, drawSound } from "/src/media/offline.ts";
       import { initialState } from "/src/store.ts";
 
-      const NAMES = { boing: "DUANG 弹", squish: "噗叽 捏", slap: "啪 拍", pop: "啵", whoosh: "嗖 抛", land: "咚 落地",
-        ball: "球弹", pump: "打气", giggle: "嘿嘿", laugh: "哈哈哈" };
+      const NAMES = { boing: "戳 poke (boing)", squish: "捏 squish", slap: "拍 slap", pop: "啵 pop", whoosh: "嗖 whoosh", land: "落地 land",
+        ball: "球 ball", pump: "打气 pump", giggle: "嘿嘿", laugh: "哈哈哈" };
       const $ = (id) => document.getElementById(id);
       const sfx = createSfx();
       const strength = () => Number($("strength").value);
@@ -229,7 +229,7 @@
         return rows;
       }
       function table(rows) {
-        const cols = ["peak", "rawPeak", "clipped", "bad", "length", "loudDb", "centroid", "dominant", "lowShare", "beats", "f0"];
+        const cols = ["peak", "rawPeak", "clipped", "bad", "length", "loudDb", "smallDb", "centroid", "lowShare", "beats", "f0"];
         const fmt = (v) => typeof v === "number" ? (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(3)) : Array.isArray(v) ? v.map((x) => x.toFixed(2)).join(" ") : "";
         let h = "<table><tr><th>sound</th>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
         for (const [k, r] of Object.entries(rows)) {

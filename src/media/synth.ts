@@ -91,90 +91,89 @@ function chain(...nodes: AudioNode[]): AudioNode {
 /* Effects                                                                                                           */
 /* ---------------------------------------------------------------------------------------------------------------- */
 
-/** "DUANG~": a rubbery spring. Harder = lower, longer and wobblier. */
+/**
+ * The jiggle of soft flesh settling after an impact: a tremolo whose depth dies away, applied to `node`'s gain.
+ * rate in Hz, depth 0..1, over [t, end].
+ */
+function jiggle(v: VoiceArgs, node: GainNode, t: number, end: number, rate: number, depth: number): void {
+  const lfo = osc(v, "sine", t, end);
+  lfo.frequency.setValueAtTime(rate, t);
+  lfo.frequency.linearRampToValueAtTime(rate * 0.8, end);
+  const d = v.ctx.createGain();
+  d.gain.setValueAtTime(depth, t);
+  d.gain.exponentialRampToValueAtTime(0.001, end);
+  lfo.connect(d).connect(node.gain);
+}
+
+/** A poke into soft flesh: a muffled contact and the low, damped give of the body, jiggling as it settles. Harder =
+ *  louder, a little lower, brighter and longer. (Named "boing" by the contract.) */
 const boing: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
-  const f0 = lerp(560, 240, s) * vary(rnd, 0.12);
-  const dur = lerp(0.38, 0.95, s) * vary(rnd, 0.1);
+  const dur = lerp(0.14, 0.32, s) * vary(rnd, 0.1);
   const end = t + dur;
+  const f = lerp(170, 120, s) * vary(rnd, 0.1);
 
-  const body = osc(v, "triangle", t, end);
-  const reed = osc(v, "sawtooth", t, end);
-  for (const o of [body, reed]) {
-    o.frequency.setValueAtTime(f0 * 0.55, t);
-    o.frequency.exponentialRampToValueAtTime(f0, t + 0.03);
-    o.frequency.exponentialRampToValueAtTime(f0 * lerp(0.82, 0.7, s), end);
+  const give = ctx.createGain();
+  give.gain.value = 1;
+  jiggle(v, give, t, end, lerp(15, 10, s) * vary(rnd, 0.12), 0.35);
+  for (const [mul, level] of [
+    [1, 0.3],
+    [2.02, 0.16],
+  ]) {
+    const o = osc(v, "sine", t, end);
+    o.frequency.setValueAtTime(f * mul, t);
+    o.frequency.exponentialRampToValueAtTime(f * mul * 0.85, end);
+    chain(o, perc(ctx, t, 0.005, level * lerp(0.45, 1, s), end), give);
   }
-  // The wobble: a vibrato whose depth dies away, the same LFO sweeping the reed's resonance.
-  const lfo = osc(v, "sine", t, end);
-  lfo.frequency.setValueAtTime(lerp(17, 11, s) * vary(rnd, 0.1), t);
-  lfo.frequency.linearRampToValueAtTime(lerp(13, 8, s), end);
-  const depth = ctx.createGain();
-  depth.gain.setValueAtTime(f0 * lerp(0.14, 0.24, s), t);
-  depth.gain.exponentialRampToValueAtTime(f0 * 0.01, end);
-  lfo.connect(depth);
-  depth.connect(body.frequency);
-  depth.connect(reed.frequency);
+  give.connect(v.out);
 
-  const res = filter(ctx, "lowpass", f0 * 3, 9);
-  const sweep = ctx.createGain();
-  sweep.gain.value = 4;
-  depth.connect(sweep).connect(res.frequency);
-  res.frequency.setValueAtTime(f0 * 4, t);
-  res.frequency.exponentialRampToValueAtTime(f0 * 1.6, end);
-
-  const amp = perc(ctx, t, 0.006, lerp(0.35, 0.6, s), end);
-  const reedGain = ctx.createGain();
-  reedGain.gain.value = 0.35;
-  body.connect(amp);
-  chain(reed, res, reedGain, amp);
-  amp.connect(v.out);
+  const contact = filter(ctx, "lowpass", lerp(1000, 2200, s) * vary(rnd, 0.1), 0.8);
+  chain(noise(v, t, t + 0.07), contact, perc(ctx, t, 0.002, lerp(0.4, 0.8, s), t + lerp(0.035, 0.06, s)), v.out);
   return end;
 };
 
-/** Wet squelch: noise through a falling resonance, gurgling, with a low blorp under it. */
+/** Soft flesh pressed and let go: a damp, muffled rush with a faint moist crackle. */
 const squish: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
-  const dur = lerp(0.18, 0.42, s) * vary(rnd, 0.15);
+  const dur = lerp(0.2, 0.4, s) * vary(rnd, 0.12);
   const end = t + dur;
 
-  const bp = filter(ctx, "bandpass", 1, lerp(5, 3, s));
-  bp.frequency.setValueAtTime(lerp(1900, 1300, s) * vary(rnd, 0.15), t);
-  bp.frequency.exponentialRampToValueAtTime(280, end);
-  const env = perc(ctx, t, 0.012, lerp(2.2, 3.2, s), end);
-  // Bubbles: an irregular tremolo.
-  const bubbles = ctx.createGain();
-  bubbles.gain.value = 0.55;
+  const bp = filter(ctx, "bandpass", 1, 1.2);
+  bp.frequency.setValueAtTime(lerp(1200, 900, s) * vary(rnd, 0.12), t);
+  bp.frequency.exponentialRampToValueAtTime(350, end);
+  const env = perc(ctx, t, 0.03, lerp(0.7, 1.3, s), end);
+  const crackle = ctx.createGain();
+  crackle.gain.value = 0.8;
   const lfo = osc(v, "square", t, end);
-  lfo.frequency.setValueAtTime(lerp(28, 45, rnd()), t);
-  lfo.frequency.linearRampToValueAtTime(lerp(14, 24, rnd()), end);
+  lfo.frequency.value = lerp(35, 60, rnd());
   const lfoDepth = ctx.createGain();
-  lfoDepth.gain.value = 0.45;
-  lfo.connect(lfoDepth).connect(bubbles.gain);
-  chain(noise(v, t, end), bp, env, bubbles, v.out);
+  lfoDepth.gain.value = 0.18;
+  lfo.connect(lfoDepth).connect(crackle.gain);
+  chain(noise(v, t, end), bp, env, crackle, v.out);
 
-  const blorp = osc(v, "sine", t, end);
-  blorp.frequency.setValueAtTime(lerp(480, 340, s) * vary(rnd, 0.1), t);
-  blorp.frequency.exponentialRampToValueAtTime(lerp(190, 140, s), end);
-  chain(blorp, perc(ctx, t, 0.015, lerp(0.12, 0.18, s), end), v.out);
+  const body = osc(v, "sine", t, end);
+  body.frequency.setValueAtTime(lerp(150, 120, s), t);
+  body.frequency.exponentialRampToValueAtTime(90, end);
+  chain(body, perc(ctx, t, 0.02, lerp(0.08, 0.14, s), end), v.out);
   return end;
 };
 
-/** A smack on soft skin: a bright crack and a fleshy thump. */
+/** A hand slapping soft skin: a short broadband smack over a fleshy thump (no ringing). */
 const slap: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
-  const end = t + lerp(0.1, 0.2, s);
+  const end = t + lerp(0.1, 0.18, s);
 
-  const hp = filter(ctx, "highpass", 1000);
-  const tone = filter(ctx, "peaking", 2800 * vary(rnd, 0.15), 1.2);
-  tone.gain.value = 9;
-  const lp = filter(ctx, "lowpass", lerp(6000, 11000, s));
-  chain(noise(v, t, end), hp, tone, lp, perc(ctx, t, 0.001, lerp(0.8, 1.2, s), t + lerp(0.05, 0.1, s)), v.out);
+  const hp = filter(ctx, "highpass", 500);
+  const tone = filter(ctx, "peaking", 1800 * vary(rnd, 0.15), 1);
+  tone.gain.value = 4;
+  const lp = filter(ctx, "lowpass", lerp(3500, 7000, s));
+  chain(noise(v, t, end), hp, tone, lp, perc(ctx, t, 0.001, lerp(0.7, 1.2, s), t + lerp(0.04, 0.07, s)), v.out);
 
+  chain(noise(v, t, t + 0.08), filter(ctx, "lowpass", 500), perc(ctx, t, 0.002, lerp(0.15, 0.25, s), t + 0.06), v.out);
   const thump = osc(v, "sine", t, end);
-  thump.frequency.setValueAtTime(lerp(300, 240, s) * vary(rnd, 0.1), t);
-  thump.frequency.exponentialRampToValueAtTime(120, t + 0.08);
-  chain(thump, perc(ctx, t, 0.002, lerp(0.12, 0.22, s), end), v.out);
+  thump.frequency.setValueAtTime(lerp(200, 160, s) * vary(rnd, 0.1), t);
+  thump.frequency.exponentialRampToValueAtTime(100, t + 0.08);
+  chain(thump, perc(ctx, t, 0.002, lerp(0.06, 0.12, s), end), v.out);
   return end;
 };
 
@@ -222,39 +221,41 @@ const whoosh: VoiceFn = (v) => {
   return end;
 };
 
-/** A soft heavy body hitting the floor: low thud, a mid knock phones can play, a flub of flesh. */
+/** The soft heavy body meeting the floor: a low thud, the floor's dull knock and the flesh settling. */
 const land: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
-  const end = t + lerp(0.25, 0.5, s);
+  const end = t + lerp(0.22, 0.45, s);
 
-  const low = osc(v, "sine", t, end);
-  low.frequency.setValueAtTime(lerp(120, 95, s) * vary(rnd, 0.08), t);
-  low.frequency.exponentialRampToValueAtTime(42, end);
-  chain(low, perc(ctx, t, 0.004, lerp(0.2, 0.32, s), end), v.out);
+  const settle = ctx.createGain();
+  settle.gain.value = 1;
+  jiggle(v, settle, t + 0.02, end, lerp(10, 7, s) * vary(rnd, 0.12), 0.25);
+  for (const [mul, level] of [
+    [1, 0.32],
+    [2.1, 0.16],
+  ]) {
+    const o = osc(v, "sine", t, end);
+    o.frequency.setValueAtTime(lerp(95, 75, s) * mul * vary(rnd, 0.08), t);
+    o.frequency.exponentialRampToValueAtTime(45 * mul, end);
+    chain(o, perc(ctx, t, 0.003, level * lerp(0.5, 1, s), end), settle);
+  }
+  settle.connect(v.out);
 
-  const knock = osc(v, "triangle", t, t + 0.15);
-  knock.frequency.setValueAtTime(lerp(320, 250, s) * vary(rnd, 0.1), t);
-  knock.frequency.exponentialRampToValueAtTime(140, t + 0.15);
-  chain(knock, perc(ctx, t, 0.002, lerp(0.45, 0.65, s), t + 0.15), v.out);
-
-  const flub = filter(ctx, "bandpass", 520 * vary(rnd, 0.15), 2);
-  chain(noise(v, t, t + 0.2), flub, perc(ctx, t + 0.005, 0.006, lerp(1.2, 1.8, s), t + 0.2), v.out);
+  const knock = filter(ctx, "lowpass", lerp(700, 1300, s) * vary(rnd, 0.1), 0.9);
+  chain(noise(v, t, t + 0.15), knock, perc(ctx, t, 0.002, lerp(0.8, 1.4, s), t + 0.12), v.out);
   return end;
 };
 
-/** A rubber ball: a short pitched bonk with an inharmonic overtone. */
+/** A ball hitting the frog or the floor: a short muffled thock. */
 const ball: VoiceFn = (v) => {
   const { ctx, t, s, rnd } = v;
-  const f = lerp(700, 480, s) * vary(rnd, 0.1);
-  const end = t + 0.16;
+  const f = lerp(380, 300, s) * vary(rnd, 0.12);
+  const end = t + 0.12;
   const a = osc(v, "sine", t, end);
-  a.frequency.setValueAtTime(f * 1.2, t);
-  a.frequency.exponentialRampToValueAtTime(f, t + 0.012);
-  chain(a, perc(ctx, t, 0.001, lerp(0.45, 0.7, s), end), v.out);
-  const b = osc(v, "sine", t, t + 0.06);
-  b.frequency.value = f * 2.63;
-  chain(b, perc(ctx, t, 0.001, lerp(0.12, 0.2, s), t + 0.06), v.out);
-  chain(noise(v, t, t + 0.008), filter(ctx, "bandpass", 3000, 1), perc(ctx, t, 0.0005, 0.3, t + 0.006), v.out);
+  a.frequency.setValueAtTime(f, t);
+  a.frequency.exponentialRampToValueAtTime(f * 0.8, t + 0.06);
+  chain(a, perc(ctx, t, 0.001, lerp(0.22, 0.42, s), t + 0.09), v.out);
+  const contact = filter(ctx, "bandpass", 1200 * vary(rnd, 0.15), 0.8);
+  chain(noise(v, t, t + 0.04), contact, perc(ctx, t, 0.0008, lerp(0.25, 0.55, s), t + 0.025), v.out);
   return end;
 };
 

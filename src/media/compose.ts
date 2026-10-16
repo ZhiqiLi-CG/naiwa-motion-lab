@@ -1,6 +1,6 @@
 /**
  * The recorded frame: the stage canvas, the companion video (picture in picture or "真人 vs 奶蛙" side by side) and
- * a small Naiwa Motion Lab watermark, drawn into a canvas of a fixed size (the long side capped, so phones and WeChat
+ * a small plain "Naiwa Motion Lab" mark, drawn into a canvas of a fixed size (the long side capped, so phones and WeChat
  * can play the file) that the recorder captures.
  */
 import type { RecordOptions } from "../contracts";
@@ -41,7 +41,7 @@ export function createCompositor(stage: HTMLCanvasElement, opts: ComposeOptions)
   g.imageSmoothingQuality = "high";
   // What the user saw: a preview flipped by CSS (the mirrored camera) is recorded flipped too.
   const mirrored = video ? isMirrored(video) : false;
-  const mark = watermark(Math.round(Math.min(w, h) * 0.03));
+  const mark = watermark(Math.round(Math.min(w, h) * 0.022));
   const labels = { person: tr(LABELS.person), frog: tr(LABELS.frog) };
   const unit = Math.min(w, h) / 720;
 
@@ -55,8 +55,8 @@ export function createCompositor(stage: HTMLCanvasElement, opts: ComposeOptions)
       const [a, b] = split(w, h, gap, aV, stage.width / stage.height);
       panel(g, ready ? video : null, a.x, a.y, a.w, a.h, mirrored);
       panel(g, stage, b.x, b.y, b.w, b.h, false);
-      chip(g, labels.person, a.x + 14 * unit, a.y + 14 * unit, unit);
-      chip(g, labels.frog, b.x + 14 * unit, b.y + 14 * unit, unit);
+      label(g, labels.person, a.x + 14 * unit, a.y + 14 * unit, unit);
+      label(g, labels.frog, b.x + 14 * unit, b.y + 14 * unit, unit);
     } else {
       panel(g, stage, 0, 0, w, h, false);
       if (layout === "pip" && ready) inset(g, video, w, h, unit, mirrored);
@@ -176,13 +176,13 @@ function inset(g: CanvasRenderingContext2D, video: HTMLVideoElement, w: number, 
     ih = iw / a;
   }
   const m = 16 * unit;
-  const r = 14 * unit;
-  const rim = 3 * unit;
+  const r = 10 * unit;
+  const rim = 2 * unit;
   g.save();
-  g.shadowColor = "rgba(0,0,0,0.35)";
-  g.shadowBlur = 16 * unit;
-  g.shadowOffsetY = 4 * unit;
-  g.fillStyle = "#fff";
+  g.shadowColor = "rgba(0,0,0,0.25)";
+  g.shadowBlur = 10 * unit;
+  g.shadowOffsetY = 2 * unit;
+  g.fillStyle = "rgba(255,255,255,0.9)";
   g.beginPath();
   g.roundRect(m - rim, m - rim, iw + 2 * rim, ih + 2 * rim, r + rim);
   g.fill();
@@ -195,76 +195,37 @@ function inset(g: CanvasRenderingContext2D, video: HTMLVideoElement, w: number, 
   g.restore();
 }
 
-function chip(g: CanvasRenderingContext2D, text: string, x: number, y: number, unit: number): void {
-  const size = Math.round(22 * unit);
-  g.font = `700 ${size}px ${FONT}`;
-  const tw = g.measureText(text).width;
-  const padX = 12 * unit;
-  const ch = size + 12 * unit;
-  g.fillStyle = "rgba(22,19,13,0.72)";
-  g.beginPath();
-  g.roundRect(x, y, tw + 2 * padX, ch, ch / 2);
-  g.fill();
-  g.fillStyle = "#ffd54a";
-  g.textBaseline = "middle";
-  g.fillText(text, x + padX, y + ch / 2 + unit);
+/** A plain caption: small white text with a soft shadow, readable on video and on the stage. */
+function label(g: CanvasRenderingContext2D, text: string, x: number, y: number, unit: number): void {
+  const size = Math.round(18 * unit);
+  g.save();
+  g.font = `600 ${size}px ${FONT}`;
+  g.textBaseline = "top";
+  g.shadowColor = "rgba(0,0,0,0.75)";
+  g.shadowBlur = 5 * unit;
+  g.fillStyle = "rgba(255,255,255,0.95)";
+  g.fillText(text, x, y);
+  g.restore();
 }
 
 const FONT = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif';
 
-/** The little 奶蛙 of public/icons/favicon.svg (same paths, 64×64 units). */
-const MINI = {
-  body: "M32 5C41 5 45 11 46 18C47 25 59 32 60 45C61 55 56 61 48 62H16C8 61 3 55 4 45C5 32 17 25 18 18C19 11 23 5 32 5Z",
-  mouth: "M23 25C27 27 37 27 41 25C41 32 37 36 32 36C27 36 23 32 23 25Z",
-  tongue: "M28.5 31.5C30 29.5 34 29.5 35.5 31.5C36.5 34 35 37.5 32 37.5C29 37.5 27.5 34 28.5 31.5Z",
-};
-
-/** The mini 奶蛙 and "Naiwa Motion Lab" on a dark pill, drawn once. */
+/** "Naiwa Motion Lab" in small plain text with a soft shadow, drawn once. */
 function watermark(size: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   const g = c.getContext("2d")!;
-  const font = `700 ${size}px ${FONT}`;
-  g.font = font;
+  const font = `600 ${size}px ${FONT}`;
   const text = "Naiwa Motion Lab";
-  const icon = Math.round(size * 1.35);
-  const pad = Math.round(size * 0.45);
-  c.width = Math.ceil(pad + icon + pad * 0.6 + g.measureText(text).width + pad * 1.2);
-  c.height = Math.ceil(icon + pad);
-  g.fillStyle = "rgba(22,19,13,0.55)";
-  g.beginPath();
-  g.roundRect(0, 0, c.width, c.height, c.height / 2);
-  g.fill();
-  g.save();
-  g.translate(pad, pad / 2);
-  g.scale(icon / 64, icon / 64);
-  g.fillStyle = "#f8c63c";
-  g.fill(new Path2D(MINI.body));
-  g.fillStyle = "#f6e2b0";
-  g.beginPath();
-  g.ellipse(32, 50, 17, 11, 0, 0, Math.PI * 2);
-  g.fill();
-  for (const [ex, px] of [
-    [19.5, 20.5],
-    [44.5, 43.5],
-  ]) {
-    g.fillStyle = "#9fd486";
-    g.beginPath();
-    g.arc(ex, 17, 7, 0, Math.PI * 2);
-    g.fill();
-    g.fillStyle = "#151512";
-    g.beginPath();
-    g.arc(px, 17.5, 3.4, 0, Math.PI * 2);
-    g.fill();
-  }
-  g.fillStyle = "#4a1714";
-  g.fill(new Path2D(MINI.mouth));
-  g.fillStyle = "#e8798a";
-  g.fill(new Path2D(MINI.tongue));
-  g.restore();
   g.font = font;
-  g.fillStyle = "rgba(255,255,255,0.95)";
+  const pad = Math.ceil(size * 0.4);
+  c.width = Math.ceil(g.measureText(text).width) + 2 * pad;
+  c.height = Math.ceil(size * 1.3) + 2 * pad;
+  g.font = font;
   g.textBaseline = "middle";
-  g.fillText(text, pad + icon + pad * 0.6, c.height / 2 + size * 0.05);
+  g.shadowColor = "rgba(0,0,0,0.7)";
+  g.shadowBlur = size * 0.3;
+  g.fillStyle = "rgba(255,255,255,0.78)";
+  g.fillText(text, pad, c.height / 2);
   return c;
 }
 

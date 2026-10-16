@@ -56,6 +56,8 @@ export interface Metrics {
   dominant: number;
   /** Share of energy below 200 Hz (what phone speakers lose). */
   lowShare: number;
+  /** Loudest 50 ms window after a 300 Hz high-pass, dBFS RMS: roughly what a phone or laptop speaker plays. */
+  smallDb: number;
   /** Envelope peaks at least 12 dB above their surroundings, ≥ 70 ms apart (syllables / bounces). */
   beats: number;
   /** Median pitch of voiced 40 ms frames by autocorrelation (Hz; 0 if none). */
@@ -138,6 +140,7 @@ export function measure(buf: AudioBuffer): Metrics {
     centroid: den ? num / den : 0,
     dominant,
     lowShare: den ? low / den : 0,
+    smallDb: db(loudest(highpass(mono, 300))),
     beats: countBeats(env),
     f0: medianPitch(mono, env),
     peaks: spectralPeaks(spectrum.power, spectrum.binHz),
@@ -169,6 +172,42 @@ function spectralPeaks(power: Float32Array, binHz: number): { hz: number; db: nu
 }
 
 const db = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
+
+/** Second-order (RBJ) high-pass. */
+function highpass(x: Float32Array, f: number): Float32Array {
+  const w = (2 * Math.PI * f) / RATE;
+  const alpha = Math.sin(w) / (2 * Math.SQRT1_2);
+  const cos = Math.cos(w);
+  const a0 = 1 + alpha;
+  const b0 = (1 + cos) / 2 / a0;
+  const b1 = -(1 + cos) / a0;
+  const a1 = (-2 * cos) / a0;
+  const a2 = (1 - alpha) / a0;
+  const y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = b0 * x[i] + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = x[i];
+    y2 = y1;
+    y1 = v;
+    y[i] = v;
+  }
+  return y;
+}
+
+/** RMS of the loudest 50 ms window. */
+function loudest(x: Float32Array): number {
+  const win = Math.round(RATE * 0.05);
+  const hop = Math.round(RATE * 0.01);
+  let best = 0;
+  for (let i = 0; i + win <= x.length; i += hop) {
+    let s = 0;
+    for (let j = i; j < i + win; j++) s += x[j] * x[j];
+    best = Math.max(best, s / win);
+  }
+  return Math.sqrt(best);
+}
 
 function countBeats(env: number[]): number {
   const top = Math.max(...env);
