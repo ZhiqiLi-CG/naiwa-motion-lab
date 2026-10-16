@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>奶蛙 media dev</title>
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root { color-scheme: dark; --bg: #16130d; --fg: #f6efe0; --muted: #b8ad96; --accent: #ffd54a; --line: #3a3324; }
+      body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+      h1 { font-size: 20px; margin: 0 0 12px; }
+      h2 { font-size: 16px; margin: 20px 0 8px; color: var(--accent); }
+      section { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+      button { font: inherit; border: 0; border-radius: 999px; padding: 8px 14px; margin: 0 6px 6px 0; cursor: pointer;
+        background: var(--accent); color: #2b2210; font-weight: 600; }
+      button.ghost { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
+      label { color: var(--muted); margin-right: 12px; }
+      canvas.stage { width: 100%; max-width: 640px; aspect-ratio: 16 / 9; border-radius: 8px; display: block; }
+      video { width: 100%; max-width: 640px; border-radius: 8px; margin-top: 8px; background: #000; }
+      table { border-collapse: collapse; font: 12px/1.4 ui-monospace, monospace; }
+      td, th { padding: 2px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+      th:first-child, td:first-child { text-align: left; }
+      .bad { color: #ff7a6b; font-weight: 700; }
+      #specs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 8px; }
+      #specs canvas { width: 100%; border-radius: 6px; }
+      code { color: var(--accent); word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <h1>奶蛙 media dev</h1>
+
+    <section>
+      <h2>音效 Sounds</h2>
+      <div id="sounds"></div>
+      <label>力度 strength <input id="strength" type="range" min="0" max="1" step="0.05" value="0.6" /> <span id="sv">0.6</span></label>
+      <label><input id="enabled" type="checkbox" checked /> 声音开</label>
+      <div><button class="ghost" id="storm">一起来 40 个 (limiter)</button><button class="ghost" id="repeat">同一个 boing ×8</button></div>
+    </section>
+
+    <section>
+      <h2>录制 Recording</h2>
+      <canvas id="stage" class="stage" width="1280" height="720"></canvas>
+      <div style="margin-top: 8px">
+        <button id="rec">开始录制</button><button class="ghost" id="share" disabled>保存 / 分享</button>
+        <span id="recInfo"></span>
+      </div>
+      <video id="playback" controls playsinline hidden></video>
+    </section>
+
+    <section>
+      <h2>设置链接 Settings link</h2>
+      <div>encode: <code id="enc"></code></div>
+      <div>decode: <code id="dec"></code></div>
+    </section>
+
+    <section>
+      <h2>离线分析 Offline analysis</h2>
+      <button class="ghost" id="analyze">渲染并分析全部音效</button>
+      <div id="report"></div>
+      <div id="specs"></div>
+    </section>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { createSfx, createRecorder, shareRecording, encodeConfig, decodeConfig, canRecord } from "/src/media/index.ts";
+      import { SFX_KINDS, render, measure, drawSound } from "/src/media/offline.ts";
+      import { initialState } from "/src/store.ts";
+
+      const NAMES = { boing: "DUANG 弹", squish: "噗叽 捏", slap: "啪 拍", pop: "啵", whoosh: "嗖 抛", land: "咚 落地",
+        ball: "球弹", pump: "打气", giggle: "嘿嘿", laugh: "哈哈哈" };
+      const $ = (id) => document.getElementById(id);
+      const sfx = createSfx();
+      const strength = () => Number($("strength").value);
+      $("strength").oninput = () => ($("sv").textContent = $("strength").value);
+      $("enabled").onchange = () => sfx.setEnabled($("enabled").checked);
+      for (const kind of SFX_KINDS) {
+        const b = document.createElement("button");
+        b.textContent = NAMES[kind];
+        b.title = kind;
+        b.onclick = () => { sfx.unlock(); sfx.play(kind, strength()); };
+        $("sounds").append(b);
+      }
+      $("storm").onclick = () => {
+        sfx.unlock();
+        for (let i = 0; i < 40; i++) setTimeout(() => sfx.play(SFX_KINDS[i % SFX_KINDS.length], Math.random()), Math.random() * 400);
+      };
+      $("repeat").onclick = () => {
+        sfx.unlock();
+        for (let i = 0; i < 8; i++) setTimeout(() => sfx.play("boing", strength()), i * 220);
+      };
+
+      // A WebGL scene like the stage's (default renderer: no preserveDrawingBuffer), to record.
+      const canvas = $("stage");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(1);
+      renderer.setSize(1280, 720, false);
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color("#fff3d1");
+      const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 50);
+      camera.position.set(0, 1.2, 4.5);
+      camera.lookAt(0, 0.6, 0);
+      scene.add(new THREE.HemisphereLight("#fff8e6", "#8a7a50", 1.6));
+      const sun = new THREE.DirectionalLight("#ffffff", 2);
+      sun.position.set(2, 4, 3);
+      scene.add(sun);
+      const blob = new THREE.Mesh(new THREE.SphereGeometry(0.6, 48, 32), new THREE.MeshStandardMaterial({ color: "#f5c842", roughness: 0.6 }));
+      scene.add(blob);
+      const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.MeshStandardMaterial({ color: "#e9dcb8" }));
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+      let lastBounce = 0;
+      renderer.setAnimationLoop((now) => {
+        const t = now / 1000;
+        const phase = (t * 1.6) % 1;
+        const y = 4 * phase * (1 - phase) * 1.2;
+        const squash = 1 + 0.35 * Math.exp(-phase * 12);
+        blob.position.set(Math.sin(t * 0.9) * 1.2, 0.6 / squash + y, 0);
+        blob.scale.set(squash, 1 / squash, squash);
+        if (phase < lastBounce) sfx.play(Math.random() < 0.5 ? "boing" : "land", 0.4 + Math.random() * 0.5);
+        lastBounce = phase;
+        renderer.render(scene, camera);
+      });
+
+      const recorder = createRecorder({ maxMs: 20000, onAutoStop: (r) => shown(r) });
+      let lastRec = null;
+      function shown(r) {
+        lastRec = r;
+        $("rec").textContent = "开始录制";
+        $("share").disabled = false;
+        $("recInfo").textContent = `${r.fileName} · ${r.mimeType} · ${(r.blob.size / 1024).toFixed(0)} KB · ${(r.durationMs / 1000).toFixed(1)} s`;
+        $("playback").hidden = false;
+        $("playback").src = r.url;
+      }
+      $("rec").onclick = async () => {
+        sfx.unlock();
+        if (recorder.active) return shown(await recorder.stop());
+        recorder.start(canvas, sfx.stream);
+        $("rec").textContent = "停止";
+        $("recInfo").textContent = "录制中…";
+      };
+      $("share").onclick = async () => {
+        try { $("recInfo").textContent += " → " + (await shareRecording(lastRec)); } catch (e) { $("recInfo").textContent += " → " + e.name; }
+      };
+      if (!canRecord()) $("rec").disabled = true;
+
+      const sample = { ...initialState(), mode: "dance", tool: "ball", preset: "balloon" };
+      $("enc").textContent = encodeConfig(sample);
+      $("dec").textContent = JSON.stringify(decodeConfig(encodeConfig(sample)));
+
+      async function analyze({ draw = true } = {}) {
+        const rows = {};
+        for (const kind of SFX_KINDS) {
+          for (const s of [0.1, 0.5, 1]) {
+            const seconds = kind === "laugh" ? 2.5 : 1.5;
+            const buf = await render([{ kind, at: 0.02, strength: s }], seconds, 7);
+            const raw = measure(await render([{ kind, at: 0.02, strength: s }], seconds, 7, true));
+            const m = measure(buf);
+            rows[`${kind}@${s}`] = { ...m, rawPeak: raw.peak };
+            if (draw && s === 0.5) {
+              const c = document.createElement("canvas");
+              c.width = 600; c.height = 240;
+              drawSound(c, buf, `${kind} s=0.5`);
+              $("specs").append(c);
+            }
+          }
+          // Variation: the same call with five seeds.
+          const lens = [];
+          const cents = [];
+          const f0s = [];
+          for (let seed = 1; seed <= 5; seed++) {
+            const m = measure(await render([{ kind, at: 0.02, strength: 0.5 }], 2.5, seed));
+            lens.push(m.length); cents.push(m.centroid); f0s.push(m.f0);
+          }
+          rows[`${kind}@vary`] = { lengths: lens, centroids: cents, f0s };
+        }
+        // Many at once through the limiter.
+        const storm = [];
+        for (let i = 0; i < 60; i++) storm.push({ kind: SFX_KINDS[i % SFX_KINDS.length], at: (i % 12) * 0.03, strength: 1 });
+        rows.storm60 = measure(await render(storm, 3, 3));
+        const stormRaw = measure(await render(storm, 3, 3, true));
+        rows.storm60.rawPeak = stormRaw.peak;
+        if (draw) table(rows);
+        return rows;
+      }
+      function table(rows) {
+        const cols = ["peak", "rawPeak", "clipped", "bad", "length", "loudDb", "centroid", "dominant", "lowShare", "beats", "f0"];
+        const fmt = (v) => typeof v === "number" ? (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(3)) : Array.isArray(v) ? v.map((x) => x.toFixed(2)).join(" ") : "";
+        let h = "<table><tr><th>sound</th>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
+        for (const [k, r] of Object.entries(rows)) {
+          if (r.lengths) { h += `<tr><td>${k}</td><td colspan=${cols.length}>len ${fmt(r.lengths)} · centroid ${r.centroids.map((x) => x.toFixed(0)).join(" ")} · f0 ${r.f0s.map((x) => x.toFixed(0)).join(" ")}</td></tr>`; continue; }
+          h += `<tr><td>${k}</td>` + cols.map((c) => `<td class="${(c === "clipped" || c === "bad") && r[c] ? "bad" : ""}">${fmt(r[c])}</td>`).join("") + "</tr>";
+        }
+        $("report").innerHTML = h + "</table>";
+      }
+      $("analyze").onclick = () => analyze();
+
+      /** Headless check: record the scene with sound for ms, hand the file back as base64. */
+      async function recordTest(ms = 3000) {
+        sfx.unlock();
+        recorder.start(canvas, sfx.stream);
+        const startedActive = recorder.active;
+        await new Promise((r) => setTimeout(r, ms));
+        const r = await recorder.stop();
+        shown(r);
+        const bytes = new Uint8Array(await r.blob.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return { mimeType: r.mimeType, fileName: r.fileName, durationMs: r.durationMs, size: bytes.length, startedActive,
+          activeAfter: recorder.active, audioTracks: sfx.stream?.getAudioTracks().length ?? 0, ctx: sfx.stream ? "ok" : "none",
+          base64: btoa(bin) };
+      }
+      window.mediaDev = { sfx, analyze, recordTest };
+    </script>
+  </body>
+</html>
