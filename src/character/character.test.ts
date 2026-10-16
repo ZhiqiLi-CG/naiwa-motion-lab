@@ -56,6 +56,19 @@ function contractChecks(c: NaiwaCharacter) {
     expect(b.radius).toBeGreaterThanOrEqual(0);
     expect(b.tail.distanceTo(new THREE.Vector3().setFromMatrixPosition(b.restWorld))).toBeGreaterThan(0.005);
   }
+  for (const part of [c.spec.body, ...(c.spec.limbs ?? [])]) {
+    // Skin binding: four bones of RigSpec.bones per vertex, weights summing to one.
+    const n = part.positions.length / 3;
+    expect(part.skinIndices!.length).toBe(4 * n);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        sum += part.skinWeights![4 * i + k];
+        expect(part.skinIndices![4 * i + k]).toBeLessThan(c.spec.bones.length);
+      }
+      expect(sum).toBeCloseTo(1, 3);
+    }
+  }
   for (const l of c.spec.limbs ?? []) {
     const lr = checkSurface(l.positions, l.indices);
     expect(surfaceProblems(lr), l.name).toEqual([]);

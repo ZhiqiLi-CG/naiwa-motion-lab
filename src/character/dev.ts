@@ -2,7 +2,7 @@
  * Dev page for the character (dev/character.html): the frog on a neutral studio floor like the references, driven
  * by the real simulation. Hover: the eyes follow; click: poke; drag: grab and throw.
  * URL: ?view=front|three|side|back|laugh|upper|face|faceside, ?placeholder, ?nosim (rest surface), ?mode=free, ?pose=wave|peace,
- * ?clean, ?still (no life), ?preset=jelly|mochi|…, ?stage (the app's stage instead of the studio), ?raw (the GLB as three.js
+ * ?fake=bend|squash|dent (a known deformation instead of the simulation, ?fakeAt=s holds its phase), ?compare (the simulation's raw surface beside it), ?clean, ?still (no life), ?preset=jelly|mochi|…, ?stage (the app's stage instead of the studio), ?raw (the GLB as three.js
  * loads it, without this module).
  * window.dev drives it from scripts (tests/tools/shot.mjs --eval).
  */
@@ -106,7 +106,42 @@ scene.add(character.object);
 if (params.has("still")) character.setLively(false);
 
 let sim: (FrogSim & { stats(): { particles: number; deformation: number } }) | null = null;
-if (!params.has("nosim")) {
+/**
+ * ?fake=bend|squash|dent: no simulation; the flesh is bent, squashed or dented by a known smooth field while the
+ * bones stay put, to check that the face and limb roots ride on the deformed surface whatever the simulation does.
+ */
+const fake = params.get("fake");
+const fakeBody = character.spec.body.positions.slice();
+function deformFake(t: number) {
+  const rest = character.spec.body.positions;
+  const a = 0.5 * Math.sin(t * 2.2), sq = 0.5 + 0.5 * Math.sin(t * 3.1);
+  const p = new THREE.Vector3(), pivot = new THREE.Vector3(0, 0.62, 0), q = new THREE.Quaternion();
+  for (let i = 0; i < rest.length; i += 3) {
+    p.fromArray(rest, i);
+    if (fake === "bend") {
+      // The head flesh tips over sideways and forwards about the neck.
+      const w = THREE.MathUtils.smoothstep(p.y, 0.6, 0.95);
+      q.setFromEuler(new THREE.Euler(0.6 * a * w, 0, 0.7 * a * w));
+      p.sub(pivot).applyQuaternion(q).add(pivot);
+    } else if (fake === "squash") {
+      // The head squashes down and bulges out.
+      const w = THREE.MathUtils.smoothstep(p.y, 0.65, 0.9);
+      const k = 1 - 0.25 * sq * w;
+      p.y = 0.65 + (p.y - 0.65) * k;
+      p.x *= 1 + 0.3 * sq * w;
+      p.z = (p.z - 0.04) * (1 + 0.2 * sq * w) + 0.04;
+    } else {
+      // A deep round dent in the belly and one in the cheek.
+      for (const [c, r, d] of [[new THREE.Vector3(0.05, 0.45, 0.25), 0.08, 0.06], [new THREE.Vector3(0.1, 0.86, 0.12), 0.05, 0.025]] as const) {
+        const f = Math.exp(-((p.distanceTo(c) / r) ** 2)) * d * sq;
+        p.z -= f;
+      }
+    }
+    p.toArray(fakeBody, i);
+  }
+}
+
+if (!params.has("nosim") && !fake) {
   await initPhysics();
   const preset = MATERIAL_PRESETS.find((p) => p.id === params.get("preset")) ?? MATERIAL_PRESETS[0];
   sim = createFrogSim(character.spec, { ...preset.params });
@@ -230,6 +265,20 @@ function log(s: string) {
 /* Loop                                                                                                              */
 /* ---------------------------------------------------------------------------------------------------------------- */
 
+/** ?compare: the simulation's own surfaces, unsmoothed, 0.8 m to the frog's left. */
+const rawSurfaces = params.has("compare") && sim
+  ? [{ name: "body", ...character.spec.body }, ...(character.spec.limbs ?? [])].map((p) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(p.positions.slice(), 3));
+    g.setIndex(new THREE.BufferAttribute(p.indices, 1));
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: p.name === "body" ? 0xf3cb45 : 0xe0b030, roughness: 0.5 }));
+    m.position.x = 0.8;
+    m.castShadow = true;
+    scene.add(m);
+    return { name: p.name ?? "body", mesh: m };
+  })
+  : [];
+
 const targets = new Map<BoneName, THREE.Matrix4>();
 const bones = new Map<BoneName, THREE.Matrix4>();
 const limbs = new Map<string, Float32Array>();
@@ -254,6 +303,17 @@ function frame(now: number) {
     sim.readBones(bones);
     sim.readLimbs?.(limbs);
     character.applySim(bones, sim.readBody(), limbs);
+    for (const { name, mesh } of rawSurfaces) {
+      const src = name === "body" ? sim.readBody() : limbs.get(name);
+      if (!src) continue;
+      const a = mesh.geometry.attributes.position as THREE.BufferAttribute;
+      a.copyArray(src);
+      a.needsUpdate = true;
+      mesh.geometry.computeVertexNormals();
+    }
+  } else if (fake) {
+    deformFake(params.has("fakeAt") ? Number(params.get("fakeAt")) : time);
+    character.applySim(targets, fakeBody);
   }
   // Without a simulation the character shows the targets with its flesh skinned to them.
   character.update(dt, camera);
@@ -281,6 +341,12 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 Object.assign(window, {
   dev: {
     character, sim, camera, renderer, view,
+    /** Camera at (x, y, z) looking at (tx, ty, tz). */
+    look: (x: number, y: number, z: number, tx: number, ty: number, tz: number) => {
+      camera.position.set(x, y, z);
+      controls.target.set(tx, ty, tz);
+      controls.update();
+    },
     still: (on = true) => character.setLively(!on),
     express: (w: ExpressionWeights) => Object.assign(forced, w),
     pose: (name: string | null) => (pose = name),

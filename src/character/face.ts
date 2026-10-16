@@ -1,21 +1,27 @@
 /**
- * Eyes and mouth riding on the soft head: each is pinned to a patch of the simulated Body surface (a "rivet"), so
- * when the flesh wobbles they move and tilt with it instead of floating off or sinking in. The eyes also look around.
+ * Eyes and mouth riding on the soft head: each is pinned to a patch of the simulated Body surface (a "rivet") and
+ * moves and turns as that patch does, its frame taken from the surface vertices themselves (not the head bone), so
+ * however the flesh wobbles or sags they neither float off nor sink in. The eyes also look around.
  */
 import * as THREE from "three";
 
 export interface Rivet {
   /** Drives the attached geometry; its world matrix is identity at rest. */
   bone: THREE.Bone;
-  /** Welded Body vertices of the patch and their weights (sum 1). */
+  /** Welded Body vertices of the patch, their weights (sum 1) and rest offsets from the patch centre. */
   verts: Uint32Array;
   weights: Float32Array;
-  /** Patch triangles (welded indices), for the patch normal. */
-  tris: Uint32Array;
+  offsets: Float32Array;
   c0: THREE.Vector3;
+  /** Outward normal of the patch at rest. */
   n0: THREE.Vector3;
-  /** Tilt with the patch normal (eyes) or only turn with the head (mouth, so it stays in line with the lips). */
-  tilt: boolean;
+  /** The patch's rotation from rest (kept between frames to start the next fit from). */
+  turn: THREE.Quaternion;
+  /**
+   * Stretch with the patch too (the mouth inside, so it stays within the lips however the face squashes), else only
+   * move and turn (the eyes keep their shape): the inverse of the patch's rest covariance, rigid along the normal.
+   */
+  stretch: { inv: THREE.Matrix3; eps: number } | null;
 }
 
 /** A rivet at anchor: the Body vertices within radius, weighted towards the anchor. */
@@ -25,7 +31,7 @@ export function makeRivet(
   radius: number,
   positions: Float32Array,
   indices: Uint32Array,
-  tilt: boolean,
+  stretch: boolean,
 ): Rivet {
   const verts: number[] = [];
   const w: number[] = [];
@@ -39,73 +45,102 @@ export function makeRivet(
       w.push(Math.exp(-((d / (0.5 * radius)) ** 2)));
     }
   }
-  if (verts.length < 3) {
+  if (verts.length < 4) {
     // The anchor is farther from the skin than radius: use the nearest vertex's neighbourhood instead.
-    return makeRivet(name, p.fromArray(positions, 3 * best).clone(), radius, positions, indices, tilt);
-  }
-  const inPatch = new Set(verts);
-  const tris: number[] = [];
-  for (let t = 0; t < indices.length; t += 3) {
-    if (inPatch.has(indices[t]) && inPatch.has(indices[t + 1]) && inPatch.has(indices[t + 2])) {
-      tris.push(indices[t], indices[t + 1], indices[t + 2]);
-    }
+    return makeRivet(name, p.fromArray(positions, 3 * best).clone(), radius, positions, indices, stretch);
   }
   const sum = w.reduce((a, b) => a + b, 0);
+  const weights = Float32Array.from(w, (x) => x / sum);
+  const c0 = new THREE.Vector3();
+  verts.forEach((j, k) => c0.addScaledVector(p.fromArray(positions, 3 * j), weights[k]));
+  const offsets = new Float32Array(3 * verts.length);
+  verts.forEach((j, k) => offsets.set(p.fromArray(positions, 3 * j).sub(c0).toArray(), 3 * k));
+  // Rest normal from the patch's own triangles.
+  const inPatch = new Set(verts);
+  const n0 = new THREE.Vector3();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let t = 0; t < indices.length; t += 3) {
+    if (!inPatch.has(indices[t]) || !inPatch.has(indices[t + 1]) || !inPatch.has(indices[t + 2])) continue;
+    a.fromArray(positions, 3 * indices[t]);
+    b.fromArray(positions, 3 * indices[t + 1]).sub(a);
+    c.fromArray(positions, 3 * indices[t + 2]).sub(a);
+    n0.add(b.cross(c));
+  }
+  n0.normalize();
+  let cov: Rivet["stretch"] = null;
+  if (stretch) {
+    // C = Σ w q qᵀ + ε n nᵀ: a patch of skin is nearly flat, so its thickness is taken as rigid.
+    const e = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (let k = 0; k < verts.length; k++) {
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) e[3 * c + r] += weights[k] * offsets[3 * k + r] * offsets[3 * k + c];
+    }
+    const eps = (e[0] + e[4] + e[8]) / 3;
+    const n = n0.toArray();
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) e[3 * c + r] += eps * n[r] * n[c];
+    cov = { inv: new THREE.Matrix3().fromArray(e).invert(), eps };
+  }
   const bone = new THREE.Bone();
   bone.name = name;
   bone.matrixAutoUpdate = false;
   bone.matrixWorldAutoUpdate = false;
-  const rivet: Rivet = {
-    bone,
-    verts: Uint32Array.from(verts),
-    weights: Float32Array.from(w, (x) => x / sum),
-    tris: Uint32Array.from(tris),
-    c0: new THREE.Vector3(),
-    n0: new THREE.Vector3(),
-    tilt,
-  };
-  patchFrame(rivet, positions, rivet.c0, rivet.n0);
-  return rivet;
-}
-
-function patchFrame(r: Rivet, pos: Float32Array, c: THREE.Vector3, n: THREE.Vector3): void {
-  c.set(0, 0, 0);
-  for (let k = 0; k < r.verts.length; k++) {
-    const i = 3 * r.verts[k], w = r.weights[k];
-    c.x += pos[i] * w; c.y += pos[i + 1] * w; c.z += pos[i + 2] * w;
-  }
-  n.set(0, 0, 0);
-  const t = r.tris;
-  for (let k = 0; k < t.length; k += 3) {
-    const a = 3 * t[k], b = 3 * t[k + 1], d = 3 * t[k + 2];
-    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
-    const vx = pos[d] - pos[a], vy = pos[d + 1] - pos[a + 1], vz = pos[d + 2] - pos[a + 2];
-    n.x += uy * vz - uz * vy; n.y += uz * vx - ux * vz; n.z += ux * vy - uy * vx;
-  }
-  n.normalize();
+  return { bone, verts: Uint32Array.from(verts), weights, offsets, c0, n0, turn: new THREE.Quaternion(), stretch: cov };
 }
 
 const _c = new THREE.Vector3();
-const _n = new THREE.Vector3();
-const _n0 = new THREE.Vector3();
-const _q = new THREE.Quaternion();
-const _qa = new THREE.Quaternion();
+const _r = new THREE.Matrix4();
+const _w = new THREE.Vector3();
+const _dq = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
+const _a = new THREE.Matrix3();
 
-/** Place the rivet on the deformed surface; headTurn is the head bone's rotation relative to rest. */
-export function updateRivet(r: Rivet, pos: Float32Array, headTurn: THREE.Quaternion): void {
-  patchFrame(r, pos, _c, _n);
-  _q.copy(headTurn);
-  if (r.tilt && r.tris.length) {
-    _n0.copy(r.n0).applyQuaternion(headTurn);
-    _qa.setFromUnitVectors(_n0, _n);
-    _q.premultiply(_qa);
+/**
+ * Place the rivet on the deformed surface: its centre at the patch's centre, its rotation the best rigid fit of the
+ * patch's rest offsets to the current ones (Müller et al. 2016, started from last frame's).
+ */
+export function updateRivet(r: Rivet, pos: Float32Array): void {
+  const { verts, weights, offsets } = r;
+  _c.set(0, 0, 0);
+  for (let k = 0; k < verts.length; k++) {
+    const i = 3 * verts[k], w = weights[k];
+    _c.x += pos[i] * w; _c.y += pos[i + 1] * w; _c.z += pos[i + 2] * w;
   }
-  // world = T(c) · R · T(−c0)
+  // A = Σ w (p − c) qᵀ, column-major: column j is Σ w (p − c) q_j.
+  const A = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let k = 0; k < verts.length; k++) {
+    const i = 3 * verts[k], w = weights[k];
+    const px = pos[i] - _c.x, py = pos[i + 1] - _c.y, pz = pos[i + 2] - _c.z;
+    for (let j = 0; j < 3; j++) {
+      const q = w * offsets[3 * k + j];
+      A[3 * j] += px * q; A[3 * j + 1] += py * q; A[3 * j + 2] += pz * q;
+    }
+  }
+  const q = r.turn;
+  for (let iter = 0; iter < 8; iter++) {
+    const e = _r.makeRotationFromQuaternion(q).elements;
+    let ox = 0, oy = 0, oz = 0, dot = 0;
+    for (let j = 0; j < 3; j++) {
+      const rx = e[4 * j], ry = e[4 * j + 1], rz = e[4 * j + 2];
+      const ax = A[3 * j], ay = A[3 * j + 1], az = A[3 * j + 2];
+      ox += ry * az - rz * ay; oy += rz * ax - rx * az; oz += rx * ay - ry * ax;
+      dot += rx * ax + ry * ay + rz * az;
+    }
+    _w.set(ox, oy, oz).multiplyScalar(1 / (Math.abs(dot) + 1e-12));
+    const angle = _w.length();
+    if (angle < 1e-7) break;
+    q.premultiply(_dq.setFromAxisAngle(_w.divideScalar(angle), angle)).normalize();
+  }
+  // world = T(c) · M · T(−c0), M the rotation, or the least-squares stretch A·C⁻¹ with the normal kept rigid.
   const m = r.bone.matrixWorld;
-  m.makeRotationFromQuaternion(_q);
-  _m.makeTranslation(-r.c0.x, -r.c0.y, -r.c0.z);
-  m.multiply(_m);
+  m.makeRotationFromQuaternion(q);
+  if (r.stretch) {
+    const e = m.elements, n = r.n0, eps = r.stretch.eps;
+    const rn = [e[0] * n.x + e[4] * n.y + e[8] * n.z, e[1] * n.x + e[5] * n.y + e[9] * n.z, e[2] * n.x + e[6] * n.y + e[10] * n.z];
+    const nn = [n.x, n.y, n.z];
+    for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) A[3 * c + row] += eps * rn[row] * nn[c];
+    _a.fromArray(A).multiply(r.stretch.inv);
+    m.setFromMatrix3(_a);
+  }
+  m.multiply(_m.makeTranslation(-r.c0.x, -r.c0.y, -r.c0.z));
   m.elements[12] += _c.x;
   m.elements[13] += _c.y;
   m.elements[14] += _c.z;

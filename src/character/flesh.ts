@@ -39,13 +39,17 @@ export interface FleshSet {
 }
 
 /**
- * Weld the primitives of one asset mesh and split them into connected pieces. name(centroid) names each piece; the
- * result lists what keeps them from being soft (not closed, two pieces with one name), or the pieces.
+ * Weld the primitives of one asset mesh and split them into connected pieces. name(centroid) names each piece;
+ * smoothing is the spacing of the basis their simulated deformation is shown through (FleshInit.smoothing). The
+ * result lists what keeps them from being soft (not closed, two pieces with one name), or the pieces. boneIndex
+ * numbers the bones as RigSpec.bones does, for the pieces' skin binding.
  */
 export function buildFlesh(
   meshes: Part[],
   name: (centroid: THREE.Vector3) => string,
   region: (bone: BoneName, softness: number | undefined) => FleshRegion,
+  smoothing: number,
+  boneIndex: (bone: BoneName) => number,
 ): { flesh: FleshSet; problems: [] } | { flesh: null; problems: string[] } {
   const pts = meshes.map((m) => restPoints(m));
   const counts = pts.map((p) => p.dominant.length);
@@ -162,10 +166,11 @@ export function buildFlesh(
     });
     const skin = new FleshSkin({
       rest: positions, indices, skinIndex, skinWeight, boneCount: slots.length,
-      softness: softness ?? new Float32Array(n), morphs,
+      softness: softness ?? new Float32Array(n), morphs, smoothing,
     });
+    const skinIndices = Uint16Array.from(skinIndex, (slot) => Math.max(0, boneIndex(slots[slot])));
     pieces.push({
-      part: { name: pieceName, positions, indices, softness, regions, bones: [...used] },
+      part: { name: pieceName, positions, indices, softness, regions, bones: [...used], skinIndices, skinWeights: skinWeight },
       skin, slots, deltas: slots.map(() => new THREE.Matrix4()), sim: positions.slice(), simulated: false, report,
     });
   }

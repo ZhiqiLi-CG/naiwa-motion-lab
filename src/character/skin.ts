@@ -19,13 +19,12 @@ export interface FleshInit {
   softness: Float32Array;
   /** Expression → per welded vertex offsets (rest world frame). */
   morphs: Map<Expression, Float32Array>;
+  /**
+   * Spacing (meters) of the smooth basis the simulated deformation is shown through: about half a cell of a coarse
+   * simulation lattice, so the kinks where its cells meet never show, while every dent the lattice can make stays.
+   */
+  smoothing: number;
 }
-
-/**
- * How far the simulated deformation is blurred (meters): about half a cell of a coarse simulation lattice, so the
- * kinks where its cells meet never show, while every dent the lattice can make stays.
- */
-const SMOOTH_RADIUS = 0.025;
 /** Breathing swells the soft belly by this much (meters, at softness 1). */
 const BREATH = 0.0035;
 
@@ -44,12 +43,9 @@ export class FleshSkin {
   private skinIndex: Uint16Array;
   private skinWeight: Float32Array;
   private softness: Float32Array;
-  private adjStart: Uint32Array;
-  private adj: Uint32Array;
-  private tmp: Float32Array;
+  private smoother: Smoother;
   private boneDelta: Float32Array;
   private morphs: [Expression, Float32Array, Uint32Array][];
-  private passes: number;
 
   constructor(init: FleshInit) {
     const n = (this.count = init.rest.length / 3);
@@ -62,30 +58,8 @@ export class FleshSkin {
     this.normals = new Float32Array(3 * n);
     this.surface = new Float32Array(3 * n);
     this.residual = new Float32Array(3 * n);
-    this.tmp = new Float32Array(3 * n);
     this.boneDelta = new Float32Array(16 * init.boneCount);
-
-    // Vertex neighbours (CSR) for smoothing.
-    const sets: Set<number>[] = Array.from({ length: n }, () => new Set());
-    const t = init.indices;
-    for (let k = 0; k < t.length; k += 3) {
-      const a = t[k], b = t[k + 1], c = t[k + 2];
-      sets[a].add(b).add(c); sets[b].add(a).add(c); sets[c].add(a).add(b);
-    }
-    this.adjStart = new Uint32Array(n + 1);
-    for (let i = 0; i < n; i++) this.adjStart[i + 1] = this.adjStart[i] + sets[i].size;
-    this.adj = new Uint32Array(this.adjStart[n]);
-    for (let i = 0; i < n; i++) this.adj.set([...sets[i]], this.adjStart[i]);
-    // Each half-weight averaging pass spreads the residual like diffusion: about edge·sqrt(passes/2).
-    let len = 0;
-    for (let i = 0; i < n; i++) {
-      for (let k = this.adjStart[i]; k < this.adjStart[i + 1]; k++) {
-        const j = this.adj[k];
-        len += Math.hypot(init.rest[3 * i] - init.rest[3 * j], init.rest[3 * i + 1] - init.rest[3 * j + 1], init.rest[3 * i + 2] - init.rest[3 * j + 2]);
-      }
-    }
-    const edge = len / this.adj.length;
-    this.passes = Math.min(12, Math.max(1, Math.round(2 * (SMOOTH_RADIUS / edge) ** 2)));
+    this.smoother = new Smoother(init.rest, init.smoothing);
 
     // Only the vertices an expression moves are visited each frame.
     this.morphs = [...init.morphs].map(([name, d]) => {
@@ -96,26 +70,14 @@ export class FleshSkin {
     computeNormals(init.rest, init.indices, this.normals);
   }
 
-  /** Which expressions the Body has shapes for. */
-  has(e: Expression): boolean {
-    return this.morphs.some(([n]) => n === e);
-  }
-
   /**
-   * sim: simulated surface (world, welded order), null when the simulation does not move this piece; deltas: per
-   * bone world · rest⁻¹; headTurn: head rotation relative to rest; weights: expression weights; breath: −1…1;
-   * tie: vertices that take another piece's residual instead of their own (limb roots in the Body).
+   * The deformed surface (fills surface and residual). sim: simulated surface (world, welded order), null when the
+   * simulation does not move this piece; deltas: per bone world · rest⁻¹; tie: vertices that take another piece's
+   * residual instead of their own (limb roots in the Body).
    */
-  update(
-    sim: Float32Array | null,
-    deltas: THREE.Matrix4[],
-    headTurn: THREE.Quaternion,
-    weights: Record<Expression, number>,
-    breath: number,
-    tie?: { roots: RootTie; residual: Float32Array },
-  ): void {
+  deform(sim: Float32Array | null, deltas: THREE.Matrix4[], tie?: { roots: RootTie; residual: Float32Array }): void {
     const n = this.count;
-    const rest = this.rest, res = this.residual, surf = this.surface, P = this.positions;
+    const rest = this.rest, res = this.residual, surf = this.surface;
     const D = this.boneDelta;
     for (let b = 0; b < deltas.length; b++) D.set(deltas[b].elements, 16 * b);
     const si = this.skinIndex, sw = this.skinWeight;
@@ -136,23 +98,7 @@ export class FleshSkin {
       if (sim) (res[3 * i] = sim[3 * i] - sx), (res[3 * i + 1] = sim[3 * i + 1] - sy), (res[3 * i + 2] = sim[3 * i + 2] - sz);
     }
     if (!sim) res.fill(0);
-    // Smooth the residual (not the shape: the rest detail stays crisp, only the simulated deformation is softened).
-    const st = this.adjStart, adj = this.adj, tmp = this.tmp;
-    for (let pass = 0; sim && pass < this.passes; pass++) {
-      for (let i = 0; i < n; i++) {
-        let ax = 0, ay = 0, az = 0;
-        const s = st[i], e = st[i + 1];
-        for (let k = s; k < e; k++) {
-          const j = 3 * adj[k];
-          ax += res[j]; ay += res[j + 1]; az += res[j + 2];
-        }
-        const inv = 0.5 / (e - s);
-        tmp[3 * i] = 0.5 * res[3 * i] + ax * inv;
-        tmp[3 * i + 1] = 0.5 * res[3 * i + 1] + ay * inv;
-        tmp[3 * i + 2] = 0.5 * res[3 * i + 2] + az * inv;
-      }
-      res.set(tmp);
-    }
+    // The root follows the flesh it sinks into (blended before smoothing, so the join is smooth too).
     if (tie) {
       const { vertex, body, weight } = tie.roots, other = tie.residual;
       for (let k = 0; k < vertex.length; k++) {
@@ -162,19 +108,30 @@ export class FleshSkin {
         res[i + 2] += (other[j + 2] - res[i + 2]) * w;
       }
     }
+    // Smooth the residual (not the shape: the rest detail stays crisp, only the simulated deformation is softened).
+    if (sim || tie) this.smoother.apply(res);
+
+    for (let i = 0; i < 3 * n; i++) surf[i] += res[i];
+  }
+
+  /**
+   * What is shown (fills positions and normals): the deformed surface with breathing and the expressions on top,
+   * the expression offsets turned by turn (the face's rotation from rest); weights: expression weights; breath: −1…1.
+   */
+  finish(turn: THREE.Quaternion, weights: Record<Expression, number>, breath: number): void {
+    const n = this.count, P = this.positions;
     // Breathing along last frame's normals, mostly in the soft belly.
     const nrm = this.normals, soft = this.softness;
     const bAmp = BREATH * breath;
-    for (let i = 0; i < 3 * n; i++) surf[i] += res[i];
-    P.set(surf);
+    P.set(this.surface);
     if (bAmp) {
       for (let i = 0; i < n; i++) {
         const a = bAmp * soft[i] * soft[i];
         P[3 * i] += a * nrm[3 * i]; P[3 * i + 1] += a * nrm[3 * i + 1]; P[3 * i + 2] += a * nrm[3 * i + 2];
       }
     }
-    // Expressions on top, turned with the head.
-    const q = headTurn;
+    // Expressions on top, turned with the face.
+    const q = turn;
     const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
     for (const [name, d, moved] of this.morphs) {
       const w = weights[name];
@@ -193,30 +150,138 @@ export class FleshSkin {
   }
 }
 
-/** Limb vertices sunk into (or just outside) the Body, each tied to its nearest Body vertex. */
+/**
+ * A smooth basis over a surface: control points about h apart (greedy Poisson-disk over the rest vertices). A field
+ * is gathered onto them with Gaussian weights and spread back the same way, so it keeps no detail finer than about
+ * 2h whatever the mesh resolution, at a fixed cost per frame.
+ */
+class Smoother {
+  private gStart: Uint32Array;
+  private gIndex: Uint32Array;
+  private gWeight: Float32Array;
+  private sStart: Uint32Array;
+  private sIndex: Uint32Array;
+  private sWeight: Float32Array;
+  private ctrl: Float32Array;
+
+  constructor(rest: Float32Array, h: number) {
+    const n = rest.length / 3;
+    const cell = 2 * h;
+    const key = (x: number, y: number, z: number) =>
+      (Math.floor(x / cell) + 512) * 1048576 + (Math.floor(y / cell) + 512) * 1024 + (Math.floor(z / cell) + 512);
+    const grid = (pts: Float32Array, count: number) => {
+      const g = new Map<number, number[]>();
+      for (let i = 0; i < count; i++) {
+        const k = key(pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]);
+        let l = g.get(k);
+        if (!l) g.set(k, (l = []));
+        l.push(i);
+      }
+      return g;
+    };
+    /** Points of pts (in grid g) within r of (x, y, z): [index, squared distance][]. */
+    const near = (g: Map<number, number[]>, pts: Float32Array, x: number, y: number, z: number, r: number) => {
+      const out: [number, number][] = [];
+      const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+        const l = g.get((cx + dx + 512) * 1048576 + (cy + dy + 512) * 1024 + (cz + dz + 512));
+        if (!l) continue;
+        for (const i of l) {
+          const d = (pts[3 * i] - x) ** 2 + (pts[3 * i + 1] - y) ** 2 + (pts[3 * i + 2] - z) ** 2;
+          if (d < r * r) out.push([i, d]);
+        }
+      }
+      return out;
+    };
+
+    // Controls: a vertex becomes one unless a control is already within h.
+    const all = new Float32Array(3 * n);
+    const taken = new Map<number, number[]>();
+    let nc = 0;
+    for (let i = 0; i < n; i++) {
+      const x = rest[3 * i], y = rest[3 * i + 1], z = rest[3 * i + 2];
+      if (near(taken, all, x, y, z, h).length) continue;
+      const k = key(x, y, z);
+      let l = taken.get(k);
+      if (!l) taken.set(k, (l = []));
+      l.push(nc);
+      all.set([x, y, z], 3 * nc++);
+    }
+    const ctrl = all.slice(0, 3 * nc);
+    const vGrid = grid(rest, n), cGrid = grid(ctrl, nc);
+    const rows = (count: number, pts: Float32Array, g: Map<number, number[]>, src: Float32Array, r: number, sigma: number) => {
+      const start = new Uint32Array(count + 1), idx: number[] = [], wt: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const nb = near(g, src, pts[3 * i], pts[3 * i + 1], pts[3 * i + 2], r);
+        let sum = 0;
+        for (const [, d] of nb) sum += Math.exp(-d / (sigma * sigma));
+        for (const [j, d] of nb) (idx.push(j)), wt.push(Math.exp(-d / (sigma * sigma)) / sum);
+        start[i + 1] = idx.length;
+      }
+      return [start, Uint32Array.from(idx), Float32Array.from(wt)] as const;
+    };
+    [this.gStart, this.gIndex, this.gWeight] = rows(nc, ctrl, vGrid, rest, 1.5 * h, h);
+    [this.sStart, this.sIndex, this.sWeight] = rows(n, rest, cGrid, ctrl, 1.6 * h, 0.8 * h);
+    this.ctrl = new Float32Array(3 * nc);
+  }
+
+  /** Replace the field (xyz per vertex) by its smooth version. */
+  apply(f: Float32Array): void {
+    const c = this.ctrl;
+    for (const [start, index, weight, from, to] of [
+      [this.gStart, this.gIndex, this.gWeight, f, c],
+      [this.sStart, this.sIndex, this.sWeight, c, f],
+    ] as const) {
+      for (let i = 0; i + 1 < start.length; i++) {
+        let x = 0, y = 0, z = 0;
+        for (let k = start[i]; k < start[i + 1]; k++) {
+          const j = 3 * index[k], w = weight[k];
+          x += from[j] * w; y += from[j + 1] * w; z += from[j + 2] * w;
+        }
+        to[3 * i] = x; to[3 * i + 1] = y; to[3 * i + 2] = z;
+      }
+    }
+  }
+}
+
+/** Limb-root vertices sunk into (or just outside) the Body, each tied to its nearest Body vertex. */
 export interface RootTie {
-  /** Limb vertex, Body vertex, weight (1 inside the Body, fading to 0 a few centimetres out). */
+  /** Limb vertex, Body vertex, weight (1 inside the Body near the joint, fading to 0 outside and along the limb). */
   vertex: Uint32Array;
   body: Uint32Array;
   weight: Float32Array;
 }
 
-/** Ties for limb vertices (rest world) within reach of the Body surface (rest positions + normals). */
-export function tieRoots(limb: Float32Array, rest: Float32Array, normals: Float32Array, fade = 0.04): RootTie {
+/** Where a limb enters the Body: its root joint, and how far along the limb the tie may reach. */
+export interface LimbRoot {
+  joint: THREE.Vector3;
+  reach: number;
+}
+
+const smoothstep = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+
+/**
+ * Ties for the root of a limb (rest world positions) in the Body (rest positions + normals): only vertices near a
+ * root joint, so a limb that merely hangs close to the belly keeps its own motion.
+ */
+export function tieRoots(limb: Float32Array, rest: Float32Array, normals: Float32Array, roots: LimbRoot[], fade = 0.025): RootTie {
   const v: number[] = [], b: number[] = [], w: number[] = [];
   const nb = rest.length / 3;
+  const p = new THREE.Vector3();
   for (let i = 0; i < limb.length / 3; i++) {
-    const x = limb[3 * i], y = limb[3 * i + 1], z = limb[3 * i + 2];
-    let best = -1, bestD = 0.12 * 0.12;
+    p.fromArray(limb, 3 * i);
+    let near = 0;
+    for (const r of roots) near = Math.max(near, 1 - smoothstep((p.distanceTo(r.joint) / r.reach - 0.5) / 0.5));
+    if (near <= 0) continue;
+    let best = -1, bestD = Infinity;
     for (let j = 0; j < nb; j++) {
-      const dx = x - rest[3 * j], dy = y - rest[3 * j + 1], dz = z - rest[3 * j + 2];
+      const dx = p.x - rest[3 * j], dy = p.y - rest[3 * j + 1], dz = p.z - rest[3 * j + 2];
       const d = dx * dx + dy * dy + dz * dz;
       if (d < bestD) (bestD = d), (best = j);
     }
-    if (best < 0) continue;
-    const s = (x - rest[3 * best]) * normals[3 * best] + (y - rest[3 * best + 1]) * normals[3 * best + 1] +
-      (z - rest[3 * best + 2]) * normals[3 * best + 2];
-    const weight = s <= 0 ? 1 : 1 - s / fade;
+    const s = (p.x - rest[3 * best]) * normals[3 * best] + (p.y - rest[3 * best + 1]) * normals[3 * best + 1] +
+      (p.z - rest[3 * best + 2]) * normals[3 * best + 2];
+    const weight = near * (1 - smoothstep(s / fade));
     if (weight <= 0) continue;
     v.push(i); b.push(best); w.push(weight);
   }
