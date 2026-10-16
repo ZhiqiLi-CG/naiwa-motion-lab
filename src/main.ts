@@ -147,6 +147,9 @@ const commands: UICommands = {
 const ui = mountUI(document.getElementById("ui")!, store, commands, { dances: motion.dances(), presets: MATERIAL_PRESETS });
 stage.setTheme(ui.theme());
 ui.onTheme((theme) => stage.setTheme(theme));
+// Frame the frog in the part of the window the panels leave free.
+stage.setInsets(ui.insets());
+ui.onInsets((insets) => stage.setInsets(insets));
 sfx.setEnabled(store.get().sound);
 
 function setDances(dances: DanceInfo[]) {
