@@ -76,6 +76,15 @@ And by block: "simulation的代码要模块化，比如碰撞处理阿、simulat
 output), each block replaceable on its own. The CPU example is a constraint solver, the GPU example MPM/FEM. Clean, readable, documented code
 (docs/simulator-api.md) is a requirement, not a nicety.
 
+## Motion transfer is a lab too
+
+The user: "retarget的算法也应该做成那种用户可以自己编辑的（如果是数值算法的话）". The two numerical cores are motion
+transfer and simulation. Motion transfer is built the same way as the simulator: a small core loop over replaceable
+blocks (pose source, filtering, the retargeting solver — an optimisation / IK under the frog's constraints —,
+constraints such as limbs outside the body and planted feet, output), interfaces in src/motion/api.ts, parameters
+declared, users edit and compare blocks in the code lab, metrics (fidelity to the person, smoothness, limbs inside the
+body, foot sliding).
+
 ## Working
 
 - Work only in your folder (and `dev/<module>*.html` / `public/<module>/` if you need them).

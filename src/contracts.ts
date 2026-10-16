@@ -271,6 +271,13 @@ export interface SimulatorOptions {
   settings: Record<string, number | string | boolean>;
 }
 
+/** Motion transfer is the other numerical core and a lab in the same way (src/motion/api.ts): a person's pose →
+ *  filtering → a retargeting solver (e.g. an optimisation / IK under the frog's constraints: limbs outside its body,
+ *  planted feet) → pose targets, each block replaceable and editable by users. A retargeter declares its parameters
+ *  like a simulator does. */
+export type RetargeterInfo = SimulatorInfo;
+export type RetargeterOptions = SimulatorOptions;
+
 /** free: the simulation owns the whole frog (poke mode: it can be knocked over, grabbed and thrown).
  *  driven: pose targets drive the skeleton, the root is held at home (+ rootOffset); the flesh still jiggles and the
  *  frog can still be poked. */
@@ -484,6 +491,9 @@ export interface AppState {
   /** The soft-body simulator in use, and every simulator registered (built in and the user's). */
   simulator: SimulatorOptions;
   simulators: SimulatorInfo[];
+  /** The motion-transfer (retargeting) algorithm in use, and every one registered. */
+  retargeter: RetargeterOptions;
+  retargeters: RetargeterInfo[];
   /** Simulation playback: paused, and the speed of simulated time (1 = real time, 0.25 = slow motion). */
   playback: { paused: boolean; timeScale: number };
   /** Simulation readouts, refreshed a few times a second by the integration. */
