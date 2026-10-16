@@ -3,6 +3,7 @@ import "./styles/index.css";
 import * as THREE from "three";
 import type { BoneName, DanceInfo, FrogEvent, FrogHit, GrabHandle, MotionSource, PointerInfo } from "./contracts";
 import { createStore, MATERIAL_PRESETS } from "./store";
+import { setLang, tr } from "./i18n";
 import { createStage } from "./stage";
 import { loadCharacter } from "./character";
 import { createFrogSim, initPhysics } from "./sim";
@@ -10,8 +11,8 @@ import { createMotion } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
 import { mountUI, type UICommands } from "./ui";
 
-const POKE_WORDS = ["DUANG~", "噗!", "啵~", "boing!", "Q弹!"];
-const GIGGLE_WORDS = ["嘻嘻", "哈哈", "痒!", "嘿嘿"];
+const POKE_WORDS = { zh: ["DUANG~", "噗!", "啵~", "Q弹!"], en: ["DUANG~", "boing!", "squish!", "jiggle!"] };
+const GIGGLE_WORDS = { zh: ["嘻嘻", "哈哈", "痒!", "嘿嘿"], en: ["hehe", "haha", "tickles!", "hee"] };
 const GRAVITY = 9.81;
 /** Inflating past this belly size pops it. */
 const POP_SIZE = 1.9;
@@ -99,7 +100,7 @@ const commands: UICommands = {
   async copyConfigLink() {
     const url = `${location.origin}${location.pathname}${encodeConfig(store.get())}`;
     await navigator.clipboard.writeText(url);
-    ui.toast("链接已复制，发给朋友一起戳奶蛙！", "success");
+    ui.toast(tr({ zh: "链接已复制，发给朋友一起戳奶蛙！", en: "Link copied. Send it to a friend and poke 奶蛙 together!" }), "success");
   },
   rainBalls() {
     for (let i = 0; i < 14; i++) {
@@ -113,7 +114,7 @@ const commands: UICommands = {
     const rec = store.get().lastRecording;
     if (!rec) return;
     const how = await shareRecording(rec);
-    ui.toast(how === "shared" ? "分享出去啦！" : "视频已保存", "success");
+    ui.toast(how === "shared" ? tr({ zh: "分享出去啦！", en: "Shared!" }) : tr({ zh: "视频已保存", en: "Video saved" }), "success");
   },
   startCamera() {
     cameraWanted = true;
@@ -127,9 +128,9 @@ const commands: UICommands = {
   },
   async saveDance(name) {
     const track = source?.track?.();
-    if (!track) throw new Error("视频还没分析完");
+    if (!track) throw new Error(tr({ zh: "视频还没分析完", en: "The video is not analysed yet" }));
     const info = await motion.saveDance(track, name);
-    ui.toast(`「${info.name}」存进我的舞蹈啦`, "success");
+    ui.toast(tr({ zh: `「${info.name}」存进我的舞蹈啦`, en: `"${info.nameEn ?? info.name}" saved to My Dances` }), "success");
     return info;
   },
   async deleteDance(id) {
@@ -152,6 +153,7 @@ motion.onStatus((status) => {
 });
 
 store.subscribe((s, prev) => {
+  if (s.lang !== prev.lang) setLang(s.lang);
   if (s.sound !== prev.sound) sfx.setEnabled(s.sound);
   if (s.params !== prev.params) sim?.setParams(effectiveParams());
   const mirrorMatters = s.mode === "camera" || s.mode === "video";
@@ -184,7 +186,7 @@ function updatePump(dt: number, now: number) {
       pumping = false;
       const at = character.center(new THREE.Vector3());
       sfx.play("pop", 1);
-      stage.fx.popText(at.clone().add(new THREE.Vector3(0, 0.35, 0.3)), "噗——!", { size: 1.6, color: "#ff6b6b" });
+      stage.fx.popText(at.clone().add(new THREE.Vector3(0, 0.35, 0.3)), tr({ zh: "噗——!", en: "POP!" }), { size: 1.6, color: "#ff6b6b" });
       stage.fx.burst(at, "drops", 24);
       stage.fx.shake(0.6);
       character.react({ kind: "squish", point: at, strength: 1 });
@@ -240,7 +242,7 @@ function tickle(p: PointerInfo) {
   if (p.time - giggleAt > 650) {
     giggleAt = p.time;
     sfx.play("giggle", 0.6);
-    stage.fx.popText(hit.point.clone().addScaledVector(hit.normal, 0.12), pick(GIGGLE_WORDS), { color: "#ff8fb1" });
+    stage.fx.popText(hit.point.clone().addScaledVector(hit.normal, 0.12), pick(GIGGLE_WORDS[store.get().lang]), { color: "#ff8fb1" });
   }
 }
 
@@ -315,7 +317,7 @@ stage.setGestureHandler({
     if (velocity.length() > 3) {
       bump("throws");
       sfx.play("whoosh", Math.min(1, velocity.length() / 10));
-      stage.fx.popText(last.p.clone().add(new THREE.Vector3(0, 0.3, 0)), "飞~", { color: "#5fb3ff" });
+      stage.fx.popText(last.p.clone().add(new THREE.Vector3(0, 0.3, 0)), tr({ zh: "飞~", en: "Wheee~" }), { color: "#5fb3ff" });
     }
   },
   onHover(p) {
@@ -334,11 +336,11 @@ function onFrogEvent(e: FrogEvent) {
   switch (e.kind) {
     case "poke":
       sfx.play("boing", e.strength);
-      stage.fx.popText(above, pick(POKE_WORDS), { size: 0.8 + e.strength * 0.6 });
+      stage.fx.popText(above, pick(POKE_WORDS[store.get().lang]), { size: 0.8 + e.strength * 0.6 });
       break;
     case "slap":
       sfx.play("slap", e.strength);
-      stage.fx.popText(above, "啪!", { size: 1 + e.strength * 0.8, color: "#ff6b6b" });
+      stage.fx.popText(above, tr({ zh: "啪!", en: "SLAP!" }), { size: 1 + e.strength * 0.8, color: "#ff6b6b" });
       stage.fx.burst(e.point, "stars", 6 + Math.round(e.strength * 10));
       stage.fx.shake(0.25 * e.strength);
       break;
@@ -352,13 +354,13 @@ function onFrogEvent(e: FrogEvent) {
       if (e.strength < 0.15) break;
       sfx.play("land", e.strength);
       if (e.strength > 0.5) {
-        stage.fx.popText(above, "咚!", { size: 1.2 });
+        stage.fx.popText(above, tr({ zh: "咚!", en: "THUD!" }), { size: 1.2 });
         stage.fx.shake(0.4 * e.strength);
       }
       break;
     case "ball":
       sfx.play("ball", e.strength);
-      if (e.strength > 0.5) stage.fx.popText(above, "嘭!", { size: 0.9 });
+      if (e.strength > 0.5) stage.fx.popText(above, tr({ zh: "嘭!", en: "BONK!" }), { size: 0.9 });
       break;
     default:
       break;
@@ -368,7 +370,7 @@ function onFrogEvent(e: FrogEvent) {
 /* ---------------- boot and the frame loop ---------------- */
 
 async function boot() {
-  store.set({ loading: { active: true, message: "正在叫醒奶蛙…" } });
+  store.set({ loading: { active: true, message: tr({ zh: "正在叫醒奶蛙…", en: "Waking 奶蛙 up…" }) } });
   void motion.ready().then(() => setDances(motion.dances()));
   const [, loaded] = await Promise.all([initPhysics(), loadCharacter()]);
   character = loaded;
@@ -426,5 +428,6 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
-  store.set({ loading: { active: true, message: `奶蛙没醒过来：${err instanceof Error ? err.message : String(err)}` } });
+  const reason = err instanceof Error ? err.message : String(err);
+  store.set({ loading: { active: true, message: tr({ zh: `奶蛙没醒过来：${reason}`, en: `奶蛙 did not wake up: ${reason}` }) } });
 });

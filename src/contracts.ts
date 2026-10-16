@@ -9,6 +9,7 @@
  * default camera). "_L" is the character's own left, which is +X when it faces +Z.
  */
 import type * as THREE from "three";
+import type { Lang } from "./i18n";
 
 /* ------------------------------------------------------------------------------------------------------------------ */
 /* Character asset: public/models/naiwa.glb (built in Blender from assets-src/naiwa, see docs/character-contract.md)  */
@@ -133,7 +134,7 @@ export type MotionKind = "camera" | "video" | "dance";
 export type MotionState = "idle" | "loading" | "ready" | "tracking" | "lost" | "error";
 export interface MotionStatus {
   state: MotionState;
-  /** Short Chinese text for the user, e.g. "正在加载姿态模型…". */
+  /** Short text for the user in the current language (src/i18n.ts tr()), e.g. "正在加载姿态模型…" / "Loading the pose model…". */
   message?: string;
   /** Detector frames per second while tracking. */
   fps?: number;
@@ -156,6 +157,8 @@ export interface DanceInfo {
   id: string;
   /** Chinese name shown in the UI, e.g. "捧腹大笑". */
   name: string;
+  /** English name, e.g. "Belly Laugh". */
+  nameEn?: string;
   /** Loop length in seconds. */
   duration: number;
   /** procedural: made in code; video: captured from a real video (credit shown); mine: the user's own saved dance. */
@@ -169,6 +172,7 @@ export interface DanceInfo {
 export interface DanceTrack {
   id: string;
   name: string;
+  nameEn?: string;
   fps: number;
   /** Seconds; the track loops (frames chosen or blended so the loop is seamless). */
   duration: number;
@@ -181,6 +185,7 @@ export interface DanceTrack {
 export interface DanceIndexEntry {
   id: string;
   name: string;
+  nameEn?: string;
   duration: number;
   file: string;
 }
@@ -424,6 +429,8 @@ export interface AppState {
   mirror: boolean;
   sound: boolean;
   theme: ThemeChoice;
+  /** Page language; the integration keeps src/i18n.ts in step with it. */
+  lang: Lang;
   recording: { active: boolean; startedAt: number | null };
   /** How a recording frames the frog and the camera/uploaded video. */
   recordLayout: "frog" | "pip" | "side-by-side";
@@ -442,6 +449,8 @@ export interface MaterialPreset {
   id: string;
   /** Chinese name, e.g. "果冻". */
   name: string;
+  /** English name, e.g. "Jelly". */
+  nameEn: string;
   params: PhysicsParams;
 }
 
