@@ -49,7 +49,10 @@ If you need another package, say so in your report; do not install it yourself.
 
 | Folder           | Module                                                                 |
 |------------------|------------------------------------------------------------------------|
-| `src/sim/`       | Rapier world: rigid skeleton, soft-body flesh, interactions, balls      |
+| `src/sim/`       | the simulation core, the plugin API (`api.ts`) and the CPU example (Rapier constraint solver) |
+| `src/sim/gpu/`   | the GPU example simulator (MPM / FEM on WebGPU)                         |
+| `src/labcode/`   | the in-page simulator code editor (users write and compare their own simulators) |
+| `src/session/`   | session export for the Genesis HD render (`tools/genesis-hd/`)          |
 | `src/character/` | GLB loading (+ placeholder), rendering the simulated frog, face and life |
 | `src/motion/`    | MediaPipe camera/video pose, retargeting, built-in dances               |
 | `src/stage/`     | renderer, lighting, floor, camera, gestures, comic effects              |
@@ -60,6 +63,13 @@ If you need another package, say so in your report; do not install it yourself.
 `src/main.ts`, `src/store.ts` and `src/contracts.ts` belong to the integrator. If the contract does not fit what you
 need, build what you need behind your module's own exports and say exactly what should change in your report; do not
 edit files outside your folder.
+
+## The simulator is a lab
+
+The user (2026-10-16): the simulator is written around a small core with modular parts around it and exposed
+interfaces, so users change the simulator code to test their own algorithms; "所以这就要求了你现在的simulation的代码要干净".
+The CPU example is a constraint solver, the GPU example MPM/FEM. Clean, readable, documented code
+(docs/simulator-api.md) is a requirement, not a nicety.
 
 ## Working
 
