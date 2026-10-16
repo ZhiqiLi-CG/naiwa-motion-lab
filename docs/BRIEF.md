@@ -56,6 +56,9 @@ If you need another package, say so in your report; do not install it yourself.
 | `src/sim/gpu/`   | the GPU example simulator (MPM / FEM on WebGPU)                         |
 | `src/labcode/`   | the in-page simulator code editor (users write and compare their own simulators) |
 | `src/session/`   | session export for the Genesis HD render (`tools/genesis-hd/`)          |
+| `src/algorithms/motion/` | the library of retargeting and filtering algorithms (blocks for src/motion/api.ts) |
+| `src/algorithms/sim/`    | the library of CPU simulation algorithms (blocks for src/sim/api.ts)       |
+| `docs/learn/`    | one short learning page per algorithm, zh + en (template: docs/learn/TEMPLATE.md) |
 | `src/character/` | GLB loading (+ placeholder), rendering the simulated frog, face and life |
 | `src/motion/`    | MediaPipe camera/video pose, retargeting, built-in dances               |
 | `src/stage/`     | renderer, lighting, floor, camera, gestures, comic effects              |
@@ -84,6 +87,12 @@ blocks (pose source, filtering, the retargeting solver — an optimisation / IK 
 constraints such as limbs outside the body and planted feet, output), interfaces in src/motion/api.ts, parameters
 declared, users edit and compare blocks in the code lab, metrics (fidelity to the person, smoothness, limbs inside the
 body, foot sliding).
+
+## Algorithm library and learning pages
+
+The user: "我们提供一些常用的retarget的算法的示例，还有对应的简洁的学习文档", "simulation也是 要提供很多的算法 以及对应的简洁的学习文档".
+Both cores ship several well-known algorithms as blocks, each with a short page in docs/learn/ (zh and en, the
+template in docs/learn/TEMPLATE.md) that the code lab shows next to its code.
 
 ## Working
 
