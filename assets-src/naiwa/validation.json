@@ -1,0 +1,64 @@
+{
+  "triangles": {
+    "Body": 7172,
+    "Eyes": 4816,
+    "Arms": 7000,
+    "Legs": 5000,
+    "MouthInside": 3608
+  },
+  "total_triangles": 27596,
+  "body_components": 1,
+  "body_nonmanifold_edges": 0,
+  "body_volume_m3": 0.07496455043508982,
+  "bones": [
+    "root",
+    "hips",
+    "spine",
+    "chest",
+    "head",
+    "upperarm_L",
+    "forearm_L",
+    "hand_L",
+    "index_L",
+    "middle_L",
+    "ring_L",
+    "thumb_L",
+    "thigh_L",
+    "shin_L",
+    "foot_L",
+    "upperarm_R",
+    "forearm_R",
+    "hand_R",
+    "index_R",
+    "middle_R",
+    "ring_R",
+    "thumb_R",
+    "thigh_R",
+    "shin_R",
+    "foot_R"
+  ],
+  "shape_keys": {
+    "Body": [
+      "Basis",
+      "laugh",
+      "tongue",
+      "surprise"
+    ],
+    "Eyes": [
+      "Basis",
+      "laugh",
+      "tongue",
+      "surprise",
+      "blink"
+    ],
+    "Arms": [],
+    "Legs": [],
+    "MouthInside": [
+      "Basis",
+      "laugh",
+      "tongue",
+      "surprise",
+      "blink"
+    ]
+  }
+}

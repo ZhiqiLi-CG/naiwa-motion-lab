@@ -1,0 +1,66 @@
+{
+  "passed": true,
+  "mesh_names": [
+    "Arms",
+    "Body",
+    "Eyes",
+    "Legs",
+    "MouthInside"
+  ],
+  "all_skinned": true,
+  "neutral_morph_defaults": true,
+  "three_softness_attribute": true,
+  "embedded_texture_loaded": true,
+  "animation_clips": 0,
+  "height_m": 1.0000000132016538,
+  "floor_y": -6.456716089912327e-8,
+  "skeleton_bones": [
+    "root",
+    "hips",
+    "spine",
+    "chest",
+    "head",
+    "upperarm_L",
+    "forearm_L",
+    "hand_L",
+    "index_L",
+    "middle_L",
+    "ring_L",
+    "thumb_L",
+    "upperarm_R",
+    "forearm_R",
+    "hand_R",
+    "index_R",
+    "middle_R",
+    "ring_R",
+    "thumb_R",
+    "thigh_L",
+    "shin_L",
+    "foot_L",
+    "thigh_R",
+    "shin_R",
+    "foot_R"
+  ],
+  "morph_names": {
+    "Arms": [],
+    "Body": [
+      "laugh",
+      "tongue",
+      "surprise"
+    ],
+    "Eyes": [
+      "laugh",
+      "tongue",
+      "surprise",
+      "blink"
+    ],
+    "Legs": [],
+    "MouthInside": [
+      "laugh",
+      "tongue",
+      "surprise",
+      "blink"
+    ]
+  },
+  "glb_sha256": "424760c94384a73e25fff097aa27e9b1c365caa1cfe5025607f0bd95787f8826"
+}

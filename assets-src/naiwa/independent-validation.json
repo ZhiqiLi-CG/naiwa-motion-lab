@@ -1,0 +1,3751 @@
+{
+  "validator": "independent GLB and Blender surface audit",
+  "blender_version": "5.2.2 LTS",
+  "glb_sha256": "424760c94384a73e25fff097aa27e9b1c365caa1cfe5025607f0bd95787f8826",
+  "glb_bytes": 1345632,
+  "method": {
+    "topology_weld_precision_m": 1e-06,
+    "intersection_test": "Blender triangle BVHTree plus coplanar plane-bin / 2D separating-axis test, excluding shared geometric vertex pairs",
+    "intermediate_sampling": "Body morph weights .25/.5/.75; local bone quaternion slerps from rest to each named pose at .25/.5/.75, with linear local translation, scale, and morph weights.",
+    "limitations": "Discrete endpoint and intermediate samples; no continuous collision detection; incident triangle overlaps are excluded; visual deformation and reference likeness require rendered review."
+  },
+  "skeleton": {
+    "skin_count": 1,
+    "bones": [
+      "chest",
+      "foot_L",
+      "foot_R",
+      "forearm_L",
+      "forearm_R",
+      "hand_L",
+      "hand_R",
+      "head",
+      "hips",
+      "index_L",
+      "index_R",
+      "middle_L",
+      "middle_R",
+      "ring_L",
+      "ring_R",
+      "root",
+      "shin_L",
+      "shin_R",
+      "spine",
+      "thigh_L",
+      "thigh_R",
+      "thumb_L",
+      "thumb_R",
+      "upperarm_L",
+      "upperarm_R"
+    ],
+    "world_joint_positions": {
+      "root": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hips": [
+        0.0,
+        0.3100000023841858,
+        0.0
+      ],
+      "spine": [
+        0.0,
+        0.49000000953674316,
+        0.0
+      ],
+      "chest": [
+        0.0,
+        0.6700000166893005,
+        0.0
+      ],
+      "head": [
+        -8.702073981142636e-16,
+        0.7999999523162842,
+        0.03499998897314072
+      ],
+      "upperarm_L": [
+        0.11000000685453415,
+        0.7049999833106995,
+        -0.005000011064112186
+      ],
+      "forearm_L": [
+        0.2550000250339508,
+        0.5599998831748962,
+        0.007999991998076439
+      ],
+      "hand_L": [
+        0.32499998807907104,
+        0.3849998712539673,
+        0.03999999165534973
+      ],
+      "index_L": [
+        0.3160000145435333,
+        0.3469998836517334,
+        0.053999993950128555
+      ],
+      "middle_L": [
+        0.3399999737739563,
+        0.3469998836517334,
+        0.05399998649954796
+      ],
+      "ring_L": [
+        0.3649999797344208,
+        0.3469998836517334,
+        0.053999993950128555
+      ],
+      "thumb_L": [
+        0.312999963760376,
+        0.36699986457824707,
+        0.06299999356269836
+      ],
+      "upperarm_R": [
+        -0.10999999195337296,
+        0.7049999833106995,
+        -0.005000012926757336
+      ],
+      "forearm_R": [
+        -0.25499996542930603,
+        0.5600000023841858,
+        0.007999979890882969
+      ],
+      "hand_R": [
+        -0.32499992847442627,
+        0.38499999046325684,
+        0.03999996557831764
+      ],
+      "index_R": [
+        -0.31599992513656616,
+        0.34699997305870056,
+        0.05399995669722557
+      ],
+      "middle_R": [
+        -0.33999988436698914,
+        0.34699997305870056,
+        0.05399995669722557
+      ],
+      "ring_R": [
+        -0.3649998903274536,
+        0.34699997305870056,
+        0.05399996042251587
+      ],
+      "thumb_R": [
+        -0.3129999041557312,
+        0.3669999837875366,
+        0.06299997121095657
+      ],
+      "thigh_L": [
+        0.11100000143051147,
+        0.3179999887943268,
+        -0.00800000037997961
+      ],
+      "shin_L": [
+        0.12599998712539673,
+        0.18499994277954102,
+        -0.012000001035630703
+      ],
+      "foot_L": [
+        0.1419999897480011,
+        0.05499991774559021,
+        -0.0040000006556510925
+      ],
+      "thigh_R": [
+        -0.11100000143051147,
+        0.3179999887943268,
+        -0.00800000037997961
+      ],
+      "shin_R": [
+        -0.12599998712539673,
+        0.18499994277954102,
+        -0.012000001035630703
+      ],
+      "foot_R": [
+        -0.1419999897480011,
+        0.05499991774559021,
+        -0.0040000006556510925
+      ]
+    },
+    "mirror_position_error_m": {
+      "upperarm": 1.501712528671799e-08,
+      "forearm": 1.3382881800166416e-07,
+      "hand": 1.3580714265673e-07,
+      "index": 1.3181422660465637e-07,
+      "middle": 1.2990531157078367e-07,
+      "ring": 1.3081021507143556e-07,
+      "thumb": 1.3514129182113002e-07,
+      "thigh": 0.0,
+      "shin": 0.0,
+      "foot": 0.0
+    },
+    "maximum_bind_identity_error": 4.817199510398495e-07
+  },
+  "softness_export_semantic": "_SOFTNESS",
+  "intermediate_morph_sample_count": 9,
+  "meshes": {
+    "Arms": {
+      "vertices": 3504,
+      "triangles": 7000,
+      "morph_targets": [],
+      "default_mesh_morph_weights": [],
+      "effective_default_node_morph_weights": [],
+      "maximum_weight_sum_error": 5.960464477539063e-08,
+      "maximum_skin_influences": 3,
+      "mean_bone_weights": {
+        "ring_R": 0.01693558717082328,
+        "hand_R": 0.10677130534226034,
+        "forearm_R": 0.13803842089376275,
+        "middle_R": 0.016581959410073007,
+        "thumb_R": 0.01821325773421221,
+        "index_R": 0.016177899126717226,
+        "upperarm_R": 0.14914995608426718,
+        "chest": 0.07595441359404653,
+        "forearm_L": 0.13975773439945122,
+        "hand_L": 0.10630753474016402,
+        "thumb_L": 0.018295150343272233,
+        "index_L": 0.016204168607860437,
+        "middle_L": 0.01634088492437721,
+        "ring_L": 0.017723746216094724,
+        "upperarm_L": 0.14754798248032291
+      },
+      "bounds": [
+        [
+          -0.3860015571117401,
+          0.2618040442466736,
+          -0.06242513656616211
+        ],
+        [
+          0.3858582377433777,
+          0.7355762720108032,
+          0.09250770509243011
+        ]
+      ]
+    },
+    "Body": {
+      "vertices": 3709,
+      "triangles": 7172,
+      "morph_targets": [
+        "laugh",
+        "tongue",
+        "surprise"
+      ],
+      "default_mesh_morph_weights": [
+        0,
+        0,
+        0
+      ],
+      "effective_default_node_morph_weights": [
+        0,
+        0,
+        0
+      ],
+      "maximum_weight_sum_error": 2.9802322387695312e-08,
+      "maximum_skin_influences": 2,
+      "mean_bone_weights": {
+        "hips": 0.19721876619329456,
+        "spine": 0.18208383907214706,
+        "chest": 0.14467101529050777,
+        "head": 0.47602637738580006
+      },
+      "bounds": [
+        [
+          -0.2555784285068512,
+          0.24500000476837158,
+          -0.2368726283311844
+        ],
+        [
+          0.2555784285068512,
+          1.0,
+          0.22899937629699707
+        ]
+      ],
+      "states": {
+        "Basis": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07496455428958124,
+          "minimum_triangle_area_m2": 1.1476982530698406e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "laugh": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07430575258843639,
+          "minimum_triangle_area_m2": 4.07202824194406e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "tongue": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07453260461975922,
+          "minimum_triangle_area_m2": 3.2650372554923284e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "surprise": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07481270824996401,
+          "minimum_triangle_area_m2": 1.1774093021815395e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        }
+      },
+      "intermediate_morph_states": {
+        "laugh@0.25": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07488181575775382,
+          "minimum_triangle_area_m2": 1.6849894886323314e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "laugh@0.5": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07474553908494819,
+          "minimum_triangle_area_m2": 2.584653766964101e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "laugh@0.75": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07455407577888769,
+          "minimum_triangle_area_m2": 3.771184377841677e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "tongue@0.25": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07487612769099852,
+          "minimum_triangle_area_m2": 1.3190699484729079e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "tongue@0.5": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07477450359227586,
+          "minimum_triangle_area_m2": 1.6750034999174455e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "tongue@0.75": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07465991624680351,
+          "minimum_triangle_area_m2": 2.377813173715576e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "surprise@0.25": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07489183956682824,
+          "minimum_triangle_area_m2": 1.0050524136577636e-06,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "surprise@0.5": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07484227504528355,
+          "minimum_triangle_area_m2": 8.740457827405255e-07,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        },
+        "surprise@0.75": {
+          "raw_vertices": 3709,
+          "welded_vertices": 3588,
+          "seam_duplicates": 121,
+          "triangles": 7172,
+          "components": 1,
+          "component_vertices": [
+            3588
+          ],
+          "boundary_edges": 0,
+          "nonmanifold_edges": 0,
+          "nonmanifold_vertices": 0,
+          "inconsistent_winding_edges": 0,
+          "euler_characteristic": 2,
+          "signed_volume_m3": 0.07481589568227967,
+          "minimum_triangle_area_m2": 9.887224129499952e-07,
+          "degenerate_triangles": 0,
+          "degenerate_samples": [],
+          "self_intersection_pairs": 0,
+          "coplanar_overlap_pairs": 0,
+          "self_intersection_region_pairs": {},
+          "self_intersection_samples": []
+        }
+      },
+      "softness_range": [
+        0.15000000596046448,
+        1.0
+      ],
+      "mean_belly_softness": 1.0,
+      "mean_back_softness": 0.20000000298023224
+    },
+    "Eyes": {
+      "vertices": 2428,
+      "triangles": 4816,
+      "morph_targets": [
+        "laugh",
+        "tongue",
+        "surprise",
+        "blink"
+      ],
+      "default_mesh_morph_weights": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "effective_default_node_morph_weights": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "maximum_weight_sum_error": 0.0,
+      "maximum_skin_influences": 1,
+      "mean_bone_weights": {
+        "head": 1.0
+      },
+      "bounds": [
+        [
+          -0.09299999475479126,
+          0.906000018119812,
+          0.10341773182153702
+        ],
+        [
+          0.09299999475479126,
+          0.9700000286102295,
+          0.16920889914035797
+        ]
+      ]
+    },
+    "Legs": {
+      "vertices": 2504,
+      "triangles": 5000,
+      "morph_targets": [],
+      "default_mesh_morph_weights": [],
+      "effective_default_node_morph_weights": [],
+      "maximum_weight_sum_error": 5.960464477539063e-08,
+      "maximum_skin_influences": 3,
+      "mean_bone_weights": {
+        "foot_R": 0.24591097530451217,
+        "shin_R": 0.08199065106337206,
+        "thigh_R": 0.17409517914089787,
+        "thigh_L": 0.17097037151423708,
+        "shin_L": 0.08092581153432374,
+        "foot_L": 0.24610701226754844
+      },
+      "bounds": [
+        [
+          -0.19339218735694885,
+          0.0,
+          -0.08790397644042969
+        ],
+        [
+          0.1928636133670807,
+          0.3267184793949127,
+          0.1470136046409607
+        ]
+      ]
+    },
+    "MouthInside": {
+      "vertices": 1836,
+      "triangles": 3608,
+      "morph_targets": [
+        "laugh",
+        "tongue",
+        "surprise",
+        "blink"
+      ],
+      "default_mesh_morph_weights": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "effective_default_node_morph_weights": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "maximum_weight_sum_error": 0.0,
+      "maximum_skin_influences": 1,
+      "mean_bone_weights": {
+        "head": 1.0
+      },
+      "bounds": [
+        [
+          -0.0551999993622303,
+          0.843999981880188,
+          0.06917867064476013
+        ],
+        [
+          0.0551999993622303,
+          0.8824008107185364,
+          0.11100000143051147
+        ]
+      ]
+    }
+  },
+  "total_triangles": 27596,
+  "world_bounds_m": [
+    [
+      -0.3860015571117401,
+      0.0,
+      -0.2368726283311844
+    ],
+    [
+      0.3858582377433777,
+      1.0,
+      0.22899937629699707
+    ]
+  ],
+  "embedded_images": [
+    {
+      "name": "belly_basecolor",
+      "mimeType": "image/png",
+      "embedded": true
+    }
+  ],
+  "blend_sha256": "f5edf70e12434a809e50790105d6f1fd79f9ccc89f902de3562705f9525e30b6",
+  "builder_sha256": "d7d1f3e3b808561fd0c31458101ddb20c136f90ef7a88fc8ec021acd58c1bc73",
+  "authoring_default_morph_values": {
+    "Body": {
+      "Basis": 0.0,
+      "laugh": 0.0,
+      "tongue": 0.0,
+      "surprise": 0.0
+    },
+    "Eyes": {
+      "Basis": 0.0,
+      "laugh": 0.0,
+      "tongue": 0.0,
+      "surprise": 0.0,
+      "blink": 0.0
+    },
+    "MouthInside": {
+      "Basis": 0.0,
+      "laugh": 0.0,
+      "tongue": 0.0,
+      "surprise": 0.0,
+      "blink": 0.0
+    }
+  },
+  "authoring_body": {
+    "raw_vertices": 3588,
+    "welded_vertices": 3588,
+    "seam_duplicates": 0,
+    "triangles": 7172,
+    "components": 1,
+    "component_vertices": [
+      3588
+    ],
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "nonmanifold_vertices": 0,
+    "inconsistent_winding_edges": 0,
+    "euler_characteristic": 2,
+    "signed_volume_m3": 0.07496455428958124,
+    "minimum_triangle_area_m2": 1.1476982530698406e-06,
+    "degenerate_triangles": 0,
+    "degenerate_samples": [],
+    "self_intersection_pairs": 0,
+    "coplanar_overlap_pairs": 0,
+    "self_intersection_region_pairs": {},
+    "self_intersection_samples": []
+  },
+  "stress_poses": {
+    "rest": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006479187279934442,
+        "minimum_triangle_area_m2": 4.392681769567317e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "holding": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.005852831903175087,
+        "minimum_triangle_area_m2": 1.77785828995484e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "laugh": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07403113743181797,
+        "minimum_triangle_area_m2": 4.071912918177025e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006226952066943645,
+        "minimum_triangle_area_m2": 4.39267918566859e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0047560101593272135,
+        "minimum_triangle_area_m2": 4.810313603630414e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "peace": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07452949475298261,
+        "minimum_triangle_area_m2": 3.2650722751124476e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.00575794116404152,
+        "minimum_triangle_area_m2": 3.0708094765982756e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "deep_bend": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07524974941424271,
+        "minimum_triangle_area_m2": 1.1478629099687586e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006115427506262094,
+        "minimum_triangle_area_m2": 4.3929158182091096e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004752791343501601,
+        "minimum_triangle_area_m2": 4.810179458801239e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "arms_up": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006130525121300737,
+        "minimum_triangle_area_m2": 4.392250777382233e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "belly_cross": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.005931307372662133,
+        "minimum_triangle_area_m2": 4.392823727399108e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "squat": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07472571018947015,
+        "minimum_triangle_area_m2": 1.147726342055243e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006151663665867551,
+        "minimum_triangle_area_m2": 4.392521487837884e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004582201728918072,
+        "minimum_triangle_area_m2": 4.810303584278482e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "leg_lift": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.005997220085673645,
+        "minimum_triangle_area_m2": 4.392876346091972e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004579738517970151,
+        "minimum_triangle_area_m2": 4.809831717841227e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "hop": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454045739397,
+        "minimum_triangle_area_m2": 1.147760871524457e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.005927835541891074,
+        "minimum_triangle_area_m2": 4.392300107400523e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004732266649931869,
+        "minimum_triangle_area_m2": 4.810583994990569e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "twist": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07370793170773392,
+        "minimum_triangle_area_m2": 1.1475651939317514e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006479190918240616,
+        "minimum_triangle_area_m2": 4.392752871982651e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    }
+  },
+  "intermediate_poses": {
+    "holding@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006431619590944654,
+        "minimum_triangle_area_m2": 4.3922954405499635e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "holding@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006297409498733612,
+        "minimum_triangle_area_m2": 4.3926660443989317e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "holding@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006095167508000328,
+        "minimum_triangle_area_m2": 3.0423713703021194e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "laugh@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07484337617490175,
+        "minimum_triangle_area_m2": 1.68496533907255e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0064618120336881356,
+        "minimum_triangle_area_m2": 4.392841968320078e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0047638656789409425,
+        "minimum_triangle_area_m2": 4.810922895962185e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "laugh@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07464411283263654,
+        "minimum_triangle_area_m2": 2.584692584002746e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006412146827658509,
+        "minimum_triangle_area_m2": 4.392889418944555e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004761370059618575,
+        "minimum_triangle_area_m2": 4.810215575084795e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "laugh@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07437168818409562,
+        "minimum_triangle_area_m2": 3.7711457668689482e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006332587299874382,
+        "minimum_triangle_area_m2": 4.3923320327679557e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004758748379668499,
+        "minimum_triangle_area_m2": 4.811098041782669e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "peace@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07487585470217202,
+        "minimum_triangle_area_m2": 1.319088081212566e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006408048469663358,
+        "minimum_triangle_area_m2": 4.395263945650353e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "peace@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.0747735712764063,
+        "minimum_triangle_area_m2": 1.6750087439171826e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006216207761930861,
+        "minimum_triangle_area_m2": 4.401542660039114e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "peace@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07465801639840616,
+        "minimum_triangle_area_m2": 2.3777760324940152e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.005971204549410912,
+        "minimum_triangle_area_m2": 4.412706053560196e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "deep_bend@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07506903847063154,
+        "minimum_triangle_area_m2": 1.147742837925109e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006453443384266163,
+        "minimum_triangle_area_m2": 4.392682135940894e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004763054076857456,
+        "minimum_triangle_area_m2": 4.810390253623473e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "deep_bend@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.0751514904967508,
+        "minimum_triangle_area_m2": 1.1476265175007421e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006380224991249381,
+        "minimum_triangle_area_m2": 4.392446310676494e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004759747064085248,
+        "minimum_triangle_area_m2": 4.810257237901002e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "deep_bend@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07521178003193112,
+        "minimum_triangle_area_m2": 1.1480007740572714e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006264821393900703,
+        "minimum_triangle_area_m2": 4.3925907537109404e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004756323746292562,
+        "minimum_triangle_area_m2": 4.809220385095538e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "arms_up@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006454357645911863,
+        "minimum_triangle_area_m2": 4.392661235123095e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "arms_up@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0063811115990784545,
+        "minimum_triangle_area_m2": 4.3924234878743137e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "arms_up@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006268567193963802,
+        "minimum_triangle_area_m2": 4.3927477645252354e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "belly_cross@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006439189087966053,
+        "minimum_triangle_area_m2": 4.392751110043081e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "belly_cross@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006325166395144976,
+        "minimum_triangle_area_m2": 3.836525747382284e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "belly_cross@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006149578018441685,
+        "minimum_triangle_area_m2": 4.392652575279842e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "squat@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07491032842497959,
+        "minimum_triangle_area_m2": 1.1475377946604188e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006454976066543336,
+        "minimum_triangle_area_m2": 4.392814973272717e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004733105236496634,
+        "minimum_triangle_area_m2": 4.81040752743673e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "squat@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07485241683807155,
+        "minimum_triangle_area_m2": 1.1475848155791542e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006387378795282416,
+        "minimum_triangle_area_m2": 4.39259900692143e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004687950042450634,
+        "minimum_triangle_area_m2": 4.810276660468413e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "squat@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07479083317198944,
+        "minimum_triangle_area_m2": 1.1477152452907118e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0062829189506470404,
+        "minimum_triangle_area_m2": 4.3929158182091096e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004635487141873132,
+        "minimum_triangle_area_m2": 4.810427178304831e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "leg_lift@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.00643996740124642,
+        "minimum_triangle_area_m2": 4.392624696868141e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004757389190714099,
+        "minimum_triangle_area_m2": 4.810252096102123e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "leg_lift@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006327898181704381,
+        "minimum_triangle_area_m2": 4.392883000474354e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004714586372127539,
+        "minimum_triangle_area_m2": 4.810970433154281e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "leg_lift@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454138833528,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006168321110093027,
+        "minimum_triangle_area_m2": 4.392810962565812e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004649743012030709,
+        "minimum_triangle_area_m2": 4.810655129551567e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "hop@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454177081778,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.00643669339429208,
+        "minimum_triangle_area_m2": 4.39274756944025e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0047578271247936035,
+        "minimum_triangle_area_m2": 4.810964957597942e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "hop@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496454493226908,
+        "minimum_triangle_area_m2": 1.1476982530698406e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.00631391292697849,
+        "minimum_triangle_area_m2": 4.392500661582299e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004749314130299271,
+        "minimum_triangle_area_m2": 4.809903884918602e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "hop@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07496453651517017,
+        "minimum_triangle_area_m2": 1.147760871524457e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006133286669019344,
+        "minimum_triangle_area_m2": 4.392789800241579e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004740769453703029,
+        "minimum_triangle_area_m2": 4.81039555375014e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "twist@0.25": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07487887145635995,
+        "minimum_triangle_area_m2": 1.1477742688677203e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0064791772329142365,
+        "minimum_triangle_area_m2": 4.3923649028298183e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "twist@0.5": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07463905079281871,
+        "minimum_triangle_area_m2": 1.1476143901477396e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.006479181044581405,
+        "minimum_triangle_area_m2": 4.3928435301713126e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    },
+    "twist@0.75": {
+      "Body": {
+        "raw_vertices": 3588,
+        "welded_vertices": 3588,
+        "seam_duplicates": 0,
+        "triangles": 7172,
+        "components": 1,
+        "component_vertices": [
+          3588
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 2,
+        "signed_volume_m3": 0.07424745834463072,
+        "minimum_triangle_area_m2": 1.1475724263105512e-06,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Arms": {
+        "raw_vertices": 3504,
+        "welded_vertices": 3504,
+        "seam_duplicates": 0,
+        "triangles": 7000,
+        "components": 2,
+        "component_vertices": [
+          1753,
+          1751
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.0064791850706494665,
+        "minimum_triangle_area_m2": 4.3927606271597054e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      },
+      "Legs": {
+        "raw_vertices": 2504,
+        "welded_vertices": 2504,
+        "seam_duplicates": 0,
+        "triangles": 5000,
+        "components": 2,
+        "component_vertices": [
+          1257,
+          1247
+        ],
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "nonmanifold_vertices": 0,
+        "inconsistent_winding_edges": 0,
+        "euler_characteristic": 4,
+        "signed_volume_m3": 0.004766235100523144,
+        "minimum_triangle_area_m2": 4.810351691064261e-07,
+        "degenerate_triangles": 0,
+        "degenerate_samples": [],
+        "self_intersection_pairs": 0,
+        "coplanar_overlap_pairs": 0,
+        "self_intersection_region_pairs": {},
+        "self_intersection_samples": []
+      }
+    }
+  },
+  "endpoint_pose_sample_count": 11,
+  "intermediate_pose_sample_count": 30,
+  "posed_mesh_sample_count": 123,
+  "limb_overlap_findings": [],
+  "stress_surfaces_clear": true,
+  "passed": true,
+  "contract_passed": true,
+  "failures": []
+}
