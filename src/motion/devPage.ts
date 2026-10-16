@@ -7,7 +7,9 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CHARACTER_URL, CORE_BONES, EXPRESSIONS, FINGER_BONES, type BoneName, type MotionSource, type MotionStatus, type PoseFrame, type RigInfo } from "../contracts";
+import { PROCEDURAL_DANCES } from "./dances";
 import { createMotion } from "./index";
+import { limbPenetration, solve } from "./rig";
 import { buildTestFrog } from "./testFrog";
 
 const params = new URLSearchParams(location.search);
@@ -133,7 +135,20 @@ const dev = {
   source: null as MotionSource | null,
   frames: 0,
 };
-(window as unknown as { motionDev: typeof dev }).motionDev = dev;
+(window as unknown as { motionDev: typeof dev & { audit: typeof audit } }).motionDev = Object.assign(dev, { audit });
+
+/** Worst limb penetration (m) and when, per procedural dance, on the loaded rig. */
+function audit() {
+  const b = motion.binding()!;
+  return PROCEDURAL_DANCES.map((d) => {
+    let worst = 0, at = 0;
+    for (let t = 0; t < d.duration; t += 0.04) {
+      const pen = limbPenetration(b, solve(b, d.pose(t)));
+      if (pen > worst) (worst = pen), (at = t);
+    }
+    return { id: d.id, worst: +worst.toFixed(3), at: +at.toFixed(2) };
+  });
+}
 
 const statusEl = $("#status");
 motion.onStatus((s) => {

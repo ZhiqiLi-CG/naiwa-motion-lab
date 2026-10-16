@@ -415,11 +415,16 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
     const H = place(b, s, `thigh_${side}`);
     let t = goal.thigh.clone().normalize();
     let sh = goal.shin.clone().normalize();
-    for (let k = 0; k < 2; k++) {
+    // Alternate between pushing out of the body and keeping the bone lengths (a few rounds converge). A knee raised
+    // into the belly where the thigh is too short to get round it swings down and out instead (a fat frog's squat).
+    const escape = new THREE.Vector3(0.7 * sg, -1, 0.3).normalize();
+    for (let k = 0; k < 5; k++) {
       let K = H.clone().addScaledVector(t, l.thigh);
       K = pushOut(b, s, K, l.margin[0], side) ?? K;
       if (sg * K.x < 0.5 * l.kneeX) K.x = 0.5 * l.kneeX * sg;
       t = sub(K, H).normalize();
+      for (let j = 1; j <= 8 && clearance(b, D, H.clone().addScaledVector(t, l.thigh), P).c < l.margin[0] - 0.003; j++)
+        t = nlerp(t, escape, 0.15);
       K = H.clone().addScaledVector(t, l.thigh);
       let A = K.clone().addScaledVector(sh, l.shin);
       A = pushOut(b, s, A, l.margin[1], side) ?? A;
@@ -450,20 +455,42 @@ export function solve(b: Binding, pose: BodyPose): PoseFrame {
   };
 }
 
-/** World joint positions of a solved frame (FK from the rest skeleton), for stick figures and tests. */
-export function jointPositions(b: Binding, frame: PoseFrame): Map<BoneName, V3> {
+/** FK of a solved frame on the rest skeleton, in the frog's own frame (no root offset or yaw). */
+function fk(b: Binding, frame: PoseFrame): Posed {
   const D = new Map<BoneName, Q>([["root", new THREE.Quaternion()]]);
   const P = new Map<BoneName, V3>([["root", b.rest.get("root")!.pos.clone()]]);
-  const order = [...CORE_BONES, ...FINGER_BONES].filter((n) => b.rest.has(n));
-  for (const name of order) {
-    if (name === "root") continue;
-    const r = b.rest.get(name)!;
+  for (const name of [...CORE_BONES, ...FINGER_BONES]) {
+    const r = b.rest.get(name);
+    if (!r || name === "root") continue;
     const parentWorld = D.get(r.anc!)!.clone().multiply(r.parentQ);
     const local = frame.bones[name] ?? r.parentQ.clone().invert().multiply(r.q);
     D.set(name, parentWorld.multiply(local).multiply(r.q.clone().invert()));
     place(b, { D, P }, name);
   }
+  return { D, P };
+}
+
+/** World joint positions of a solved frame (FK from the rest skeleton), for stick figures and tests. */
+export function jointPositions(b: Binding, frame: PoseFrame): Map<BoneName, V3> {
+  const { P } = fk(b, frame);
   const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), frame.rootYaw ?? 0);
   for (const p of P.values()) p.applyQuaternion(yaw).add(frame.rootOffset ?? new THREE.Vector3());
   return P;
+}
+
+/** How far the limbs of a solved frame sink into the body beyond what the rest pose allows (m, 0 = clear). */
+export function limbPenetration(b: Binding, frame: PoseFrame): number {
+  const s = fk(b, frame);
+  let worst = 0;
+  const check = (p: V3, margin: number) => (worst = Math.max(worst, margin - clearance(b, s.D, p, s.P).c));
+  for (const side of SIDES) {
+    const a = b.arm[side];
+    const E = s.P.get(`forearm_${side}`)!, W = s.P.get(`hand_${side}`)!;
+    check(E, a.margin[0]);
+    check(W, a.margin[1]);
+    check(W.clone().addScaledVector(sub(W, E).normalize(), a.hand * 0.7), a.margin[2]);
+    check(s.P.get(`shin_${side}`)!, b.leg[side].margin[0]);
+    check(s.P.get(`foot_${side}`)!, b.leg[side].margin[1]);
+  }
+  return worst;
 }
