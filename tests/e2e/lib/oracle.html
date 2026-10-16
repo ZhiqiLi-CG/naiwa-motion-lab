@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /><title>e2e pose oracle</title></head>
+  <body>
+    <video id="v" muted playsinline></video>
+    <script type="module">
+      // The person's pose in a test clip, frame by frame, with the app's own self-hosted MediaPipe files: the ground
+      // truth the frog's motion is compared with.
+      import { FilesetResolver, PoseLandmarker } from "/__e2e/vision_bundle.mjs";
+      window.__oracle = async (url, model) => {
+        const v = document.getElementById("v");
+        v.src = url;
+        await new Promise((r, j) => { v.onloadeddata = r; v.onerror = () => j(new Error(`cannot load ${url}`)); });
+        const fileset = await FilesetResolver.forVisionTasks("/__e2e/mediapipe/wasm");
+        const lm = await PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: `/__e2e/mediapipe/${model}`, delegate: "GPU" },
+          runningMode: "VIDEO",
+          numPoses: 1,
+        });
+        // Play it through once and detect on every presented frame, at the frame's own media time.
+        const frames = [];
+        let last = -1;
+        await new Promise((resolve) => {
+          const onFrame = (_now, meta) => {
+            if (meta.mediaTime > last) {
+              last = meta.mediaTime;
+              const res = lm.detectForVideo(v, Math.round(meta.mediaTime * 1000) + 1);
+              const w = res.worldLandmarks[0];
+              frames.push({ t: meta.mediaTime, world: w ? w.map((p) => [p.x, p.y, p.z, p.visibility ?? 1]) : null });
+            }
+            if (!v.ended) v.requestVideoFrameCallback(onFrame);
+          };
+          v.onended = resolve;
+          v.requestVideoFrameCallback(onFrame);
+          v.play();
+        });
+        return { duration: v.duration, width: v.videoWidth, height: v.videoHeight, frames };
+      };
+    </script>
+  </body>
+</html>
