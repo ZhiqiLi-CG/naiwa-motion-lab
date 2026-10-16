@@ -1,8 +1,9 @@
 # 奶蛙 character asset contract
 
 The playground loads `public/models/naiwa.glb` and turns it into a soft-body + skeleton simulation (Rapier 0.21): the
-skeleton is a set of rigid bones, the Body mesh becomes a volumetric soft body pinned to them, and the bones are
-driven by poses retargeted from a webcam, a video or built-in dances. The names below are what the code looks up
+skeleton is a set of rigid bones, and the **whole** frog is soft flesh over them — the Body and every arm and leg is
+filled as a volumetric soft body riding on its bones, each region with its own softness (the belly softest, hands and
+feet firmest). The bones are driven by poses retargeted from a webcam, a video or built-in dances. The names below are what the code looks up
 (`src/contracts.ts`).
 
 ## File and space
@@ -38,12 +39,13 @@ Separate objects, all skinned to the armature, about 40k triangles in all at mos
 |---------------|---------------------------------------------------------------------------------------------------|
 | `Body`        | Torso and head as ONE closed, watertight, manifold surface with outward normals and no self-intersections (it is filled with soft-body cells). 3k–12k triangles. Carries the cream belly patch (material, vertex colour or texture on the same surface). Weighted mainly to hips, spine, chest and head. |
 | `Eyes`        | Both eyes (white, green iris, black pupil) and whatever lids the blink needs; weighted to head.    |
-| `Arms`        | Upper arms, forearms and the dark hands with fingers; the arm roots sink into the Body so no gap shows when the flesh wobbles. |
-| `Legs`        | Thighs, shins and the dark frog feet with toes; roots sink into the Body.                         |
+| `Arms`        | Upper arms, forearms and the dark hands with fingers; each arm (with its hand) one closed, watertight, manifold shell, since it is filled with soft-body cells too. The arm roots sink into the Body so no gap shows when the flesh wobbles. |
+| `Legs`        | Thighs, shins and the dark frog feet with toes; each leg (with its foot) one closed, watertight, manifold shell; roots sink into the Body. |
 | `MouthInside` | Mouth cavity, teeth and tongue, shown when the mouth opens; weighted to head.                      |
 
-`Body` carries a float point attribute `_softness` (0..1: belly ≈ 1, back and top of the head ≈ 0.2), exported as a
-custom glTF attribute (`export_attributes`); three.js reads it as geometry attribute `_softness`.
+`Body`, `Arms` and `Legs` carry a float point attribute `_softness` (0..1: belly ≈ 1, upper arms and thighs ≈ 0.5,
+back and top of the head ≈ 0.2, hands and feet ≈ 0.15), exported as a custom glTF attribute (`export_attributes`);
+three.js reads it as geometry attribute `_softness`.
 
 ## Shape keys (morph targets)
 

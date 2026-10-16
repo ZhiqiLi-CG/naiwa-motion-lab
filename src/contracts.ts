@@ -66,17 +66,33 @@ export const EXPRESSIONS = ["laugh", "tongue", "blink", "surprise"] as const;
 export type Expression = (typeof EXPRESSIONS)[number];
 export type ExpressionWeights = Partial<Record<Expression, number>>;
 
-/** What the character module hands the simulation: the rest skeleton and the soft body surface, in world space with
- *  the frog at home (root at the origin, facing +Z). */
+/** The whole frog is soft (flesh over every bone); each region can have its own softness, the belly most. */
+export const FLESH_REGIONS = ["belly", "body", "head", "arm", "hand", "leg", "foot"] as const;
+export type FleshRegion = (typeof FLESH_REGIONS)[number];
+
+/** One closed piece of flesh: the Body (torso + head), or one arm or leg. */
+export interface FleshPart {
+  /** "body", "arm_L", "arm_R", "leg_L", "leg_R". */
+  name: string;
+  /** Closed, manifold surface in the rest pose, world space, xyz per vertex. */
+  positions: Float32Array;
+  indices: Uint32Array;
+  /** Per-vertex softness 0..1 from the asset (belly ≈ 1, back of the head ≈ 0.2); optional. */
+  softness?: Float32Array;
+  /** Per-vertex index into FLESH_REGIONS; optional. */
+  regions?: Uint8Array;
+  /** The bones this flesh rides on. */
+  bones: BoneName[];
+}
+
+/** What the character module hands the simulation: the rest skeleton and the soft flesh, in world space with the
+ *  frog at home (root at the origin, facing +Z). */
 export interface RigSpec {
   bones: RigBone[];
-  body: {
-    /** Closed, manifold surface of the Body mesh in the rest pose, world space, xyz per vertex. */
-    positions: Float32Array;
-    indices: Uint32Array;
-    /** Per-vertex extra softness 0..1 (belly ≈ 1, back of the head ≈ 0); optional. */
-    softness?: Float32Array;
-  };
+  /** The Body (torso + head). */
+  body: Omit<FleshPart, "name" | "bones"> & Partial<Pick<FleshPart, "name" | "bones">>;
+  /** The arms and legs as soft flesh too (each closed); without them the limbs are rigid skinned meshes. */
+  limbs?: FleshPart[];
 }
 export interface RigBone {
   name: BoneName;
@@ -204,6 +220,9 @@ export interface PhysicsParams {
   bellySize: number;
   /** 0 flops over and stays … 1 always springs back upright (free mode). */
   stubbornness: number;
+  /** Relative softness per region, 0 (firm as the bone) … 1 (as soft as it gets); softness scales them all. Regions
+   *  left out keep the simulation's defaults (belly softest, hands and feet firmest). */
+  regionSoftness?: Partial<Record<FleshRegion, number>>;
 }
 
 /** free: the simulation owns the whole frog (poke mode: it can be knocked over, grabbed and thrown).
@@ -246,6 +265,8 @@ export interface FrogSim {
   readBones(out: Map<BoneName, THREE.Matrix4>): void;
   /** Deformed Body surface, world space, same vertex order as RigSpec.body.positions. */
   readBody(): Float32Array;
+  /** Deformed limb surfaces by FleshPart name (same vertex order as their RigSpec.limbs positions). */
+  readLimbs?(out: Map<string, Float32Array>): void;
   raycast(ray: THREE.Ray): FrogHit | null;
   /** A quick jab at hit.point along direction (unit, world). */
   poke(hit: FrogHit, strength: number, direction: THREE.Vector3): void;
@@ -273,8 +294,9 @@ export interface Character {
   readonly spec: RigSpec;
   /** Target bone world matrices for the simulation from a pose (FK of the rest skeleton; null = rest/idle pose). */
   targetsFromPose(pose: PoseFrame | null, out: Map<BoneName, THREE.Matrix4>): void;
-  /** Show the simulated state: bones (world) and the deformed body surface (world, RigSpec order). */
-  applySim(bones: Map<BoneName, THREE.Matrix4>, body: Float32Array): void;
+  /** Show the simulated state: bones (world), the deformed body surface (world, RigSpec order) and the deformed limbs
+   *  when they are soft. */
+  applySim(bones: Map<BoneName, THREE.Matrix4>, body: Float32Array, limbs?: Map<string, Float32Array>): void;
   /** Expressions requested by the motion (dance/camera); the character blends them with its own life. */
   setExpressions(w: ExpressionWeights | undefined): void;
   /** Where the eyes look (world point), or null to look at the camera. */
@@ -435,7 +457,7 @@ export interface AppCommands {
   /** Save or share the last recording (Web Share on phones, download elsewhere). */
   shareRecording(): Promise<void>;
   /** Keep the analysed uploaded video's motion as one of 我的舞蹈. */
-  saveDance(name: string): Promise<void>;
+  saveDance(name: string): Promise<DanceInfo>;
   deleteDance(id: string): Promise<void>;
 }
 
