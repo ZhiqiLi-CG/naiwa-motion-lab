@@ -1,0 +1,241 @@
+/** The stage: renderer, lights, set, camera, gestures and the comic effects around the frog. */
+import * as THREE from "three";
+import type { Fx, PointerInfo, Stage } from "../contracts";
+import { createBalls } from "./balls";
+import { CameraRig, FOV } from "./cameraRig";
+import { createContactShadow } from "./contactShadow";
+import { buildEnvironment } from "./env";
+import { bindPointerEvents, GestureRecognizer, type StageGestureHandler } from "./gestures";
+import { THEMES, type ThemeName } from "./palette";
+import { createParticles } from "./particles";
+import { createPopTexts } from "./popText";
+import { createSet } from "./set";
+
+export type { StageGestureHandler } from "./gestures";
+export type { ThemeName } from "./palette";
+
+export interface StageInfo {
+  /** CPU time of the last frame() (ms), all passes included. */
+  cpuMs: number;
+  drawCalls: number;
+  triangles: number;
+  pixelRatio: number;
+}
+
+/** The contract's Stage plus what the stage can do beyond it. */
+export interface PlayStage extends Stage {
+  /** Also takes the optional onSwipe (a fast swipe across the frog, for slaps). */
+  setGestureHandler(h: StageGestureHandler): void;
+  /** Ease back to the default view (orbit and zoom), e.g. when the frog is reset. */
+  resetView(): void;
+  readonly info: StageInfo;
+}
+
+/** Key light relative to the camera's heading: up and to the camera's left, so the side you see is lit and the
+ *  shadow falls behind to the right whichever way the stage is turned. */
+const KEY_OFFSET = new THREE.Vector3(-2.6, 3.4, 1.7);
+const SHADOW_HALF = 2.4;
+/** Phones get a lower pixel-ratio cap: the frog and the physics need the budget more than extra pixels. */
+const DPR_CAP_DESKTOP = 2;
+const DPR_CAP_TOUCH = 1.5;
+
+export function createStage(container: HTMLElement): PlayStage {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Neutral keeps the toy's yellow its own colour (ACES would push it to orange and desaturate the cream).
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.VSMShadowMap;
+  // Shadows are rendered once per frame by frame(), not again by the contact shadow pass.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.info.autoReset = false;
+  const canvas = renderer.domElement;
+  Object.assign(canvas.style, {
+    display: "block",
+    width: "100%",
+    height: "100%",
+    touchAction: "none",
+    userSelect: "none",
+    webkitUserSelect: "none",
+    outline: "none",
+  });
+  canvas.style.setProperty("-webkit-touch-callout", "none");
+  canvas.style.setProperty("-webkit-tap-highlight-color", "transparent");
+  container.appendChild(canvas);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 120);
+  const rig = new CameraRig(camera);
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  rig.shakeScale = reducedMotion.matches ? 0.35 : 1;
+
+  const key = new THREE.DirectionalLight(0xffffff, 2);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  Object.assign(key.shadow.camera, {
+    left: -SHADOW_HALF,
+    right: SHADOW_HALF,
+    top: SHADOW_HALF,
+    bottom: -SHADOW_HALF,
+    near: 0.5,
+    far: 12,
+  });
+  key.shadow.camera.updateProjectionMatrix();
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.02;
+  key.shadow.radius = 10;
+  key.shadow.blurSamples = 12;
+  scene.add(key, key.target);
+
+  const set = createSet();
+  const contact = createContactShadow();
+  const balls = createBalls();
+  const particles = createParticles();
+  const pops = createPopTexts();
+  scene.add(set.sky, set.floor, balls.object, particles.mesh, pops.group);
+  const notInContact = [set.sky, set.floor, particles.mesh, pops.group];
+
+  const envs = new Map<ThemeName, THREE.WebGLRenderTarget>();
+  const envFor = (name: ThemeName) => {
+    let rt = envs.get(name);
+    if (!rt) envs.set(name, (rt = buildEnvironment(renderer, THEMES[name].env)));
+    return rt.texture;
+  };
+  let themeName: ThemeName = "light";
+  const setTheme = (name: ThemeName) => {
+    themeName = name;
+    const t = THEMES[name];
+    set.apply(t);
+    key.color.set(t.keyColor);
+    key.intensity = t.keyIntensity;
+    scene.environment = envFor(name);
+    scene.environmentIntensity = t.envIntensity;
+    renderer.toneMappingExposure = t.exposure;
+  };
+  setTheme("light");
+  // A lost context (phones in the background, GPU resets) takes rendered textures with it; the environment maps
+  // are rendered, so make them again. Everything else three re-uploads by itself or is redrawn every frame.
+  const onRestored = () => {
+    envs.clear(); // their GL objects died with the old context; disposing them would touch dead handles
+
+    setTheme(themeName);
+  };
+  canvas.addEventListener("webglcontextrestored", onRestored);
+
+  // Size: the container decides; the pixel ratio is capped.
+  const coarse = matchMedia("(pointer: coarse)");
+  let rect = canvas.getBoundingClientRect();
+  const resize = () => {
+    const w = Math.max(1, container.clientWidth);
+    const h = Math.max(1, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse.matches ? DPR_CAP_TOUCH : DPR_CAP_DESKTOP));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    rect = canvas.getBoundingClientRect();
+  };
+  resize();
+  const observer = new ResizeObserver(resize);
+  observer.observe(container);
+  const onWindowChange = () => resize(); // pixel ratio changes (zoom, other screen) and page scroll move the rect
+  window.addEventListener("resize", onWindowChange);
+  window.addEventListener("scroll", onWindowChange, { passive: true });
+
+  // Gestures.
+  const raycaster = new THREE.Raycaster();
+  const orbitPerPx = () => 2.8 / Math.max(1, Math.min(rect.width, rect.height));
+  let orbitMark: [number, number] = rig.mark();
+  const rec = new GestureRecognizer({
+    info(x, y, t, pointerType): PointerInfo {
+      const ndc = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      return { ray: raycaster.ray.clone(), ndc, clientX: x, clientY: y, time: t, pointerType };
+    },
+    orbitStart: () => (orbitMark = rig.mark()),
+    orbit: (dx, dy) => rig.orbitBy(-dx * orbitPerPx(), dy * orbitPerPx()),
+    orbitCancel: () => rig.restore(orbitMark),
+    fling: (vx, vy) => rig.fling(-vx * orbitPerPx(), vy * orbitPerPx()),
+    zoom: (f) => rig.zoomBy(f),
+  });
+  const unbind = bindPointerEvents(canvas, rec);
+
+  const fx: Fx = {
+    popText: (at, text, opts) => pops.pop(at, text, camera, opts),
+    burst: (at, kind, count) => particles.burst(at, kind, camera, count),
+    shake: (amount) => rig.shake(amount),
+  };
+
+  const info: StageInfo = { cpuMs: 0, drawCalls: 0, triangles: 0, pixelRatio: renderer.getPixelRatio() };
+  const focus = new THREE.Vector3(0, 0.5, 0);
+  const keyOffset = new THREE.Vector3();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  let time = 0;
+  let started = false;
+
+  return {
+    canvas,
+    renderer,
+    scene,
+    camera,
+    fx,
+    info,
+    setGestureHandler(h) {
+      rec.handler = h;
+    },
+    setFocus(target) {
+      focus.copy(target);
+      rig.setFocus(target);
+    },
+    setBalls: (b) => balls.set(b),
+    setTheme,
+    resetView: () => rig.reset(),
+    frame(dt) {
+      const t0 = performance.now();
+      dt = Math.min(Math.max(dt, 0), 0.1);
+      time += dt;
+      if (!started) {
+        rig.snap();
+        started = true;
+      }
+      rig.update(dt);
+
+      // Light and environment turn with the camera's heading (see KEY_OFFSET).
+      keyOffset.copy(KEY_OFFSET).applyAxisAngle(yAxis, rig.yaw);
+      key.position.copy(rig.target).add(keyOffset);
+      key.target.position.copy(rig.target);
+      key.target.updateMatrixWorld();
+      scene.environmentRotation.y = rig.yaw;
+
+      set.update(time, camera, rig.target);
+      pops.update(dt);
+      particles.update(dt, camera);
+
+      renderer.info.reset();
+      contact.render(renderer, scene, notInContact, focus);
+      set.setContact(contact.texture, contact.center.x, contact.center.y, contact.size);
+      renderer.shadowMap.needsUpdate = true;
+      renderer.render(scene, camera);
+
+      info.drawCalls = renderer.info.render.calls;
+      info.triangles = renderer.info.render.triangles;
+      info.pixelRatio = renderer.getPixelRatio();
+      info.cpuMs = performance.now() - t0;
+    },
+    dispose() {
+      unbind();
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+      observer.disconnect();
+      window.removeEventListener("resize", onWindowChange);
+      window.removeEventListener("scroll", onWindowChange);
+      set.dispose();
+      contact.dispose();
+      balls.dispose();
+      particles.dispose();
+      pops.dispose();
+      for (const rt of envs.values()) rt.dispose();
+      key.shadow.dispose();
+      renderer.dispose();
+      canvas.remove();
+    },
+  };
+}
