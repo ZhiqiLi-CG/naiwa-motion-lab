@@ -440,7 +440,10 @@ export interface AppState {
   /** The uploaded video's analysed motion can be saved (set by the integration once analysis is done). */
   canSaveDance: boolean;
   motion: MotionStatus;
-  stats: { pokes: number; throws: number; fps: number };
+  /** Simulation playback: paused, and the speed of simulated time (1 = real time, 0.25 = slow motion). */
+  playback: { paused: boolean; timeScale: number };
+  /** Simulation readouts, refreshed a few times a second by the integration. */
+  stats: { fps: number; stepMs: number; particles: number; cells: number; volumeRatio: number };
   /** Character asset status shown while loading. */
   loading: { active: boolean; message: string };
 }
@@ -456,6 +459,8 @@ export interface MaterialPreset {
 
 export interface AppCommands {
   resetFrog(): void;
+  /** While paused, advance the simulation by one frame. */
+  stepSim(): void;
   startRecording(): void;
   stopRecording(): void;
   /** Mode "video" with this file. */

@@ -36,7 +36,8 @@ export function initialState(): AppState {
     dances: [],
     canSaveDance: false,
     motion: { state: "idle" },
-    stats: { pokes: 0, throws: 0, fps: 0 },
+    playback: { paused: false, timeScale: 1 },
+    stats: { fps: 0, stepMs: 0, particles: 0, cells: 0, volumeRatio: 1 },
     loading: { active: true, message: "" },
   };
 }

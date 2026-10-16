@@ -9,8 +9,8 @@ examine it — set the material per body region, perturb the body (poke, push, d
 compare the person and the frog side by side, record the result. Everything runs in the browser.
 
 The user's words (2026-10-16): "我们只是给我们的动作迁移 + simulation 一个页面，不是再做一个小游戏", "3D界面先保持干净",
-"我们是做simulation的", "你现在这些有点太游戏了". So: a clean viewport where the simulation is the show (no comic text,
-bursts, screen shakes, cartoon floors or props); lab-style controls with precise values and units where they exist;
+"我们是做simulation的", "你现在这些有点太游戏了". So: a clean viewport where the simulation is the show (the polka-dot floor and lily-pad stage may
+stay — the user likes them — but no comic text, bursts, screen shakes, speech bubbles or extra props); lab-style controls with precise values and units where they exist;
 simulation readouts (step time, particles/cells, fps); restrained copy without jokes; sound off by default. The
 interface switches between 中文 and English (src/i18n.ts: keep every user-visible string as { zh, en } and show it
 with tr()).

@@ -73,7 +73,12 @@ async function switchMotion() {
 
 /* ---------------- commands ---------------- */
 
+let stepRequested = false;
+
 const commands: UICommands = {
+  stepSim() {
+    stepRequested = true;
+  },
   resetFrog() {
     sim?.reset();
     sim?.clearBalls();
@@ -190,11 +195,6 @@ let pressHit: FrogHit | null = null;
 let tickleAt = 0;
 const trail: { p: THREE.Vector3; t: number }[] = [];
 
-function bump(stat: "pokes" | "throws") {
-  const stats = store.get().stats;
-  store.set({ stats: { ...stats, [stat]: stats[stat] + 1 } });
-}
-
 function throwBallAt(p: PointerInfo) {
   if (!sim) return;
   const target = sim.raycast(p.ray)?.point ?? p.ray.intersectPlane(floor, new THREE.Vector3()) ?? p.ray.at(4, new THREE.Vector3());
@@ -247,14 +247,12 @@ stage.setGestureHandler({
     const hit = sim.raycast(p.ray);
     if (!hit) return;
     sim.poke(hit, 0.7, p.ray.direction);
-    bump("pokes");
   },
   onSwipe(p, velocity) {
     if (!sim || store.get().tool !== "hand") return;
     const hit = sim.raycast(p.ray) ?? pressHit;
     if (!hit) return;
     sim.slap(hit.point, screenToWorldVelocity(velocity, hit.point).clampLength(0, 14));
-    bump("pokes");
   },
   onDragStart(p) {
     const tool = store.get().tool;
@@ -283,7 +281,6 @@ stage.setGestureHandler({
     const velocity = last.p.clone().sub(first.p).divideScalar(span).clampLength(0, 12);
     grab.release(velocity);
     grab = null;
-    if (velocity.length() > 3) bump("throws");
   },
   onHover(p) {
     if (!character) return;
@@ -330,32 +327,44 @@ async function boot() {
   let last = performance.now();
   let fpsFrames = 0;
   let fpsSince = last;
+  let stepMs = 0;
 
   const tick = (now: number) => {
     requestAnimationFrame(tick);
-    const dt = Math.min((now - last) / 1000, 1 / 20);
+    const frameDt = Math.min((now - last) / 1000, 1 / 20);
     last = now;
     if (!sim || !character) return;
+    const { paused, timeScale } = store.get().playback;
+    const advance = !paused || stepRequested;
+    const dt = paused ? (stepRequested ? 1 / 60 : 0) : frameDt * timeScale;
+    stepRequested = false;
     const pose = source ? source.update(now, dt) : null;
     character.targetsFromPose(pose, targets);
     sim.setTargets(targets);
     character.setExpressions(pose?.expressions);
     updatePump(dt);
-    sim.step(dt);
+    if (advance) {
+      const t0 = performance.now();
+      sim.step(dt);
+      stepMs = stepMs * 0.9 + (performance.now() - t0) * 0.1;
+    }
     sim.readBones(bones);
     sim.readLimbs?.(limbs);
     character.applySim(bones, sim.readBody(), limbs);
-    character.update(dt, stage.camera);
+    character.update(frameDt, stage.camera);
     stage.setBalls(sim.readBalls());
     stage.setFocus(character.center(focus));
-    stage.frame(dt);
+    stage.frame(frameDt);
 
     fpsFrames++;
     if (now - fpsSince > 500) {
       const fps = Math.round((fpsFrames * 1000) / (now - fpsSince));
       fpsFrames = 0;
       fpsSince = now;
-      if (fps !== store.get().stats.fps) store.set({ stats: { ...store.get().stats, fps } });
+      const s = sim.stats();
+      store.set({
+        stats: { fps, stepMs: Math.round(stepMs * 100) / 100, particles: s.particles, cells: s.cells, volumeRatio: Math.round(s.volumeRatio * 1000) / 1000 },
+      });
     }
   };
   requestAnimationFrame(tick);
