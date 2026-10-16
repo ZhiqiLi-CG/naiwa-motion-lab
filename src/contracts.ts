@@ -121,12 +121,18 @@ export interface MotionStatus {
   message?: string;
   /** Detector frames per second while tracking. */
   fps?: number;
+  /** 0..1 while an uploaded video is being analysed before it plays. */
+  progress?: number;
 }
 
 export interface MotionSource {
   readonly kind: MotionKind;
   /** Advance to wall time nowMs (performance.now()); returns the pose to show, or null while nothing is tracked. */
   update(nowMs: number, dt: number): PoseFrame | null;
+  /** The camera or uploaded video playing in the preview (for side-by-side recording and its music). */
+  readonly media?: HTMLVideoElement;
+  /** An uploaded video's analysed motion, once analysed (to keep as one of "我的舞蹈"). */
+  track?(): DanceTrack | null;
   dispose(): void;
 }
 
@@ -136,6 +142,10 @@ export interface DanceInfo {
   name: string;
   /** Loop length in seconds. */
   duration: number;
+  /** procedural: made in code; video: captured from a real video (credit shown); mine: the user's own saved dance. */
+  origin?: "procedural" | "video" | "mine";
+  /** Credit line for video dances, e.g. the source title. */
+  credit?: string;
 }
 
 /** A dance captured from a real video (public/dances/<id>.json, listed in public/dances/index.json): the person's
@@ -168,9 +178,14 @@ export interface MotionModule {
   startCamera(opts: { mirror: boolean; preview: HTMLElement }): Promise<MotionSource>;
   /** Uploaded video → pose, played in the preview element (looping). */
   startVideo(file: File | string, opts: { mirror: boolean; preview: HTMLElement }): Promise<MotionSource>;
-  /** A built-in dance (no camera needed). */
+  /** A built-in dance or one of "我的舞蹈" (no camera needed). */
   startDance(id: string): MotionSource;
   dances(): DanceInfo[];
+  /** Keep an analysed video's motion as one of "我的舞蹈" (persisted in this browser); returns its DanceInfo. */
+  saveDance(track: DanceTrack, name: string): Promise<DanceInfo>;
+  deleteDance(id: string): Promise<void>;
+  /** The dance list changed (a dance was saved or deleted). */
+  onDancesChanged(cb: (dances: DanceInfo[]) => void): () => void;
   onStatus(cb: (s: MotionStatus) => void): () => void;
 }
 
@@ -340,6 +355,15 @@ export interface Sfx {
   play(kind: SfxKind, strength?: number): void;
   /** Audio of every effect, for recording alongside the canvas. */
   readonly stream: MediaStream | null;
+  /** Route a video's own sound (the dance music) through the mix, so it is heard and recorded; null detaches. */
+  attachMusic(el: HTMLMediaElement | null): void;
+}
+
+export interface RecordOptions {
+  /** The uploaded/camera video to show with the frog. */
+  companion?: HTMLVideoElement | null;
+  /** frog-only, the video as picture-in-picture, or "真人 vs 奶蛙" side by side. */
+  layout?: "frog" | "pip" | "side-by-side";
 }
 
 export interface Recording {
@@ -353,7 +377,7 @@ export interface Recording {
 }
 export interface Recorder {
   readonly active: boolean;
-  start(canvas: HTMLCanvasElement, audio: MediaStream | null): void;
+  start(canvas: HTMLCanvasElement, audio: MediaStream | null, opts?: RecordOptions): void;
   stop(): Promise<Recording>;
 }
 
