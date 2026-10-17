@@ -127,6 +127,7 @@
       if (spec.mode && el.dataset.mode === spec.mode) return true;
       const t = label(el);
       if (skip && skip.test(t)) return false;
+      if (t.length > 60) return false; // a container of many controls, not one
       return (spec.label && t.includes(spec.label)) || (re && re.test(t));
     });
     hits = hits.filter(visible).filter((el) => !el.disabled);
@@ -245,11 +246,14 @@
    *  in English (the brand 奶蛙 aside), or English words with no Chinese in Chinese (brand and unit words aside). */
   e2e.textAudit = (lang) => {
     const CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
-    const okWords = /^(naiwa|motion|lab|duang|vs|fps|gpu|webgl|mediapipe|ok|q|ios|android|mp4|webm|mb|kb)$/i;
+    const okWords = /^(naiwa|motion|lab|vs|fps|gpu|cpu|fem|webgl|mediapipe|ok|ios|android|mp4|webm|mb|kb|ms|cm|mm|px|hz|kg)$/i;
+    // The language switch names the other language in that language; a cited source keeps its own title.
+    const langNames = /^(EN|En|English|中|中文|Switch to English|切换到中文|Language|语言)(\s+\S)?$/;
+    const credits = (window.__naiwa?.store?.get().dances ?? []).map((d) => d.credit).filter(Boolean);
     const found = new Map();
     const test = (text, el, where) => {
       const t = text.replace(/\s+/g, " ").trim();
-      if (!t) return;
+      if (!t || langNames.test(t) || credits.some((c) => t.includes(c)) || el.closest("[lang]")?.getAttribute("lang")?.slice(0, 2) === (lang === "en" ? "zh" : "en")) return;
       const bad = lang === "en" ? CJK.test(t.replace(/奶蛙/g, "")) : !CJK.test(t) && (t.match(/[A-Za-z]{2,}/g) ?? []).some((w) => !okWords.test(w));
       if (bad && !found.has(t)) found.set(t, `${where}${el.id ? `#${el.id}` : el.className && typeof el.className === "string" ? `.${el.className.split(" ")[0]}` : ` <${el.tagName.toLowerCase()}>`}`);
     };
@@ -504,6 +508,17 @@
     return { per, head };
   };
 
+  /** The simulation's own quality numbers (docs/soft-binding.md) when it exposes them. */
+  e2e.simMetrics = () => {
+    const sim = window.__naiwa?.sim;
+    const m = sim?.metrics?.() ?? sim?.quality?.() ?? null;
+    if (m) return m;
+    const st = sim?.stats?.();
+    if (!st) return null;
+    const keys = ["deviation", "deviationMax", "invertedCells", "volume", "penetration", "jitter"];
+    return keys.some((k) => k in st) ? Object.fromEntries(keys.filter((k) => k in st).map((k) => [k, st[k]])) : null;
+  };
+
   /** Rects to leave out of frame differences: the camera/video preview and its drawn skeleton. */
   e2e.overlayRects = () => {
     const main = e2e.mainCanvas();
@@ -532,7 +547,8 @@
 
   /** The newest recorded video blob, as base64 (the Blob is kept, so a revoked URL does not matter). */
   e2e.lastVideoBlob = async () => {
-    const b = [...e2e.blobs].reverse().find((x) => /^video\//.test(x.type) && x.blob);
+    const rec = window.__naiwa?.store?.get().lastRecording;
+    const b = rec?.blob ? { blob: rec.blob, type: rec.blob.type || rec.mimeType, size: rec.blob.size } : [...e2e.blobs].reverse().find((x) => /^video\//.test(x.type) && x.blob && x.size > 1024);
     if (!b) return null;
     const data = await new Promise((resolve) => {
       const fr = new FileReader();

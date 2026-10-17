@@ -122,8 +122,9 @@ const browser = await puppeteer.launch({
     "--use-fake-ui-for-media-stream",
     "--use-fake-device-for-media-stream",
     `--use-file-for-fake-video-capture=${y4m}`,
-    // Like a visitor in China: nothing but this machine is reachable; any other request shows up as an error.
-    "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+    // Like a visitor in China: nothing but the site (this machine, or the --url host) is reachable; any other
+    // request shows up as an error.
+    `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1${opt("url") ? `, EXCLUDE ${new URL(opt("url")).hostname}` : ""}`,
   ],
 });
 

@@ -13,9 +13,9 @@ export function ensureY4m(mp4, y4m) {
 
 /** Decode every video frame of a recording: is it a playable file, how long, how big, with sound? */
 export function probeRecording(file) {
-  const info = JSON.parse(
-    execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height:format=format_name,duration", "-of", "json", file]).toString(),
-  );
+  const head = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height:format=format_name,duration", "-of", "json", file]);
+  if (head.status !== 0) return { frames: 0, duration: 0, audio: null, errors: [head.stderr.toString().trim().split("\n").pop()] };
+  const info = JSON.parse(head.stdout.toString());
   const video = info.streams?.find((s) => s.codec_type === "video");
   const audio = info.streams?.find((s) => s.codec_type === "audio");
   // MediaRecorder WebM carries no duration: take it from the decoded frames' timestamps instead.

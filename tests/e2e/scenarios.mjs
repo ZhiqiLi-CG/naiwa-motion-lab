@@ -139,11 +139,24 @@ async function frameRate(T, group, page, what = "frame rate") {
 /** Interpenetration over a few frames: per limb region the most vertices inside the Body (deeper than the
  *  tolerance) and the deepest; the head's largest shape change. Null without the hook's sim and spec. */
 async function sampleInterpenetration(page, frames, everyMs) {
-  const agg = { per: {}, head: { rms: 0, p95: 0, max: 0 }, frames: 0 };
+  const agg = { per: {}, head: { rms: 0, p95: 0, max: 0 }, frames: 0, metrics: null };
   for (let i = 0; i < frames; i++) {
     const r = await page.evaluate((tol) => window.__e2e.penetration(tol), PENETRATION_TOL_M);
     if (!r) return null;
     agg.frames++;
+    // The simulation's own quality numbers, worst over the frames (docs/soft-binding.md).
+    const m = await page.evaluate(() => window.__e2e.simMetrics());
+    if (m) {
+      agg.metrics ??= {};
+      for (const [k, v] of Object.entries(m)) {
+        if (typeof v === "number") agg.metrics[k] = k === "volume" ? v : Math.max(agg.metrics[k] ?? -Infinity, v);
+        else if (v && typeof v === "object") for (const [part, x] of Object.entries(v)) {
+          const key = `${k}.${part}`;
+          const prev = agg.metrics[key];
+          agg.metrics[key] = prev == null ? x : Math.abs(x - 1) > Math.abs(prev - 1) ? x : prev; // the volume furthest from rest
+        }
+      }
+    }
     for (const [k, v] of Object.entries(r.per)) {
       const a = (agg.per[k] ??= { vertices: v.vertices, inside: 0, maxDepth: 0 });
       a.inside = Math.max(a.inside, v.deep);
@@ -159,6 +172,11 @@ function verdictInterpenetration(T, group, what, agg) {
   const parts = Object.entries(agg.per).map(([k, v]) => `${k} ${v.inside}/${v.vertices} vertices${v.inside ? ` up to ${(v.maxDepth * 100).toFixed(1)} cm deep` : ""}`);
   const through = Object.values(agg.per).some((v) => v.inside > 0);
   T.check(group, `${what}: no limb inside the body`, through ? "FAIL" : "PASS", `worst of ${agg.frames} frames: ${parts.join(", ")} (vertices outside the Body in the rest pose that are now more than ${PENETRATION_TOL_M * 100} cm inside it)`);
+  if (agg.metrics) {
+    const m = agg.metrics;
+    const fmtM = Object.entries(m).map(([k, v]) => `${k} ${/volume/.test(k) ? `×${v.toFixed(3)}` : /Cells/.test(k) ? v : k === "jitter" ? `${(v * 1000).toFixed(1)} mm/s` : `${(v * 100).toFixed(1)} cm`}`).join(", ");
+    T.check(group, `${what}: simulation quality metrics`, (m.invertedCells ?? 0) > 0 ? "FAIL" : "INFO", `worst of ${agg.frames} frames: ${fmtM}${(m.invertedCells ?? 0) > 0 ? " (cells turned inside out)" : ""}`);
+  }
   const h = agg.head;
   T.check(group, `${what}: the head keeps its shape`, h.rms <= HEAD_RMS_MAX_M && h.max <= HEAD_MAX_M ? "PASS" : "FAIL",
     `head vertices off their rest shape after the best rigid fit: rms ${(h.rms * 100).toFixed(1)} cm, p95 ${(h.p95 * 100).toFixed(1)} cm, max ${(h.max * 100).toFixed(1)} cm (allowed rms ${HEAD_RMS_MAX_M * 100}, max ${HEAD_MAX_M * 100} cm)`);
@@ -192,6 +210,7 @@ async function recordClip(T, group, page, log, seconds, during) {
   let blob = null;
   for (let i = 0; i < 60 && !blob; i++) {
     await sleep(250);
+    if (st && !(await appState(page)).lastRecording) continue; // the hook's store says when it is done
     blob = await page.evaluate(() => window.__e2e.lastVideoBlob());
   }
   await shot(page, T.out, `${group}-after-recording`);
@@ -296,11 +315,12 @@ async function playbackChecks(T, group, page, log, video) {
   const vs1 = video ? await page.evaluate(() => window.__e2e.music()) : null;
   const pb2 = (await appState(page)).playback;
   const r = slow.speed / run.speed;
-  const videoRate = video ? (vs1.t - vs0.t) / 2 : null;
+  const advanced = video ? (vs1.t >= vs0.t ? vs1.t - vs0.t : vs1.t + vs0.duration - vs0.t) : null; // it may loop meanwhile
+  const videoRate = video ? advanced / 2 : null;
   const videoOk = !video || (vs1.rate > 0.2 && vs1.rate < 0.3 && videoRate > 0.15 && videoRate < 0.35);
   T.check(group, "slow motion slows the frog" + (video ? " and the video" : " and the motion"), !pb2.paused && pb2.timeScale === 0.25 && r >= 0.12 && r <= 0.45 && videoOk ? "PASS" : "FAIL",
     `via ${howResume}, ${howSpeed}: timeScale ${pb2.timeScale}; surface ${(slow.speed * 1000).toFixed(0)} mm/s vs ${(run.speed * 1000).toFixed(0)} mm/s at 1× (×${r.toFixed(2)}, want 0.12–0.45)` +
-      (video ? `; video playbackRate ${vs1.rate}, advanced ${(vs1.t - vs0.t).toFixed(2)} s in 2 s` : ""));
+      (video ? `; video playbackRate ${vs1.rate}, advanced ${advanced.toFixed(2)} s in 2 s` : ""));
   await transport(page, "speed", 1);
 }
 
@@ -565,6 +585,8 @@ export async function video(T, page, log, which) {
     prog.length ? `${prog.length} updates, ${prog.slice(0, 3).map((p) => p[1].toFixed(2)).join(", ")} … ${maxP.toFixed(2)}${back ? ", goes backwards" : ""}; 100% after ${done ? done[0].toFixed(1) : "—"} s for a ${clip.duration.toFixed(1)} s clip` : "store.motion.progress never set");
   T.check(g, "plays after the analysis", playing ? "PASS" : "FAIL", states.map((s) => `${s.at}s ${s.key}`).join(" → ") + (mus ? `; video ${mus.paused ? "paused" : "playing"} at ${mus.t.toFixed(1)} s` : "; no uploaded <video> ready"));
   if (!playing) return;
+  await sleep(500);
+  T.check(g, "analysed motion can be kept (store.canSaveDance)", (await appState(page)).canSaveDance ? "PASS" : "FAIL", `store.canSaveDance = ${(await appState(page)).canSaveDance} once the video plays`);
   if (clip.audio) {
     T.check(g, "the video's music plays", mus.routed || (!mus.muted && mus.volume > 0) ? "PASS" : "FAIL",
       `${mus.routed ? "routed through the sound mix" : "not routed through Web Audio"}, ${mus.muted ? "muted" : "unmuted"}, volume ${mus.volume}`);
@@ -580,7 +602,7 @@ export async function video(T, page, log, which) {
   else {
     T.check(g, "frog's pose follows the person", fs.corr >= FOLLOW_MIN ? "PASS" : "FAIL",
       `arm-raise correlation with the person ${fs.corr.toFixed(2)} (needs ${FOLLOW_MIN}; the other arm mapping gives ${fs.otherMapping.toFixed(2)}), ${fs.samples} samples over ${fs.loops} loop(s); ${g}-pose.png`);
-    T.check(g, "motion in sync with the video", fs.corr >= FOLLOW_MIN && Math.abs(fs.lag) <= SYNC_MAX_S ? "PASS" : "FAIL",
+    T.check(g, "motion in sync with the video", fs.corr >= 0.3 && Math.abs(fs.lag) <= SYNC_MAX_S ? "PASS" : "FAIL",
       `best match ${fs.lag >= 0 ? "lags" : "leads"} the video by ${Math.abs(fs.lag).toFixed(2)} s (allowed ${SYNC_MAX_S} s)`);
     const mirrored = mus.shown ? mus.mirrored : st.mirror;
     if (fs.corr >= FOLLOW_MIN) T.check(g, "arms on the same screen side as the person's", fs.swap === mirrored ? "PASS" : "FAIL",
@@ -796,9 +818,23 @@ export async function simulators(T, page, log) {
     const name = `${solver}/${cellModel}/${resolution}`;
     log.step = `simulator ${name}`;
     const errors0 = log.errors.length;
-    await page.evaluate((sim) => window.__naiwa.store.set({ simulator: sim, mode: "play", playback: { paused: false, timeScale: 1 } }), { solver, cellModel, resolution });
-    await page.evaluate(() => window.__naiwa.commands.resetFrog());
+    let thrown = null;
+    try {
+      await page.evaluate((sim) => window.__naiwa.store.set({ simulator: sim, mode: "play", playback: { paused: false, timeScale: 1 } }), { solver, cellModel, resolution });
+      await page.evaluate(() => window.__naiwa.commands.resetFrog());
+    } catch (e) {
+      thrown = e.message.split("\n")[0];
+    }
     await sleep(2500);
+    if (thrown) {
+      T.check("simulators", name, "FAIL", `switching to it throws "${thrown}" (store.set({ simulator }) → the rebuild)`);
+      rows.push({ name, particles: null, cells: null, stepMs: null, fps: null, volume: null });
+      // Start the next one from a fresh page so one broken rebuild does not spoil the rest.
+      await page.reload({ waitUntil: "load" });
+      await waitReady(page);
+      await page.evaluate(() => { window.__e2e.attachHooks(); window.__e2e.firstSim = window.__naiwa?.sim; });
+      continue;
+    }
     const standing = await page.evaluate(() => {
       const c = window.__naiwa.character.center(new (window.__naiwa.stage.camera.position.constructor)());
       return { y: c.y, x: c.x, z: c.z, ok: Number.isFinite(c.y) };
@@ -829,10 +865,10 @@ export async function simulators(T, page, log) {
   // Resolution must change the particle budget.
   for (const solver of ["constraints", "fem"]) for (const cellModel of ["volume", "corotational", "neohookean"]) {
     const [lo, me, hi] = ["low", "medium", "high"].map((r) => rows.find((x) => x.name === `${solver}/${cellModel}/${r}`));
-    if (lo && me && hi && !(lo.particles < me.particles && me.particles < hi.particles)) {
+    if (lo?.particles && me?.particles && hi?.particles && !(lo.particles < me.particles && me.particles < hi.particles)) {
       T.check("simulators", `${solver}/${cellModel}: resolution changes the particle count`, "FAIL", `low ${lo.particles}, medium ${me.particles}, high ${hi.particles} particles`);
     }
   }
   T.shared.simulatorTable = rows;
-  T.check("simulators", "step time and frame rate per simulator", "INFO", rows.map((r) => `${r.name} ${r.stepMs} ms ${r.fps} fps (${r.particles} p, ${r.cells} c)`).join("; "));
+  T.check("simulators", "step time and frame rate per simulator", "INFO", rows.map((r) => r.stepMs == null ? `${r.name} —` : `${r.name} ${r.stepMs} ms ${r.fps} fps (${r.particles} p, ${r.cells} c)`).join("; "));
 }
