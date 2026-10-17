@@ -114,6 +114,18 @@ describe("retargeting a person", () => {
     expect(up.lift).toBeGreaterThan(0.05);
   });
 
+  it("steps sideways with the person, towards the frog's own left when the person moves to the image right", () => {
+    const r = new Retargeter({ home: 0.5 });
+    const step = (dx: number) => {
+      const f = person();
+      for (const p of f.image) p[0] += dx;
+      return r.pose(f, 1, 1 / 30, false)!.shift;
+    };
+    expect(Math.abs(step(0))).toBeLessThan(1e-6);
+    expect(step(0.1)).toBeGreaterThan(0.05);
+    expect(new Retargeter({ home: 0.5 }).pose(person(), 1, 1 / 30, true)!.shift).toBeCloseTo(0, 6);
+  });
+
   it("finds nobody in an empty frame", () => {
     expect(new Retargeter().pose({ world: [], image: [] }, 1, 1 / 30, false)).toBeNull();
   });
