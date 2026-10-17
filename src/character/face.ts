@@ -92,6 +92,8 @@ const _w = new THREE.Vector3();
 const _dq = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 const _a = new THREE.Matrix3();
+/** Largest stretch of a stretching rivet away from its rotation (Frobenius norm of M − R). */
+const MAX_STRETCH = 0.5;
 
 /**
  * Place the rivet on the deformed surface: its centre at the patch's centre, its rotation the best rigid fit of the
@@ -138,7 +140,12 @@ export function updateRivet(r: Rivet, pos: Float32Array): void {
     const nn = [n.x, n.y, n.z];
     for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) A[3 * c + row] += eps * rn[row] * nn[c];
     _a.fromArray(A).multiply(r.stretch.inv);
-    m.setFromMatrix3(_a);
+    // Teeth do not stretch far: the stretch beyond the rotation is bounded (a blown-up patch cannot fling them off).
+    const a = _a.elements;
+    let d2 = 0;
+    for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) d2 += (a[3 * c + row] - e[4 * c + row]) ** 2;
+    const k = d2 > MAX_STRETCH ** 2 ? MAX_STRETCH / Math.sqrt(d2) : 1;
+    for (let c = 0; c < 3; c++) for (let row = 0; row < 3; row++) e[4 * c + row] += (a[3 * c + row] - e[4 * c + row]) * k;
   }
   m.multiply(_m.makeTranslation(-r.c0.x, -r.c0.y, -r.c0.z));
   m.elements[12] += _c.x;

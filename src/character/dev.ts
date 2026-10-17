@@ -66,6 +66,7 @@ controls.enabled = !stage;
 const VIEWS: Record<string, [number, number, number, [number, number, number]]> = {
   front: [0, 6, 3.1, [0, 0.52, 0]],
   three: [62, 6, 3.1, [0, 0.52, 0]],
+  poster: [68, 10, 3.3, [0, 0.5, 0]],
   side: [90, 4, 3.1, [0, 0.52, 0]],
   back: [180, 10, 3.1, [0, 0.52, 0]],
   laugh: [-12, 16, 2.6, [0, 0.58, 0]],

@@ -85,6 +85,15 @@ function boneList(): [BoneName, BoneName | null, V3, V3][] {
   return b;
 }
 
+interface Ring {
+  r: number;
+  w: [BoneName, number][];
+  c: THREE.Color;
+  soft: number;
+  flat?: number;
+  squash?: THREE.Vector3;
+}
+
 /** Collects one skinned mesh: vertices with colour, up to two bone weights and a position per expression. */
 class MeshBuilder {
   pos: number[] = [];
@@ -137,19 +146,28 @@ class MeshBuilder {
     }
   }
 
-  /** Open-ended tube capped at both ends, along points with radii, weights and colours per ring. */
-  tube(points: THREE.Vector3[], radii: number[], weights: [BoneName, number][][], colors: THREE.Color[], segs = 16) {
+  /**
+   * One closed tube along points (capped at both ends), its rings framed by parallel transport so it may turn any
+   * way; each ring has a radius, weights, colour, softness and may be flattened (flat < 1) across direction squash.
+   */
+  tube(points: THREE.Vector3[], rings: Ring[], segs = 16) {
     const rows: number[][] = [];
-    const up = new THREE.Vector3(0, 0, 1);
+    const tan = new THREE.Vector3(), prev = new THREE.Vector3(), q = new THREE.Quaternion();
+    const ax = new THREE.Vector3(), ay = new THREE.Vector3(), off = new THREE.Vector3(), d = new THREE.Vector3();
     points.forEach((p, j) => {
-      const tan = points[Math.min(j + 1, points.length - 1)].clone().sub(points[Math.max(0, j - 1)]).normalize();
-      const ax = new THREE.Vector3().crossVectors(tan, up).normalize();
-      const ay = new THREE.Vector3().crossVectors(ax, tan).normalize();
+      tan.copy(points[Math.min(j + 1, points.length - 1)]).sub(points[Math.max(0, j - 1)]).normalize();
+      if (j === 0) ax.set(1, 0, 0).addScaledVector(tan, -tan.x).lengthSq() > 1e-4 ? ax.set(1, 0, 0).addScaledVector(tan, -tan.x).normalize() : ax.set(0, 0, 1);
+      else ax.applyQuaternion(q.setFromUnitVectors(prev, tan)).addScaledVector(tan, -ax.dot(tan)).normalize();
+      prev.copy(tan);
+      ay.crossVectors(ax, tan);
+      const ring = rings[j];
+      if (ring.squash) d.copy(ring.squash).addScaledVector(tan, -ring.squash.dot(tan)).normalize();
       const row: number[] = [];
       for (let i = 0; i < segs; i++) {
         const a = (2 * Math.PI * i) / segs;
-        const q = p.clone().addScaledVector(ax, radii[j] * Math.cos(a)).addScaledVector(ay, radii[j] * Math.sin(a));
-        row.push(this.vertex([q.x, q.y, q.z], colors[j], weights[j]));
+        off.copy(ax).multiplyScalar(Math.cos(a)).addScaledVector(ay, Math.sin(a)).multiplyScalar(ring.r);
+        if (ring.squash) off.addScaledVector(d, -(1 - (ring.flat ?? 1)) * off.dot(d));
+        row.push(this.vertex([p.x + off.x, p.y + off.y, p.z + off.z], ring.c, ring.w, undefined, ring.soft));
       }
       rows.push(row);
     });
@@ -160,11 +178,11 @@ class MeshBuilder {
         this.tri(rows[j][i], rows[j + 1][ni], rows[j][ni]);
       }
     }
-    for (const [row, p, w, c, flip] of [[rows[0], points[0], weights[0], colors[0], true], [rows[rows.length - 1], points[points.length - 1], weights[weights.length - 1], colors[colors.length - 1], false]] as const) {
-      const centre = this.vertex([p.x, p.y, p.z], c, w);
+    for (const [row, p, ring, start] of [[rows[0], points[0], rings[0], true], [rows[rows.length - 1], points[points.length - 1], rings[rings.length - 1], false]] as const) {
+      const centre = this.vertex([p.x, p.y, p.z], ring.c, ring.w, undefined, ring.soft);
       for (let i = 0; i < segs; i++) {
         const ni = (i + 1) % segs;
-        if (flip) this.tri(centre, row[i], row[ni]);
+        if (start) this.tri(centre, row[i], row[ni]);
         else this.tri(centre, row[ni], row[i]);
       }
     }
@@ -367,52 +385,57 @@ function buildMouth(): MeshBuilder {
   return m;
 }
 
+/** Each arm and each leg is one closed shell (the simulation fills them): a tube from the root to a mitten hand or a
+ *  flat frog foot. Softness: upper arms and thighs about 0.5, hands and feet 0.15. */
 function buildLimbs(bones: Map<BoneName, [THREE.Vector3, THREE.Vector3]>): { arms: MeshBuilder; legs: MeshBuilder } {
   const arms = new MeshBuilder(), legs = new MeshBuilder();
   const h = (n: BoneName) => bones.get(n)![0], t = (n: BoneName) => bones.get(n)![1];
+  const FORWARD = new THREE.Vector3(0, 0, 1), UP = new THREE.Vector3(0, 1, 0);
+  const blend = (a: BoneName, b: BoneName, k: number): [BoneName, number][] => (k <= 0 ? [[a, 1]] : k >= 1 ? [[b, 1]] : [[a, 1 - k], [b, k]]);
   for (const side of ["L", "R"] as const) {
     const s = side === "L" ? 1 : -1;
     const upper: BoneName = `upperarm_${side}`, fore: BoneName = `forearm_${side}`, hand: BoneName = `hand_${side}`;
-    const pts: THREE.Vector3[] = [], radii: number[] = [], ws: [BoneName, number][][] = [], cs: THREE.Color[] = [];
-    for (let j = 0; j < 23; j++) {
-      const u = (j / 22) * 2.35;
-      let p: THREE.Vector3, r: number, w: [BoneName, number][];
-      if (u <= 1) (p = h(upper).clone().lerp(h(fore), u)), (r = 0.043 + 0.024 * Math.sin(Math.PI * u * 0.8));
-      else if (u <= 2) (p = h(fore).clone().lerp(h(hand), u - 1)), (r = 0.059 - (u - 1) * 0.026);
-      else (p = h(hand).clone().lerp(t(hand), (u - 2) / 0.35)), (r = 0.035 * (1 - (0.3 * (u - 2)) / 0.35));
-      if (u < 0.7) w = [[upper, 1]];
-      else if (u < 1.3) w = [[upper, 1 - smooth((u - 0.7) / 0.6)], [fore, smooth((u - 0.7) / 0.6)]];
-      else if (u < 1.8) w = [[fore, 1]];
-      else if (u < 2.2) w = [[fore, 1 - smooth((u - 1.8) / 0.4)], [hand, smooth((u - 1.8) / 0.4)]];
-      else w = [[hand, 1]];
-      pts.push(p); radii.push(r); ws.push(w); cs.push(YELLOW.clone().lerp(OLIVE, smooth((u - 1.9) / 0.3)));
+    const middle: BoneName = `middle_${side}`;
+    const ap: THREE.Vector3[] = [], ar: Ring[] = [];
+    for (let j = 0; j <= 30; j++) {
+      const u = (j / 30) * 3;
+      let p: THREE.Vector3, r: number, w: [BoneName, number][], flat = 1;
+      if (u <= 1) (p = h(upper).clone().lerp(h(fore), u)), (r = 0.043 + 0.024 * Math.sin(Math.PI * u * 0.8)), (w = blend(upper, fore, smooth((u - 0.7) / 0.6)));
+      else if (u <= 2) (p = h(fore).clone().lerp(h(hand), u - 1)), (r = 0.059 - (u - 1) * 0.026), (w = blend(fore, hand, smooth((u - 1.8) / 0.4)));
+      else {
+        // The hand: a flat mitten from the wrist to the finger tips.
+        const k = u - 2;
+        p = h(hand).clone().lerp(t(middle), k);
+        r = k < 0.999 ? 0.034 + 0.012 * Math.sin(Math.PI * Math.min(1, k * 1.4)) - 0.022 * smooth((k - 0.6) / 0.4) : 0.004;
+        flat = 0.5;
+        w = blend(hand, middle, smooth((k - 0.45) / 0.4));
+      }
+      const tip = Math.max(0, u - 1.9);
+      ap.push(p);
+      ar.push({ r, w, c: YELLOW.clone().lerp(OLIVE, smooth(tip / 0.3)), soft: 0.5 - 0.35 * smooth(tip / 0.4), flat, squash: FORWARD });
     }
-    arms.tube(pts, radii, ws, cs, 20);
-    const palm = t(hand);
-    arms.ellipsoid([palm.x, palm.y + 0.012, palm.z], [0.041, 0.041, 0.025], OLIVE, [[hand, 1]], 24, 12);
-    for (const f of ["thumb", "index", "middle", "ring"] as const) {
-      const n: BoneName = `${f}_${side}`;
-      const d = t(n).clone().sub(h(n));
-      const us = [0, 0.15, 0.35, 0.6, 0.82, 0.94, 1];
-      arms.tube(us.map((u) => h(n).clone().addScaledVector(d, u)), [0.012, 0.013, 0.012, 0.011, 0.01, 0.007, 0.001],
-        [0, 0.55, 1, 1, 1, 1, 1].map((u) => (u < 1 ? [[hand, 1 - u], [n, u]] : [[n, 1]]) as [BoneName, number][]),
-        us.map(() => OLIVE), 12);
-    }
+    arms.tube(ap, ar, 20);
+
     const thigh: BoneName = `thigh_${side}`, shin: BoneName = `shin_${side}`, foot: BoneName = `foot_${side}`;
-    const lp: THREE.Vector3[] = [], lr: number[] = [], lw: [BoneName, number][][] = [], lc: THREE.Color[] = [];
-    for (let j = 0; j < 18; j++) {
-      const u = (j / 17) * 2;
+    const lp: THREE.Vector3[] = [], lr: Ring[] = [];
+    for (let j = 0; j < 16; j++) {
+      const u = (j / 16) * 2;
       lp.push(u <= 1 ? h(thigh).clone().lerp(h(shin), u) : h(shin).clone().lerp(h(foot), u - 1));
-      lr.push(0.064 * (1 - u / 2) + 0.016);
-      const k = smooth((u - 0.65) / 0.7);
-      lw.push(u < 0.65 ? [[thigh, 1]] : u > 1.35 ? [[shin, 1]] : [[thigh, 1 - k], [shin, k]]);
-      lc.push(YELLOW.clone().lerp(OLIVE, smooth((u - 1.65) / 0.35)));
+      lr.push({ r: 0.064 * (1 - u / 2) + 0.018, w: blend(thigh, shin, smooth((u - 0.65) / 0.7)), c: YELLOW.clone().lerp(OLIVE, smooth((u - 1.65) / 0.35)), soft: 0.5 - 0.2 * smooth((u - 1) / 1) });
     }
-    legs.tube(lp, lr, lw, lc, 20);
-    legs.ellipsoid([s * 0.146, 0.028, 0.037], [0.047, 0.028, 0.082], OLIVE, [[foot, 1]], 28, 12);
-    for (const [o, ext] of [[-0.028, 0.009], [0, 0.02], [0.028, 0.012]]) {
-      legs.ellipsoid([s * (0.146 + o), 0.019, 0.095 + ext], [0.019, 0.019, 0.033], OLIVE, [[foot, 1]], 16, 10);
+    // The foot: bends from the ankle down and forwards into a flat paddle.
+    const ankle = h(foot);
+    const toe = new THREE.Vector3(s * 0.148, 0.02, 0.16);
+    const bend = new THREE.Vector3(s * 0.144, 0.026, 0.0);
+    for (let j = 0; j <= 10; j++) {
+      const k = j / 10;
+      const p = ankle.clone().multiplyScalar((1 - k) ** 2).addScaledVector(bend, 2 * k * (1 - k)).addScaledVector(toe, k * k);
+      if (j === 0) continue;
+      const r = k < 1 ? 0.024 + 0.026 * Math.sin(Math.PI * Math.min(1, k * 1.25)) : 0.006;
+      lp.push(p);
+      lr.push({ r, w: [[foot, 1]], c: OLIVE, soft: 0.15, flat: 0.45, squash: UP });
     }
+    legs.tube(lp, lr, 20);
   }
   return { arms, legs };
 }
@@ -461,8 +484,8 @@ export function buildPlaceholder(): THREE.Group {
   const meshes = [
     buildBody().build("Body", skinMat, skeleton, true),
     buildEyes().build("Eyes", eyeMat, skeleton, false),
-    arms.build("Arms", skinMat, skeleton, false),
-    legs.build("Legs", skinMat, skeleton, false),
+    arms.build("Arms", skinMat, skeleton, true),
+    legs.build("Legs", skinMat, skeleton, true),
     buildMouth().build("MouthInside", mouthMat, skeleton, false),
   ];
   for (const mesh of meshes) {
