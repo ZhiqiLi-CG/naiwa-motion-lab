@@ -1,4 +1,57 @@
 /** Mesh queries the simulation needs once, when it builds the frog: closest points, inside tests, a coarse skin. */
+import type * as THREE from "three";
+
+/** Distance from p to the segment ab. */
+export function segmentDistance(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
+  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+  const t = Math.min(1, Math.max(0, ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / Math.max(1e-12, abx * abx + aby * aby + abz * abz)));
+  return Math.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t, p.z - a.z - abz * t);
+}
+
+/** Nearest hit (t > 0) of a ray with a triangle mesh, and the hit triangle's normal facing the ray. */
+export function rayHitMesh(
+  ray: THREE.Ray, P: Float32Array, I: Uint32Array,
+): { t: number; normal: THREE.Vector3 } | null {
+  const o = ray.origin, d = ray.direction;
+  let best = Infinity, tri = -1;
+  for (let k = 0; k < I.length; k += 3) {
+    const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
+    const t = rayTriangle(o.x, o.y, o.z, d.x, d.y, d.z, P, a, b, c);
+    if (t > 0 && t < best) {
+      best = t;
+      tri = k;
+    }
+  }
+  if (tri < 0) return null;
+  const a = I[tri] * 3, b = I[tri + 1] * 3, c = I[tri + 2] * 3;
+  const e1 = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]];
+  const e2 = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+  const n = new (ray.origin.constructor as typeof THREE.Vector3)(
+    e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0],
+  ).normalize();
+  if (n.dot(d) > 0) n.negate();
+  return { t: best, normal: n };
+}
+
+/** Möller–Trumbore: distance along the ray to triangle (a, b, c) (offsets into P), or -1. */
+function rayTriangle(
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, P: Float32Array, a: number, b: number,
+  c: number,
+): number {
+  const e1x = P[b] - P[a], e1y = P[b + 1] - P[a + 1], e1z = P[b + 2] - P[a + 2];
+  const e2x = P[c] - P[a], e2y = P[c + 1] - P[a + 1], e2z = P[c + 2] - P[a + 2];
+  const hx = dy * e2z - dz * e2y, hy = dz * e2x - dx * e2z, hz = dx * e2y - dy * e2x;
+  const det = e1x * hx + e1y * hy + e1z * hz;
+  if (Math.abs(det) < 1e-12) return -1;
+  const inv = 1 / det;
+  const sx = ox - P[a], sy = oy - P[a + 1], sz = oz - P[a + 2];
+  const u = (sx * hx + sy * hy + sz * hz) * inv;
+  if (u < 0 || u > 1) return -1;
+  const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
+  const v = (dx * qx + dy * qy + dz * qz) * inv;
+  if (v < 0 || u + v > 1) return -1;
+  return (e2x * qx + e2y * qy + e2z * qz) * inv;
+}
 
 /** A closed triangle mesh with per-triangle bounding spheres for culled closest-point queries. */
 export class TriMesh {
@@ -52,7 +105,7 @@ export class TriMesh {
     const dx = 0.5773, dy = 0.5821, dz = 0.5726;
     let crossings = 0;
     for (let t = 0; t < I.length; t += 3) {
-      if (rayHitsTriangle(x, y, z, dx, dy, dz, P, I[t] * 3, I[t + 1] * 3, I[t + 2] * 3)) crossings++;
+      if (rayTriangle(x, y, z, dx, dy, dz, P, I[t] * 3, I[t + 1] * 3, I[t + 2] * 3) > 0) crossings++;
     }
     return (crossings & 1) === 1;
   }
@@ -116,26 +169,6 @@ function closestOnTriangle(
   out[1] = ay + aby * u + acy * v;
   out[2] = az + abz * u + acz * v;
   return Math.hypot(px - out[0], py - out[1], pz - out[2]);
-}
-
-/** Möller–Trumbore, half-line t > 0. */
-function rayHitsTriangle(
-  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, P: Float32Array, a: number, b: number,
-  c: number,
-): boolean {
-  const e1x = P[b] - P[a], e1y = P[b + 1] - P[a + 1], e1z = P[b + 2] - P[a + 2];
-  const e2x = P[c] - P[a], e2y = P[c + 1] - P[a + 1], e2z = P[c + 2] - P[a + 2];
-  const hx = dy * e2z - dz * e2y, hy = dz * e2x - dx * e2z, hz = dx * e2y - dy * e2x;
-  const det = e1x * hx + e1y * hy + e1z * hz;
-  if (Math.abs(det) < 1e-12) return false;
-  const inv = 1 / det;
-  const sx = ox - P[a], sy = oy - P[a + 1], sz = oz - P[a + 2];
-  const u = (sx * hx + sy * hy + sz * hz) * inv;
-  if (u < 0 || u > 1) return false;
-  const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
-  const v = (dx * qx + dy * qy + dz * qz) * inv;
-  if (v < 0 || u + v > 1) return false;
-  return (e2x * qx + e2y * qy + e2z * qz) * inv > 0;
 }
 
 /**

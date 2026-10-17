@@ -4,7 +4,7 @@
  * converted to glTF space (+Y up, facing +Z).
  */
 import * as THREE from "three";
-import type { BoneName, RigBone, RigSpec } from "../contracts";
+import { FLESH_REGIONS, type BoneName, type FleshPart, type FleshRegion, type RigBone, type RigSpec } from "../contracts";
 
 /** [height, half-width, half-depth, depth centre (+ forward)] of the body, bottom to top. */
 const PROFILE: [number, number, number, number][] = [
@@ -76,6 +76,106 @@ export interface TestRigOptions {
   segments?: number;
   /** Rings between the bottom and the top pole. */
   rings?: number;
+  /** Soft arms and legs too (default true). */
+  limbs?: boolean;
+}
+
+type V3 = [number, number, number];
+
+/**
+ * A closed tube along a smooth path through the control points (radius per point), rounded at both ends. The
+ * region of each vertex is the region of the control span it lies in.
+ */
+function tube(name: string, bones: BoneName[], points: V3[], radii: number[], regions: FleshRegion[]): FleshPart {
+  const ctrl = points.map((p) => new THREE.Vector3(...p));
+  const curve = new THREE.CatmullRomCurve3(ctrl, false, "centripetal");
+  const length = curve.getLength();
+  const around = 16;
+  const rings = Math.max(8, Math.round(length / 0.014));
+  // Control point k sits at the arc-length parameter nearest to it.
+  const ctrlU = ctrl.map((c) => {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i <= rings * 8; i++) {
+      const d = curve.getPointAt(i / (rings * 8)).distanceTo(c);
+      if (d < bd) {
+        bd = d;
+        best = i / (rings * 8);
+      }
+    }
+    return best;
+  });
+  const radiusAt = (u: number) => {
+    let k = 0;
+    while (k < ctrlU.length - 2 && ctrlU[k + 1] < u) k++;
+    const t = smooth((u - ctrlU[k]) / Math.max(1e-6, ctrlU[k + 1] - ctrlU[k]));
+    return { r: radii[k] + (radii[k + 1] - radii[k]) * t, region: regions[t < 0.5 ? k : k + 1] };
+  };
+  const frames = curve.computeFrenetFrames(rings, false);
+  const positions: number[] = [], region: number[] = [], indices: number[] = [];
+  const add = (p: THREE.Vector3, r: FleshRegion) => {
+    positions.push(p.x, p.y, p.z);
+    region.push(FLESH_REGIONS.indexOf(r));
+    return positions.length / 3 - 1;
+  };
+  const ringAt = (u: number, i: number, scale: number, shift: number) => {
+    const c = curve.getPointAt(u), { r, region: reg } = radiusAt(u);
+    const n = frames.normals[i], b = frames.binormals[i], t = frames.tangents[i];
+    const out: number[] = [];
+    for (let j = 0; j < around; j++) {
+      const a = (2 * Math.PI * j) / around;
+      out.push(add(c.clone().addScaledVector(n, Math.cos(a) * r * scale).addScaledVector(b, Math.sin(a) * r * scale).addScaledVector(t, shift * r), reg));
+    }
+    return out;
+  };
+  // End caps: a few shrinking rings, then a pole, each a quarter circle out from the end ring.
+  const cap = [0.92, 0.7, 0.38];
+  const all: number[][] = [];
+  for (let k = cap.length - 1; k >= 0; k--) all.push(ringAt(0, 0, cap[k], -Math.sqrt(1 - cap[k] ** 2)));
+  for (let i = 0; i <= rings; i++) all.push(ringAt(i / rings, i, 1, 0));
+  for (let k = 0; k < cap.length; k++) all.push(ringAt(1, rings, cap[k], Math.sqrt(1 - cap[k] ** 2)));
+  const start = curve.getPointAt(0).addScaledVector(frames.tangents[0], -radiusAt(0).r);
+  const end = curve.getPointAt(1).addScaledVector(frames.tangents[rings], radiusAt(1).r);
+  const p0 = add(start, radiusAt(0).region), p1 = add(end, radiusAt(1).region);
+  for (let j = 0; j < around; j++) {
+    const jj = (j + 1) % around;
+    indices.push(p0, all[0][jj], all[0][j]);
+    for (let r = 0; r < all.length - 1; r++) {
+      const a = all[r], b = all[r + 1];
+      indices.push(a[j], a[jj], b[jj], a[j], b[jj], b[j]);
+    }
+    const last = all[all.length - 1];
+    indices.push(p1, last[j], last[jj]);
+  }
+  const out: FleshPart = { name, bones, positions: new Float32Array(positions), indices: new Uint32Array(indices), regions: new Uint8Array(region) };
+  // The Frenet frames' handedness decides the winding: make it face outward.
+  if (signedVolume(out.positions, out.indices) < 0) {
+    for (let t = 0; t < out.indices.length; t += 3) [out.indices[t + 1], out.indices[t + 2]] = [out.indices[t + 2], out.indices[t + 1]];
+  }
+  return out;
+}
+
+function signedVolume(P: Float32Array, I: Uint32Array): number {
+  let v = 0;
+  for (let t = 0; t < I.length; t += 3) {
+    const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+    v += (P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c]) + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c])) / 6;
+  }
+  return v;
+}
+
+function testLimbs(): FleshPart[] {
+  const out: FleshPart[] = [];
+  for (const [s, side] of [[1, "L"], [-1, "R"]] as const) {
+    out.push(
+      tube(`arm_${side}`, [`upperarm_${side}`, `forearm_${side}`, `hand_${side}`],
+        [[s * 0.135, 0.726, -0.005], [s * 0.215, 0.645, 0.0], [s * 0.285, 0.565, 0.008], [s * 0.335, 0.435, 0.04], [s * 0.35, 0.39, 0.05], [s * 0.355, 0.35, 0.056]],
+        [0.053, 0.07, 0.064, 0.036, 0.042, 0.03], ["arm", "arm", "arm", "hand", "hand", "hand"]),
+      tube(`leg_${side}`, [`thigh_${side}`, `shin_${side}`, `foot_${side}`],
+        [[s * 0.111, 0.318, -0.008], [s * 0.126, 0.185, -0.012], [s * 0.142, 0.07, -0.006], [s * 0.145, 0.042, 0.035], [s * 0.148, 0.034, 0.11]],
+        [0.08, 0.058, 0.04, 0.042, 0.03], ["leg", "leg", "foot", "foot", "foot"]),
+    );
+  }
+  return out;
 }
 
 export function createTestRigSpec(opts: TestRigOptions = {}): RigSpec {
@@ -118,12 +218,21 @@ export function createTestRigSpec(opts: TestRigOptions = {}): RigSpec {
     }
     indices.push(top, ring(rings - 1, j), ring(rings - 1, j + 1));
   }
+  const regions = new Uint8Array(positions.length / 3);
+  for (let v = 0; v < regions.length; v++) {
+    const region: FleshRegion = positions[v * 3 + 1] > 0.79 ? "head" : softness[v] > 0.6 ? "belly" : "body";
+    regions[v] = FLESH_REGIONS.indexOf(region);
+  }
   return {
     bones,
     body: {
+      name: "body",
+      bones: ["hips", "spine", "chest", "head"],
       positions: new Float32Array(positions),
       indices: new Uint32Array(indices),
       softness: new Float32Array(softness),
+      regions,
     },
+    limbs: opts.limbs === false ? undefined : testLimbs(),
   };
 }
