@@ -5,7 +5,7 @@ import { changed, type Part } from "./ctx";
 import { h } from "./dom";
 import { formatCount, formatMs } from "./format";
 
-export function createReadouts(host: HTMLElement): Part {
+export function createReadouts(host: HTMLElement, labOnly = false): Part {
   const T = copy();
   const cell = (label: string) => {
     const v = h("b", { class: "nw-readout-v" });
@@ -17,7 +17,9 @@ export function createReadouts(host: HTMLElement): Part {
   const cells = cell(T.readouts.cells);
   const volume = cell(T.readouts.volume);
   const play = h("span", { class: "nw-readout-state" });
-  host.append(h("div", { class: "nw-readouts", role: "status", "aria-label": T.readouts.label }, play, fps.el, step.el, particles.el, cells.el, volume.el));
+  host.append(
+    h("div", { class: "nw-readouts", role: "status", "aria-label": T.readouts.label, "data-lab-only": labOnly }, play, fps.el, step.el, particles.el, cells.el, volume.el),
+  );
   return {
     update(s, prev) {
       if (changed(s, prev, (x) => x.stats)) {

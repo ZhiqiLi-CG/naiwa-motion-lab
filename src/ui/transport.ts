@@ -37,12 +37,15 @@ export function createTransport(ctx: Ctx, host: HTMLElement): Part {
     icon("reset"),
     h("span", {}, T.transport.reset),
   );
+  // playback belongs to the lab; it stays in view while it is not plain real time, so it can be undone
+  const playback = h("div", { class: "nw-transport-group", role: "group", "aria-label": T.transport.playback }, pause, step, speed.el);
+  const playbackDivider = h("span", { class: "nw-divider", "aria-hidden": "true" });
   host.append(
     h(
       "div",
-      { class: "nw-transport", role: "toolbar", "aria-label": T.transport.playback },
-      h("div", { class: "nw-transport-group", role: "group", "aria-label": T.transport.playback }, pause, step, speed.el),
-      h("span", { class: "nw-divider", "aria-hidden": "true" }),
+      { class: "nw-transport", role: "toolbar", "aria-label": T.transport.interact },
+      playback,
+      playbackDivider,
       h("div", { class: "nw-transport-group", role: "group", "aria-label": T.transport.interact }, tools.el),
       h("span", { class: "nw-divider", "aria-hidden": "true" }),
       reset,
@@ -59,6 +62,9 @@ export function createTransport(ctx: Ctx, host: HTMLElement): Part {
         pause.setAttribute("data-tip", `${label}  Space`);
         step.disabled = !paused;
         speed.set(timeScale);
+        const plain = !paused && timeScale === 1;
+        playback.toggleAttribute("data-lab-only", plain);
+        playbackDivider.toggleAttribute("data-lab-only", plain);
       }
       tools.set(s.tool);
     },

@@ -1,7 +1,7 @@
 /** Dev page for the UI: the real stage and the real 奶蛙 (public/models/naiwa.glb) behind mountUI, with a mock store
  *  and commands (no simulation or motion). The frog is framed in the free middle from ui.onInsets, as the integration
  *  can do. Query: ?theme=light|dark ?mode=… ?tool=… ?loading=1 ?motion=state&msg=… ?custom ?paused ?slow ?gpu
- *  ?recording ?rec ?help ?toast ?sheet=motion|sim ?collapsed ?regions ?preview ?analyse ?analysed ?mine ?lang=zh|en. window.mock
+ *  ?lab ?recording ?rec ?help ?toast ?sheet=motion|sim ?collapsed ?regions ?preview ?analyse ?analysed ?mine ?lang=zh|en. window.mock
  *  for scripts. */
 import * as THREE from "three";
 import "../src/styles/index.css";
@@ -12,6 +12,8 @@ import { createStore, initialState, MATERIAL_PRESETS } from "../src/store";
 import { mountUI, type UICommands } from "../src/ui";
 
 const q = new URLSearchParams(location.search);
+// the lab opens with ?lab, so screenshots do not depend on what an earlier visit left in storage
+localStorage.setItem("naiwa.lab", q.has("lab") ? "open" : "closed");
 const store = createStore(initialState());
 const theme = q.get("theme");
 if (theme === "light" || theme === "dark") store.set({ theme });
@@ -95,6 +97,7 @@ const commands: UICommands = {
   rainBalls: () => console.log("[mock] rainBalls"),
   stepSim: () => console.log("[mock] stepSim"),
   editSimulator: (id) => ui.toast(`[mock] edit ${id}`, "info"),
+  editRetargeter: (id) => ui.toast(`[mock] edit ${id}`, "info"),
   startRecording() {
     chunks = [];
     recorder = new MediaRecorder(stage.canvas.captureStream(30), { mimeType: "video/webm" });
@@ -159,7 +162,7 @@ function analyse(to = 1) {
   const step = () => {
     const p = Math.min(to, (performance.now() - t0) / 2500);
     if (p < 1) {
-      store.set({ motion: { state: "loading", message: "正在分析舞蹈动作…", progress: p } });
+      store.set({ motion: { state: "loading", message: store.get().lang === "en" ? "Analysing the motion…" : "正在分析动作…", progress: p } });
       if (p < to) requestAnimationFrame(step);
     } else store.set({ motion: { state: "tracking", fps: 30 }, canSaveDance: true });
   };
@@ -219,6 +222,32 @@ store.set({
   ],
 });
 if (gpu) store.set({ simulator: { id: "gpu-mpm", settings: {} } });
+store.set({
+  retargeters: [
+    {
+      id: "retarget-default",
+      name: { zh: "约束优化（默认）", en: "Constrained optimisation (default)" },
+      device: "cpu",
+      summary: { zh: "逐帧求解姿态：四肢不入肚子，脚踩地面", en: "Solves each pose: limbs stay out of the belly, feet stay planted" },
+      parameters: [
+        { key: "smoothing", label: { zh: "平滑", en: "Smoothing" }, kind: "number", min: 0, max: 1, step: 0.01, default: 0.5, help: { zh: "关键点的时间滤波", en: "Temporal filtering of the landmarks" } },
+        { key: "footLock", label: { zh: "锁脚", en: "Foot lock" }, kind: "boolean", default: true },
+        { key: "iterations", label: { zh: "迭代次数", en: "Iterations" }, kind: "number", min: 1, max: 50, step: 1, default: 12 },
+      ],
+      unavailable: null,
+      origin: "builtin",
+    },
+    {
+      id: "retarget-direct",
+      name: { zh: "直接旋转复制", en: "Direct rotation copy" },
+      device: "cpu",
+      summary: { zh: "把人的关节旋转直接套到奶蛙骨骼上，最快但会穿模", en: "Copies the person's joint rotations onto 奶蛙; fastest, but limbs can pass through" },
+      parameters: [],
+      unavailable: null,
+      origin: "builtin",
+    },
+  ],
+});
 setInterval(() => {
   const big = store.get().simulator.id === "gpu-mpm";
   store.set({
@@ -311,7 +340,15 @@ if (q.has("analysed")) {
   store.set({ mode: "video" });
   fakeFile();
   sampleVideo();
-  store.set({ motion: { state: "tracking", fps: 30 }, canSaveDance: true });
+  store.set({
+    motion: {
+      state: "tracking",
+      fps: 30,
+      // what a retargeter may report (proposed MotionStatus.metrics)
+      ...{ metrics: [{ label: { zh: "求解", en: "Solve" }, value: "0.8 ms" }, { label: { zh: "残差", en: "Residual" }, value: "0.012 m" }, { label: { zh: "脚滑", en: "Foot slide" }, value: "0.4 cm" }] },
+    },
+    canSaveDance: true,
+  });
 }
 
 Object.assign(window, { mock: { store, ui, commands, stage, character } });

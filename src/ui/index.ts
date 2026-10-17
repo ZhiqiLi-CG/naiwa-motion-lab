@@ -12,7 +12,7 @@
 import type { AppState, DanceInfo, MaterialPreset, UIHandles } from "../contracts";
 import { setLang, type Lang } from "../i18n";
 import type { Store } from "../store";
-import { copy } from "./copy";
+import { LAB_KEY, copy } from "./copy";
 import type { Ctx, Part, ToastKind, UICommands } from "./ctx";
 import { h, icon } from "./dom";
 import { resolveTheme } from "./format";
@@ -62,10 +62,19 @@ interface View {
   dispose(): void;
 }
 
+function readLab(): boolean {
+  try {
+    return localStorage.getItem(LAB_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+
 export function mountUI(root: HTMLElement, store: Store, commands: UICommands, opts: UIOptions): MountedUI {
   root.classList.add("nw-ui");
   root.dataset.sheet = "closed";
   root.dataset.tab = "motion";
+  root.dataset.lab = readLab() ? "open" : "closed";
 
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
   const theme = () => resolveTheme(store.get().theme, dark.matches);
@@ -94,6 +103,18 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
     openHelp: () => view?.openHelp(),
     setSheet(open) {
       root.dataset.sheet = (open ?? root.dataset.sheet !== "open") ? "open" : "closed";
+      view?.sheetChanged();
+    },
+    setLab(open) {
+      const next = open ?? root.dataset.lab !== "open";
+      root.dataset.lab = next ? "open" : "closed";
+      try {
+        localStorage.setItem(LAB_KEY, next ? "open" : "closed");
+      } catch {
+        // storage blocked (private window): the choice lasts for this visit only
+      }
+      if (!next && root.dataset.tab === "sim") root.dataset.tab = "motion";
+      for (const b of root.querySelectorAll("[data-lab-toggle]")) b.setAttribute("aria-pressed", String(next));
       view?.sheetChanged();
     },
     dialogOpen: () => view?.dialogs.isOpen() ?? false,
@@ -129,6 +150,7 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
         icon("chevronDown", "nw-icon nw-tab-chevron"),
       ),
     );
+    tabs[1]!.setAttribute("data-lab-only", "");
     const head = h("div", { class: "nw-sheet-head" }, h("div", { class: "nw-tabs", role: "group", "aria-label": T.sheetToggle }, ...tabs));
     sheet.append(head);
 
@@ -138,13 +160,14 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
     const parts: Part[] = [
       createTopbar(ctx, layer, theme),
       createTransport(ctx, head),
-      createReadouts(head),
+      createReadouts(head, true),
       createMotionPanel(ctx, sheet, layer, preview, opts.dances),
       createSimulationPanel(ctx, sheet),
       createRecordingSheet(ctx, dialogs),
       createLoading(overlays),
     ];
-    head.prepend(head.querySelector(".nw-transport")!);
+    // phone order: the bar, the readouts, then the tabs
+    head.append(head.querySelector(".nw-tabs")!);
     const disposeDrop = createDropTarget(ctx, overlays);
     const insets = watchInsets(root, (i) => insetListeners.forEach((cb) => cb(i)));
     const sheetChanged = () => {

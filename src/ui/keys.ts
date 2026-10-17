@@ -25,10 +25,11 @@ export function bindKeys(ctx: Ctx, theme: () => "light" | "dark"): () => void {
     const speed = SPEEDS.indexOf(pb.timeScale);
     const source = SOURCES.find((x) => x.key === k);
     const tool = TOOLS.find((x) => x.key === k);
-    if (k === " ") store.set({ playback: { ...pb, paused: !pb.paused } });
-    else if (k === ".") {
+    const lab = ctx.root.dataset.lab === "open";
+    if (k === " " && (lab || pb.paused)) store.set({ playback: { ...pb, paused: !pb.paused } });
+    else if (k === "." && lab) {
       if (pb.paused) commands.stepSim();
-    } else if (k === "[" || k === "]") {
+    } else if ((k === "[" || k === "]") && lab) {
       const i = Math.min(SPEEDS.length - 1, Math.max(0, (speed < 0 ? SPEEDS.length - 1 : speed) + (k === "]" ? 1 : -1)));
       store.set({ playback: { ...pb, timeScale: SPEEDS[i]! } });
     } else if (source) store.set({ mode: source.id });
@@ -39,7 +40,7 @@ export function bindKeys(ctx: Ctx, theme: () => "light" | "dark"): () => void {
       else commands.startRecording();
     } else if (k === "M") store.set({ mirror: !s.mirror });
     else if (k === "T") store.set({ theme: theme() === "dark" ? "light" : "dark" });
-    else if (k === "L") store.set({ lang: s.lang === "zh" ? "en" : "zh" });
+    else if (k === "L") ctx.setLab();
     else if (k === "?") ctx.openHelp();
     else return;
     e.preventDefault();

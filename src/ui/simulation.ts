@@ -2,13 +2,14 @@
  *  (softness, damping, gravity, volume, upright recovery), and material by region with a body map that marks the
  *  region being adjusted. */
 import type { AppState, FleshRegion, PhysicsParams } from "../contracts";
+import { tr } from "../i18n";
 import { KNOBS, REGION_GROUPS, copy, presetName, type RegionGroupDef } from "./copy";
 import { changed, type Ctx, type Part } from "./ctx";
 import { append, h, icon } from "./dom";
-import { matchingPreset } from "./format";
+import { formatCount, formatMs, matchingPreset } from "./format";
 import { knob } from "./knob";
 import { panel, section } from "./panel";
-import { createSimulatorSection } from "./simulator";
+import { createPluginSection, type PluginMetric } from "./plugins";
 
 type GroupId = RegionGroupDef["id"];
 
@@ -46,8 +47,33 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
   const { store, presets } = ctx;
   const T = copy();
   const { el, body } = panel(ctx, "sim", "sliders", T.sim.title, T.sim.sub);
+  el.setAttribute("data-lab-only", "");
 
-  const simulator = createSimulatorSection(ctx);
+  const simulator = createPluginSection(ctx, {
+    id: "sim",
+    title: T.sim.simulator,
+    list: (s) => s.simulators,
+    chosen: (s) => s.simulator,
+    choose: (simulator) => store.set({ simulator }),
+    edit: ctx.commands.editSimulator,
+    metrics: (s) => [
+      [T.readouts.step, `${formatMs(s.stats.stepMs)} ms`],
+      [T.readouts.particles, formatCount(s.stats.particles)],
+      [T.readouts.cells, formatCount(s.stats.cells)],
+    ],
+    metricsSource: (s) => s.stats,
+  });
+  // the retargeter's own readouts, when it reports them (proposed MotionStatus.metrics)
+  const retargeter = createPluginSection(ctx, {
+    id: "retarget",
+    title: T.sim.retargeter,
+    list: (s) => s.retargeters,
+    chosen: (s) => s.retargeter,
+    choose: (retargeter) => store.set({ retargeter }),
+    edit: ctx.commands.editRetargeter,
+    metrics: (s) => ((s.motion as { metrics?: PluginMetric[] }).metrics ?? []).map((m) => [tr(m.label), m.value]),
+    metricsSource: (s) => s.motion,
+  });
 
   /* ---- presets ---- */
   const chips = presets.map((p) =>
@@ -117,6 +143,7 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
 
   append(body, [
     simulator.el,
+    retargeter.el,
     section(T.sim.presets, h("div", { class: "nw-chips", role: "group", "aria-label": T.sim.presets }, ...chips, modified)),
     section(T.sim.global, ...knobs.map((x) => x.k.row)),
     section(
@@ -132,6 +159,7 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
   return {
     update(s: AppState, prev) {
       simulator.update(s, prev);
+      retargeter.update(s, prev);
       if (!changed(s, prev, (x) => x.params)) return;
       for (const { d, k } of knobs) k.show(d.toView(s.params[d.param]), 0);
       const rs = s.params.regionSoftness;

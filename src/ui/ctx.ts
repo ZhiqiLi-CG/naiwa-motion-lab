@@ -5,14 +5,15 @@ import type { Store } from "../store";
 export type RecordLayout = AppState["recordLayout"];
 
 /** Commands the UI offers beyond AppCommands (proposed for the contract); each control is left out without its command:
- *  the camera start/stop (the webcam opens only when asked) and the "Edit code" entry of the simulator selector
- *  (opens the in-page simulator code editor, src/labcode/ mountCodeLab, on that simulator). */
+ *  the camera start/stop (the webcam opens only when asked) and the "Edit code" entries of the simulator and the
+ *  motion-transfer selectors (open the in-page code editor, src/labcode/ mountCodeLab, on that plugin). */
 export interface CameraCommands {
   startCamera(): void;
   stopCamera(): void;
 }
 export interface LabCommands {
   editSimulator(id: string): void;
+  editRetargeter(id: string): void;
 }
 export type UICommands = AppCommands & Partial<CameraCommands & LabCommands>;
 
@@ -27,6 +28,8 @@ export interface Ctx {
   openHelp(): void;
   /** Phone bottom sheet open/closed (toggles when open is omitted). */
   setSheet(open?: boolean): void;
+  /** The lab (simulator, parameters, playback, readouts) shown or hidden (toggles when open is omitted). */
+  setLab(open?: boolean): void;
   /** The top dialog, if any (keyboard shortcuts pause while one is open). */
   dialogOpen(): boolean;
   closeDialog(): void;

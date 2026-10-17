@@ -21,15 +21,21 @@ export function createTopbar(ctx: Ctx, host: HTMLElement, theme: () => "light" |
   // 中/EN: both shown, the current one marked; a click switches
   const lang = h(
     "button",
-    { class: "nw-lang", "data-lang-toggle": true, "aria-label": T.langSwitch, "data-tip": `${T.langSwitch}  L`, onclick: () => store.set({ lang: store.get().lang === "zh" ? "en" : "zh" }) },
+    { class: "nw-lang", "data-lang-toggle": true, "aria-label": T.langSwitch, "data-tip": T.langSwitch, onclick: () => store.set({ lang: store.get().lang === "zh" ? "en" : "zh" }) },
     h("span", { "data-l": "zh" }, "中"),
     h("span", { "data-l": "en" }, "EN"),
   );
   const sound = h("button", { class: "nw-icon-btn", onclick: () => store.set({ sound: !store.get().sound }) });
   const themeBtn = h("button", { class: "nw-icon-btn", onclick: () => store.set({ theme: theme() === "dark" ? "light" : "dark" }) });
   const help = h("button", { class: "nw-icon-btn", "aria-label": T.help, "data-tip": `${T.help}  ?`, onclick: () => ctx.openHelp() }, icon("help"));
+  const lab = h(
+    "button",
+    { class: "nw-btn nw-btn--sm nw-lab", "data-lab-toggle": true, "aria-pressed": String(ctx.root.dataset.lab === "open"), "data-tip": `${T.labHint}  L`, onclick: () => ctx.setLab() },
+    icon("flask"),
+    h("span", {}, T.lab),
+  );
 
-  const center = h("div", { class: "nw-topbar-center" });
+  const center = h("div", { class: "nw-topbar-center", "data-lab-only": true });
   const readouts = createReadouts(center);
   host.append(
     h(
@@ -42,7 +48,7 @@ export function createTopbar(ctx: Ctx, host: HTMLElement, theme: () => "light" |
         h("span", { class: "nw-brand-text" }, h("span", { class: "nw-brand-name" }, T.brand), h("span", { class: "nw-brand-sub" }, T.brandSub)),
       ),
       center,
-      h("div", { class: "nw-actions" }, rec, h("span", { class: "nw-divider", "aria-hidden": "true" }), lang, sound, themeBtn, help),
+      h("div", { class: "nw-actions" }, lab, rec, h("span", { class: "nw-divider", "aria-hidden": "true" }), lang, sound, themeBtn, help),
     ),
   );
 

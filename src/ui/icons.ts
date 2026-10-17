@@ -46,6 +46,7 @@ export const ICONS = {
   motion: `<circle cx="12" cy="5" r="2"/><path d="M12 7.5v6M8 10.5l4-2 4 2M9.5 20l2.5-6.5 2.5 6.5"/><path d="M4 16.5h3M17 16.5h3"/>`,
   pause: `<rect x="7" y="5.5" width="3.5" height="13" rx="1" class="nw-icon-fill"/><rect x="13.5" y="5.5" width="3.5" height="13" rx="1" class="nw-icon-fill"/>`,
   step: `<path d="M7 6.5v11l8-5.5z" class="nw-icon-fill"/><path d="M17.5 6.5v11"/>`,
+  flask: `<path d="M9.5 3.5h5M10.5 3.5v6L5 18.5a1.5 1.5 0 0 0 1.3 2h11.4a1.5 1.5 0 0 0 1.3-2l-5.5-9v-6"/><path d="M7.5 14.5h9"/>`,
   code: `<path d="M8.5 7.5L4 12l4.5 4.5M15.5 7.5L20 12l-4.5 4.5M13.5 5l-3 14"/>`,
   // a parameter that rebuilds the simulation when changed
   rebuild: `<path d="M19 12a7 7 0 1 1-2-4.9"/><path d="M19 4.5V8h-3.5"/>`,

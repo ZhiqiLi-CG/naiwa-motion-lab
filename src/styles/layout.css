@@ -13,6 +13,11 @@
   display: none;
 }
 
+/* The lab (simulator, parameters, playback, readouts) stays out of the way until it is opened */
+.nw-ui:not([data-lab="open"]) [data-lab-only] {
+  display: none !important;
+}
+
 /* ---------- Top bar ---------- */
 .nw-topbar {
   position: fixed;
@@ -68,6 +73,27 @@
   align-items: center;
   gap: var(--space-1);
   flex: none;
+  margin-left: auto;
+}
+
+.nw-lab {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.nw-lab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nw-lab[aria-pressed="true"] {
+  background: var(--bg-selected);
+  border-color: var(--accent-edge);
+  color: var(--text-primary);
+}
+
+.nw-lab[aria-pressed="true"] .nw-icon {
+  color: var(--accent-text);
 }
 
 .nw-actions .nw-divider {
@@ -420,10 +446,14 @@
   color: var(--info-text);
 }
 
+/* the live cost of the chosen simulator */
 .nw-cost {
-  min-width: 0;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
 }
@@ -657,7 +687,8 @@
   transition: width var(--duration-slow) var(--ease-out);
 }
 
-.nw-file {
+.nw-file,
+.nw-preview-slot:empty {
   display: none;
 }
 
@@ -1139,6 +1170,10 @@
     gap: 0;
   }
 
+  .nw-lab span {
+    display: none;
+  }
+
   /* recording: the dot alone until it runs, then the time */
   .nw-btn--rec:not(.is-live) .nw-rec-text {
     display: none;
@@ -1230,7 +1265,8 @@
 
   .nw-tabs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
     margin: 0 calc(-1 * var(--space-3));
     border-top: 1px solid var(--border-subtle);
   }
