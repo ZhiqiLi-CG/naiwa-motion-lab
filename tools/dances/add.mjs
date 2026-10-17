@@ -136,10 +136,10 @@ const out = {
   id,
   name: dance.name,
   nameEn: dance.nameEn,
-  fps,
-  duration: +(track.frames.length / fps).toFixed(3),
+  fps: +track.fps.toFixed(4),
+  duration: +(track.loopLength / fps).toFixed(3),
   aspect: +(width / height).toFixed(4),
-  source: { ...src, start: +startSec.toFixed(2), end: +(startSec + track.frames.length / fps).toFixed(2) },
+  source: { ...src, start: +startSec.toFixed(2), end: +(startSec + track.loopLength / fps).toFixed(2) },
   frames: track.frames,
 };
 validate(out);
@@ -161,7 +161,7 @@ function validate(t) {
     if (!cond) throw new Error(`invalid track: ${msg}`);
   };
   ok(t.name && t.nameEn, "a Chinese and an English name");
-  ok(t.frames.length >= 2 && Math.abs(t.duration * t.fps - t.frames.length) < 0.01, "duration and fps vs frames");
+  ok(t.frames.length >= 2 && Math.abs(t.duration * t.fps - t.frames.length) < 0.02, "duration and fps vs frames");
   for (const f of t.frames)
     for (const kind of ["world", "image"]) {
       ok(f[kind].length === 33, `${kind} has 33 landmarks`);
@@ -179,7 +179,7 @@ function validate(t) {
 // 5. The cut as small test videos (webcam/upload tests) and the check renders.
 if (video) {
   const loopArgs = ["-ss", String(t0 + (first + track.loopStart - 0.5) / fps), "-i", video.srcFile,
-    "-frames:v", String(track.frames.length)];
+    "-frames:v", String(track.loopLength)];
   const small = [dance.crop ? `crop=${dance.crop}` : null, "scale='min(640,iw*360/ih)':-2"].filter(Boolean).join(",");
   run("ffmpeg", ["-v", "error", "-y", ...loopArgs, "-vf", small, "-an", "-c:v", "libx264", "-crf", "20", "-pix_fmt",
     "yuv420p", path.join(dir, `${id}-small.mp4`)]);

@@ -5,5 +5,33 @@
     "nameEn": "Shaking Bear",
     "duration": 1.464,
     "file": "dances/gouxiong.json"
+  },
+  {
+    "id": "naenae",
+    "name": "Nae Nae",
+    "nameEn": "Nae Nae",
+    "duration": 1.502,
+    "file": "dances/naenae.json"
+  },
+  {
+    "id": "kemusan",
+    "name": "科目三",
+    "nameEn": "Subject Three",
+    "duration": 3.683,
+    "file": "dances/kemusan.json"
+  },
+  {
+    "id": "shimmy",
+    "name": "肚皮舞",
+    "nameEn": "Belly Shimmy",
+    "duration": 1.233,
+    "file": "dances/shimmy.json"
+  },
+  {
+    "id": "penguin",
+    "name": "企鹅踢腿",
+    "nameEn": "Penguin Kicks",
+    "duration": 2.803,
+    "file": "dances/penguin.json"
   }
 ]

@@ -48,11 +48,12 @@ export async function renderChecks({ session, dir, id, fps, reference, track, lo
   const tmp = path.join(dir, "panels");
   const a = track.loopStart;
   const len = track.frames.length;
+  const inLoop = (i) => i >= a && i < a + track.loopLength;
 
   // The whole window: the reference run (thin) and the cleaned track (thick), the loop marked.
   const win = track.window.world.map((_, i) => ({
     frame: i,
-    label: `${i}${i >= a && i < a + len ? ` loop ${i - a}` : ""}`,
+    label: `${i}${inLoop(i) ? ` loop ${i - a}` : ""}`,
     layers: [
       { image: fwd[i]?.image, world: fwd[i]?.world, style: STYLE.raw },
       { image: unpack(track.window.image, i), world: unpack(track.window.world, i), style: STYLE.clean },
@@ -65,9 +66,9 @@ export async function renderChecks({ session, dir, id, fps, reference, track, lo
   const loop = [];
   for (let k = 0; k < 3; k++)
     for (let i = 0; i < len; i++)
-      loop.push({ frame: a + i, label: `loop ${i}/${len}`, layers: [{ ...track.frames[i], style: STYLE.clean }] });
+      loop.push({ frame: track.sourceFrame[i], label: `loop ${i}/${len}`, layers: [{ ...track.frames[i], style: STYLE.clean }] });
   await panels(session, tmp, loop, view);
-  encode(tmp, fps, path.join(dir, `${id}-loop.mp4`));
+  encode(tmp, track.fps, path.join(dir, `${id}-loop.mp4`));
 
   // Contact sheet of the loop (3 columns, ~18 frames), and the seam: the last 4 and first 4 frames in playing order.
   const cols = 3;

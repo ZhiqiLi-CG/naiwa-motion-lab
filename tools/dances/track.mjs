@@ -164,12 +164,27 @@ const round = (x, d) => {
   return r === 0 ? 0 : r; // no "-0"
 };
 
+/** Resample a closed loop to n frames (linear between neighbours, wrapping around). */
+function resampleLoop(seq, n) {
+  const len = seq.length;
+  return Array.from({ length: n }, (_, i) => {
+    const t = (i * len) / n;
+    const k = Math.floor(t);
+    const w = t - k;
+    const a = seq[k % len];
+    const b = seq[(k + 1) % len];
+    return a.map((x, c) => x + (b[c] - x) * w);
+  });
+}
+
 /**
  * raw: { mode: (null | { world: number[33][4], image: number[33][4] })[] } over the same frames.
  * loop: [minSeconds, maxSeconds] to search, or loopAt: [startFrame, endFrame) inside the window to use as is.
- * Returns the finished frames, the loop start (frame in the window), and the cleaned window for the checks.
+ * Sources faster than maxFps are worked at their own rate and the finished loop is resampled (smaller files).
+ * Returns the finished frames and their fps, the loop in window frames, the window frame each output frame came
+ * from, and the cleaned window for the checks.
  */
-export function buildTrack({ raw, fps, aspect, loop, loopAt, smoothing = { half: 3, order: 3 }, log = () => {} }) {
+export function buildTrack({ raw, fps, aspect, loop, loopAt, maxFps = 30, smoothSeconds = 0.1, log = () => {} }) {
   const runs = Object.values(raw);
   const count = runs[0].length;
   const missing = runs.map((r) => r.filter((x) => !x).length);
@@ -180,7 +195,7 @@ export function buildTrack({ raw, fps, aspect, loop, loopAt, smoothing = { half:
     const spikes = despikeAndFill(clean[kind], kind, aspect);
     if (spikes) log(`${kind}: ${spikes} spike samples replaced`);
   }
-  const coeffs = sgCoefficients(smoothing.half, smoothing.order);
+  const coeffs = sgCoefficients(Math.max(2, Math.round(smoothSeconds * fps)), 3);
   const window = Object.fromEntries(KINDS.map((k) => [k, smooth(clean[k], coeffs, false)]));
 
   const pick = loopAt
@@ -192,16 +207,18 @@ export function buildTrack({ raw, fps, aspect, loop, loopAt, smoothing = { half:
     log(`loop frames ${a}..${b} (${(len / fps).toFixed(2)} s): pose rms ${pick.pose.toFixed(3)}, vel rms ${pick.vel.toFixed(3)}`);
 
   // Seam: frame b is where frame a should be; spread that difference linearly over the loop so it closes exactly.
+  const n = fps > maxFps ? Math.round((len * maxFps) / fps) : len;
   const looped = {};
   for (const kind of KINDS) {
     const seq = clean[kind];
     const res = seq[b].map((x, c) => (c % 4 === 3 ? 0 : x - seq[a][c]));
     const cut = [];
     for (let i = 0; i < len; i++) cut.push(seq[a + i].map((x, c) => x - (res[c] * i) / len));
-    looped[kind] = smooth(cut, coeffs, true);
+    const smoothed = smooth(cut, coeffs, true);
+    looped[kind] = n === len ? smoothed : resampleLoop(smoothed, n);
   }
   const frames = [];
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < n; i++) {
     const f = {};
     for (const kind of KINDS) {
       const s = looped[kind][i];
@@ -214,5 +231,7 @@ export function buildTrack({ raw, fps, aspect, loop, loopAt, smoothing = { half:
     }
     frames.push({ world: f.world, image: f.image });
   }
-  return { frames, loopStart: a, loopEnd: b, window };
+  const outFps = n === len ? fps : (n * fps) / len;
+  const sourceFrame = frames.map((_, i) => a + Math.round((i * len) / n));
+  return { frames, fps: outFps, loopStart: a, loopLength: len, sourceFrame, window };
 }

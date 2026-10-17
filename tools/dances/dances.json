@@ -6,8 +6,83 @@
     "video": "bUBPJP7N9XA",
     "url": "https://www.youtube.com/watch?v=bUBPJP7N9XA",
     "title": "狗熊哆嗦毛 原教學片（明文军，山东鼓子秧歌训练教材）",
-    "window": [551.3, 554.75],
-    "loop": [1.2, 2.4],
+    "window": [
+      551.3,
+      554.75
+    ],
+    "loop": [
+      1.2,
+      2.4
+    ],
     "note": "明文军's own demonstration in the 狗熊哆嗦毛 chapter: one wide tripod shot, plain stage, from standing into the alternating lunges with the arms flung overhead and out; the shot cuts to a close-up at 554.8."
+  },
+  {
+    "id": "naenae",
+    "name": "Nae Nae",
+    "nameEn": "Nae Nae",
+    "video": "XnygVOcCJ0g",
+    "url": "https://www.youtube.com/watch?v=XnygVOcCJ0g",
+    "title": "Classical Dance Instructor Teaches You to Whip & Naenae (Big Time Maca)",
+    "window": [
+      51.6,
+      54.05
+    ],
+    "loop": [
+      1.5,
+      2.4
+    ],
+    "note": "A big-bellied dance teacher's Nae Nae after the whip: right arm straight up, knees bent, the whole body rocking to one side and back with the other arm swinging out (one rock ~2.2 s). Vertical phone video on a tripod, whole body in view; a caption sits above his head."
+  },
+  {
+    "id": "kemusan",
+    "name": "科目三",
+    "nameEn": "Subject Three",
+    "video": "_smrVcEMGzI",
+    "url": "https://www.youtube.com/watch?v=_smrVcEMGzI",
+    "title": "科目三 - 專業舞蹈教學｜看完馬上學會！#Pinhe品赫（Junhe赫哥）",
+    "crop": "600:1080:660:0",
+    "window": [
+      20.8,
+      27.2
+    ],
+    "loop": [
+      3.0,
+      4.2
+    ],
+    "note": "The signature move of the dance showcase: knees twisting on bent legs while both arms swing down to one side, back to the chest, then to the other side (~3.5 s for left and right). A vertical phone clip in the middle of a 16:9 frame with captions on the side panels; the crop keeps the clip only."
+  },
+  {
+    "id": "shimmy",
+    "name": "肚皮舞",
+    "nameEn": "Belly Shimmy",
+    "video": "Qn1uodvpzf0",
+    "url": "https://www.youtube.com/watch?v=Qn1uodvpzf0",
+    "title": "How to Do a Choo-Choo Shimmy | Belly Dancing (Howcast)",
+    "window": [
+      41.0,
+      50.8
+    ],
+    "loop": [
+      1.2,
+      3.0
+    ],
+    "note": "A fast hip shimmy in place with the arms held out at hip height, knees alternating; plain white studio, one dancer, static camera (a close-up ends at 40.95)."
+  },
+  {
+    "id": "penguin",
+    "name": "企鹅踢腿",
+    "nameEn": "Penguin Kicks",
+    "video": "2B1g-ShnSdk",
+    "url": "https://www.youtube.com/watch?v=2B1g-ShnSdk",
+    "title": "Hip Hop Basics - \"Penguin\" (kreaktiv-zentrum)",
+    "window": [
+      38.6,
+      49.6
+    ],
+    "loop": [
+      1.4,
+      3.2
+    ],
+    "note": "Alternating straight-leg heel kicks out to the side with the toes up and the arms hanging loose, one kick every ~0.75 s; one dancer in an empty studio, static wide-angle camera, 640x480."
   }
 ]
