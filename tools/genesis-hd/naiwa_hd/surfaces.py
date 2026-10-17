@@ -40,8 +40,14 @@ def _affine_texture(colors: np.ndarray):
     if np.abs(colors - mean - coords @ axes).max() > MAX_COLOR_RESIDUAL:
         return None
     lo = coords.min(axis=0)
-    span = np.maximum(coords.max(axis=0) - lo, 1e-6)
+    span = coords.max(axis=0) - lo
+    # An axis the colours do not vary along (a two-colour blend, a plain colour) gets a constant coordinate: noise
+    # there would make the renderers' mipmapping see huge UV gradients and blur in the whole texture.
+    flat = span < 1e-3
+    lo[flat], span[flat] = 0.0, 1.0
     ab = (coords - lo) / span
+    ab[:, flat] = 0.5
+    span[flat] = 0.0
     n = TEXTURE_SIZE
     uvs = (0.5 + (n - 1) * ab) / n
     a = np.arange(n) / (n - 1)

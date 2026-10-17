@@ -34,6 +34,7 @@ class Settings:
     pcg_iterations: int
     spp: int
     settle: float  # seconds the flesh rests on the first pose before the clip starts
+    soft: bool  # False: every cell rides on its bone (the frog as a skinned mesh, for comparison)
 
 
 class Rigid:
@@ -117,7 +118,7 @@ class HDScene:
             region = {"body": "belly", "arm": "arm", "leg": "leg"}[part.name.split("_")[0]]
             rel = region_soft.get(region, fl.DEFAULT_REGION_SOFTNESS[region])
             self.flesh.append(
-                fl.FleshBody(self.scene, part, character.rig, bones, driven=False, softness=p0["softness"] * rel,
+                fl.FleshBody(self.scene, part, character.rig, bones, driven=not settings.soft, softness=p0["softness"] * rel,
                              layer=layer, cache=cache / "tex", srgb_textures=srgb)
             )
         for key in ("Eyes", "MouthInside"):
@@ -208,8 +209,8 @@ class HDScene:
         body = self.c.parts["Body"]
         body_mesh = trimesh.Trimesh(body.positions, body.faces, process=True)  # welded: closed
         for body in self.flesh:
-            limb = not body.driven and body.part.name != "body"
-            body.setup(self.region_soft, face_driven=body.part.name == "body", hidden=body_mesh if limb else None)
+            limb = body.part.name.startswith(("arm", "leg"))
+            body.setup(self.region_soft, face_driven=body.part.name == "body" or body.driven, hidden=body_mesh if limb else None)
         for rigid in [c for _, _, c in self.colliders] + self.balls:
             rigid.make_heavy()
 

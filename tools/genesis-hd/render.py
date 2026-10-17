@@ -58,6 +58,7 @@ def main(argv=None) -> int:
     ap.add_argument("--audio", type=pathlib.Path, help="the browser clip whose sound track to put under the video")
     ap.add_argument("--frames", type=pathlib.Path, help="also save every frame as PNG here")
     ap.add_argument("--no-watermark", action="store_true")
+    ap.add_argument("--no-soft", action="store_true", help="hold all flesh to the bones (a skinned frog, to compare)")
     ap.add_argument("--cache", type=pathlib.Path, default=REPO / ".cache/genesis-hd/build")
     args = ap.parse_args(argv)
 
@@ -81,6 +82,7 @@ def main(argv=None) -> int:
     settings = scene.Settings(
         renderer=renderer, width=width, height=height, fps=args.fps, steps_per_frame=args.steps_per_frame,
         substeps=args.substeps, pcg_iterations=args.pcg_iterations, spp=args.spp, settle=0.6,
+        soft=not args.no_soft,
     )
     args.cache.mkdir(parents=True, exist_ok=True)
     hd = scene.HDScene(character, session, settings, args.cache)
