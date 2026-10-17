@@ -74,6 +74,36 @@ class Mesh:
         for k in STATES: self.shapes[k].append(tuple(shapes[k] if shapes else p))
         return i
     def face(self, *indices): self.f.append(tuple(indices))
+    def split_long_edges(self, limit):
+        """Add support in stretched throat/pole cells, preserving every morph."""
+        def average(indices):
+            count=len(indices)
+            weights={}
+            for i in indices:
+                for name,value in self.weights[i].items(): weights[name]=weights.get(name,0)+value/count
+            return self.vertex(sum((Vector(self.v[i]) for i in indices),Vector())/count,
+                sum((Vector(self.colors[i]) for i in indices),Vector())/count,weights,
+                sum(self.soft[i] for i in indices)/count,
+                {state:sum((Vector(self.shapes[state][i]) for i in indices),Vector())/count for state in STATES})
+        for _ in range(3):
+            midpoints={}
+            for face in self.f:
+                for a,b in zip(face,face[1:]+face[:1]):
+                    edge=tuple(sorted((a,b)))
+                    if edge not in midpoints and (Vector(self.v[a])-Vector(self.v[b])).length>limit:
+                        midpoints[edge]=average(edge)
+            if not midpoints: break
+            faces=[]
+            for face in self.f:
+                if not any(tuple(sorted((a,b))) in midpoints for a,b in zip(face,face[1:]+face[:1])):
+                    faces.append(face);continue
+                perimeter=[]
+                for a,b in zip(face,face[1:]+face[:1]):
+                    perimeter.append(a)
+                    if tuple(sorted((a,b))) in midpoints: perimeter.append(midpoints[tuple(sorted((a,b)))])
+                center=average(face)
+                faces.extend((center,a,b) for a,b in zip(perimeter,perimeter[1:]+perimeter[:1]))
+            self.f=faces
     def finish(self, mat):
         mesh = bpy.data.meshes.new(self.name)
         mesh.from_pydata(self.v, [], self.f); mesh.update()
@@ -126,7 +156,7 @@ def ellipsoid(mesh, center, scale, color, weights, segments=24, rings=12, transf
 PROFILE = [(.245,0,.0,.005),(.265,.100,.090,.005),(.300,.175,.155,.006),
            (.365,.230,.208,.008),(.445,.255,.232,.004),(.525,.246,.226,.006),
            (.605,.228,.198,.012),(.685,.200,.162,.012),(.755,.153,.128,.002),
-           (.805,.127,.106,-.030),(.855,.116,.108,-.073),(.875,.115,.108,-.078),(.905,.111,.089,-.077),
+           (.805,.127,.106,-.030),(.855,.116,.096,-.062),(.905,.111,.089,-.077),
            (.950,.096,.075,-.080),(.980,.064,.050,-.080),(1.,0,0,-.080)]
 
 def profile(z):
@@ -155,7 +185,7 @@ def body_weights(z):
         if a<=z<=b:
             w=smooth((z-a)/(b-a)); return {an:1-w,bn:w}
 
-MOUTH = {'Basis':(.060,.0025,.875),'blink':(.060,.0025,.875),
+MOUTH = {'Basis':(.063,.0025,.853),'blink':(.063,.0025,.853),
          'laugh':(.071,.073,.818),'tongue':(.070,.048,.838),'surprise':(.029,.031,.842)}
 MC=.835; MH=.045; MW=.087
 def lip_point(u,v,state):
@@ -167,11 +197,13 @@ body=Mesh('Body')
 N=80
 zs=[.253,.263,.278,.295,.315,.338,.361,.385,.409,.433,.457,.481,.505,.529,.553,.577,.601,.625,.649,.673,.697,.721,.743,.761,.775,.790,.805,.820,.835,.850,.865,.880,.895,.910,.925,.940,.955,.967,.978,.987,.994,.998,.9995]
 lo=zs.index(.790); hi=zs.index(.880); half=8; hole={}; ids={}
+ring_counts={.253:24,.263:48,.278:64,.955:64,.967:56,.978:48,.987:32,.994:24,.998:16,.9995:8}
 for iz,z in enumerate(zs):
     rx,ry,cy=profile(z)
-    for j in range(-N//2,N//2):
+    count=ring_counts.get(z,N)
+    for j in range(-count//2,count//2):
         if lo<iz<hi and -half<j<half: continue
-        theta=j*2*PI/N; x=rx*math.sin(theta); y=cy-ry*math.cos(theta)
+        theta=j*2*PI/count; x=rx*math.sin(theta); y=cy-ry*math.cos(theta)
         u=j/half; v=(z-MC)/MH; r=max(abs(u),abs(v)); radial=math.hypot(u,v)
         shapes={}
         if abs(j)<=16 and .72<z<.955 and r>=.999:
@@ -193,12 +225,29 @@ for iz,z in enumerate(zs):
         patch=math.sqrt((x/.214)**2+((z-.545)/.170)**2)
         blend=(1-smooth((patch-.95)/.10))*smooth((math.cos(theta)-.25)/.28)
         color=mix(YELLOW,CREAM,blend)
-        softness=.2+.8*blend
+        # Flesh stiffness changes gradually across the abdomen, independently
+        # of the sharper painted cream edge. The back and face stay firm.
+        softness=.2+.8*math.exp(-((x/.24)**4+((z-.53)/.24)**4))*smooth(math.cos(theta)/.65)
         idx=body.vertex(p,color,body_weights(p[2]),softness,shapes)
         ids[iz,j]=idx
         if (lo<=iz<=hi and abs(j)==half) or (iz in (lo,hi) and abs(j)<=half):
             hole[idx]=(math.atan2(v,u),u/r,v/r)
 for iz in range(len(zs)-1):
+    count=ring_counts.get(zs[iz],N); next_count=ring_counts.get(zs[iz+1],N)
+    if count!=next_count:
+        # Zipper unequal pole rings without giant fans or near-zero pole edges.
+        a=[ids[iz,j] for j in range(-count//2,count//2)]
+        b=[ids[iz+1,j] for j in range(-next_count//2,next_count//2)]
+        i=j=0
+        while i<count or j<next_count:
+            ta=(i+1)/count;tb=(j+1)/next_count
+            if abs(ta-tb)<1e-9:
+                body.face(a[i%count],a[(i+1)%count],b[(j+1)%next_count],b[j%next_count]);i+=1;j+=1
+            elif ta<tb:
+                body.face(a[i%count],a[(i+1)%count],b[j%next_count]);i+=1
+            else:
+                body.face(a[i%count],b[(j+1)%next_count],b[j%next_count]);j+=1
+        continue
     for j in range(-N//2,N//2):
         jj=(j+1+N//2)%N-N//2
         keys=[(iz,j),(iz,jj),(iz+1,jj),(iz+1,j)]
@@ -207,7 +256,8 @@ for iz in range(len(zs)-1):
             body.face(*(ids[k] for k in keys))
 for iz,z in [(0,.245),(len(zs)-1,1.)]:
     c=body.vertex((0,profile(z)[2],z),YELLOW,body_weights(z))
-    for j in range(-N//2,N//2): body.face(c,ids[iz,j],ids[iz,(j+1+N//2)%N-N//2])
+    count=ring_counts.get(zs[iz],N)
+    for j in range(-count//2,count//2): body.face(c,ids[iz,j],ids[iz,(j+1+count//2)%count-count//2])
 
 boundary=sorted(hole,key=lambda i:hole[i][0]); prev=boundary
 for r,depth in [(.97,.001),(.92,.007),(.82,.026),(.60,.057),(.31,.077)]:
@@ -227,6 +277,7 @@ for r,depth in [(.97,.001),(.92,.007),(.82,.026),(.60,.057),(.31,.077)]:
 shapes={s:lip_point(0,0,s)+Vector((0,.083,0)) for s in STATES}
 c=body.vertex(shapes['Basis'],DARK,{'head':1},.15,shapes)
 for i in range(len(prev)): body.face(prev[i],prev[(i+1)%len(prev)],c)
+body.split_long_edges(.032)
 bodyob=body.finish(skinmat)
 
 def paint_body():
@@ -286,7 +337,7 @@ paint_body()
 # under blink/laugh, with a dark curved seam: the pupils do not remain floating in space.
 eyes=Mesh('Eyes')
 for side in (-1,1):
-    ec=Vector((side*.058,front_y(.058,.938)+.006,.938))
+    ec=Vector((side*.070,front_y(.070,.925)+.006,.925))
     eye_rotation=Matrix.Rotation(side*math.radians(30),3,'Z')
     for part,scale,color in [('rim',(.029,.015,.032),YELLOW),('white',(.0265,.014,.029),WHITE),('iris',(.0245,.009,.027),IRIS),('pupil',(.0125,.005,.016),PUPIL)]:
         cen=ec.copy(); cen.y += {'rim':0,'white':-.003,'iris':-.014,'pupil':-.022}[part]
@@ -426,6 +477,39 @@ def fuse_limb_surface(ob, source, target_triangles):
     tri_count=sum(len(p.vertices)-2 for p in ob.data.polygons)
     dec=ob.modifiers.new('Web topology budget','DECIMATE');dec.ratio=min(1,target_triangles/tri_count)
     bpy.ops.object.modifier_apply(modifier=dec.name)
+    # Decimation otherwise leaves very large flat shoulder/hip cap triangles.
+    # Split only long edges: this preserves the union surface and finger detail,
+    # while giving the volume-cell sampler comparable spacing at buried roots.
+    bm=bmesh.new();bm.from_mesh(ob.data)
+    bmesh.ops.triangulate(bm,faces=list(bm.faces))
+    for _ in range(5):
+        long_edges=[e for e in bm.edges if e.calc_length()>(
+            .012 if ob.name=='Arms' and min(v.co.z for v in e.verts)<.41 else
+            (.016 if ob.name=='Legs' and min(v.co.z for v in e.verts)<.11 else .023))]
+        if not long_edges: break
+        mid={frozenset(edge.verts):bm.verts.new((edge.verts[0].co+edge.verts[1].co)/2) for edge in long_edges}
+        for face in list(bm.faces):
+            v=list(face.verts)
+            splits=[mid.get(frozenset((v[i],v[(i+1)%3]))) for i in range(3)]
+            count=sum(p is not None for p in splits)
+            if not count: continue
+            if count==1:
+                i=next(i for i,p in enumerate(splits) if p is not None)
+                a,b,c=v[i],v[(i+1)%3],v[(i+2)%3];m=splits[i]
+                split_faces=[(a,m,c),(m,b,c)]
+            elif count==2:
+                i=next(i for i in range(3) if splits[i] is not None and splits[(i-1)%3] is not None)
+                a,b,c=v[i],v[(i+1)%3],v[(i+2)%3];m,n=splits[i],splits[(i-1)%3]
+                split_faces=[(a,m,n),(m,b,c),(m,c,n)]
+            else:
+                a,b,c=v;m,n,p=splits
+                split_faces=[(a,m,p),(m,b,n),(p,n,c),(m,n,p)]
+            bm.faces.remove(face)
+            for triangle in split_faces: bm.faces.new(triangle)
+        for edge in list(bm.edges):
+            if not edge.link_faces: bm.edges.remove(edge)
+    bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces))
+    bm.to_mesh(ob.data);bm.free();ob.data.update()
     ob.vertex_groups.clear()
     groups={n:ob.vertex_groups.new(name=n) for n in sorted({n for w in source.weights for n in w})}
     for attr in list(ob.data.color_attributes): ob.data.color_attributes.remove(attr)
@@ -516,15 +600,16 @@ bpy.ops.object.mode_set(mode='OBJECT')
 objects=[bodyob,eyesob,armsob,legsob,mouthob]
 for ob in objects:
     mod=ob.modifiers.new('Skeleton','ARMATURE');mod.object=rig
+    mod.use_deform_preserve_volume=True
     ob.parent=rig
     ob['character']='奶蛙'
 rig['units']='meters';rig['forward']='+Z in glTF';rig['version']='reference reconstruction 1'
 
 def refine_joint_weights():
-    """Keep curvature radius larger than the sleeve at acute bends, using glTF LBS.
+    """Broad, smooth joint support without changing the preferred limb silhouette.
 
-    A broad support span and a slightly narrower inner joint prevent fold-through;
-    this does not depend on Blender-only dual-quaternion or corrective drivers.
+    glTF stores ordinary weights; the playground can use them for dual-quaternion
+    targets or physical attachment. Both LBS and DQ are checked independently.
     """
     for ob in (armsob,legsob):
         original_weights=[{ob.vertex_groups[g.group].name:g.weight for g in v.groups} for v in ob.data.vertices]
@@ -544,9 +629,10 @@ def refine_joint_weights():
                 w=smooth((t-.25)/1.5)
                 ob.vertex_groups[first].add([v.index],mass*(1-w),'REPLACE')
                 ob.vertex_groups[second].add([v.index],mass*w,'REPLACE')
-                if mass>.9:
-                    radius=1-.25*math.exp(-((t-1)/.43)**2)
-                    if ob==legsob: radius*=1+.32*math.exp(-((t-.43)/.30)**2)
+                if ob==armsob and mass>.9:
+                    # A modest anatomical elbow waist clears inner skin folds
+                    # in both DQ and LBS, without thinning the biceps or legs.
+                    radius=1-.16*math.exp(-((t-1)/.43)**2)
                     v.co=center+(p-center)*radius
                 if ob==armsob and t<.28:
                     # The sleeve emerges from a chest-anchored buried root.
@@ -569,6 +655,58 @@ def refine_joint_weights():
         for v in vertices: v.co.z-=bottom*(1-smooth((v.co.z-.04)/.06))
 refine_joint_weights()
 
+def finish_flesh_binding(ob):
+    """Remove transfer discontinuities and paint stiffness on every limb shell."""
+    neighbors=[set() for _ in ob.data.vertices]
+    for edge in ob.data.edges:
+        a,b=edge.vertices;neighbors[a].add(b);neighbors[b].add(a)
+    weights=[{g.group:g.weight for g in v.groups if g.weight>1e-6} for v in ob.data.vertices]
+    for _ in range(2):
+        updated=[]
+        for i,own in enumerate(weights):
+            blended={g:w*.7 for g,w in own.items()}
+            for j in neighbors[i]:
+                for g,w in weights[j].items(): blended[g]=blended.get(g,0)+w*.3/len(neighbors[i])
+            kept=sorted(((g,w) for g,w in blended.items() if w>=1e-4),key=lambda item:-item[1])[:4]
+            total=sum(w for _,w in kept)
+            updated.append({g:w/total for g,w in kept})
+        weights=updated
+    if ob==armsob:
+        # The thumb web needs finer falloff than nearest-triangle transfer.
+        # Distance-weighted diffusion respects the short finger edges and leaves
+        # the upper arm/elbow field alone; each pass retains four influences.
+        kernels=[]
+        for i,adjacent in enumerate(neighbors):
+            kernel={j:1/max((ob.data.vertices[i].co-ob.data.vertices[j].co).length,.0005)**2 for j in adjacent}
+            total=sum(kernel.values());kernels.append({j:value/total for j,value in kernel.items()})
+        for _ in range(24):
+            updated=[]
+            for i,own in enumerate(weights):
+                gain=.45*smooth((.44-ob.data.vertices[i].co.z)/.04)
+                blended={g:w*(1-gain) for g,w in own.items()}
+                for j,kernel in kernels[i].items():
+                    for g,w in weights[j].items(): blended[g]=blended.get(g,0)+w*gain*kernel
+                kept=sorted(((g,w) for g,w in blended.items() if w>=1e-6),key=lambda item:-item[1])[:4]
+                total=sum(w for _,w in kept);updated.append({g:w/total for g,w in kept})
+            weights=updated
+    else:
+        # Re-evaluate the ankle field analytically after mesh sampling. Uniform
+        # graph smoothing can otherwise bias weights at unequal-valence toes.
+        for vertex in ob.data.vertices:
+            if vertex.co.z<.10:
+                side='L' if vertex.co.x>0 else 'R'
+                foot=1-smooth((vertex.co.z-.030)/.070)
+                weights[vertex.index]={ob.vertex_groups['shin_'+side].index:1-foot,
+                                       ob.vertex_groups['foot_'+side].index:foot}
+    attr=ob.data.attributes.get('_softness') or ob.data.attributes.new('_softness','FLOAT','POINT')
+    for v,w in zip(ob.data.vertices,weights):
+        for group in ob.vertex_groups: group.remove([v.index])
+        for g,value in w.items(): ob.vertex_groups[g].add([v.index],value,'REPLACE')
+        firm=sum(value for g,value in w.items() if ob.vertex_groups[g].name.startswith(('hand_','thumb_','index_','middle_','ring_','foot_')))
+        attr.data[v.index].value=.5-.35*firm
+    ob.data.update()
+for ob in (armsob,legsob): finish_flesh_binding(ob)
+
 def validate():
     bm=bmesh.new();bm.from_mesh(bodyob.data)
     bad=[e.index for e in bm.edges if not e.is_manifold]
@@ -587,8 +725,35 @@ def validate():
     assert volume>0, 'Body winding is inverted'
     assert 3000<=tris['Body']<=12000, tris
     assert sum(tris.values())<=40000, tris
+    flesh={}
+    for ob,expected in ((bodyob,1),(armsob,2),(legsob,2)):
+        bm=bmesh.new();bm.from_mesh(ob.data)
+        assert all(e.is_manifold for e in bm.edges),f'{ob.name}: open/nonmanifold edge'
+        seen=set();parts=[]
+        for vertex in bm.verts:
+            if vertex in seen: continue
+            stack=[vertex];seen.add(vertex);part=[]
+            while stack:
+                current=stack.pop();part.append(current)
+                for edge in current.link_edges:
+                    other=edge.other_vert(current)
+                    if other not in seen: seen.add(other);stack.append(other)
+            parts.append(part)
+        assert len(parts)==expected,f'{ob.name}: expected {expected} closed shells, got {len(parts)}'
+        assert bm.calc_volume(signed=True)>0,f'{ob.name}: inverted surface'
+        bm.free()
+        softness=ob.data.attributes.get('_softness')
+        assert softness and softness.domain=='POINT' and len(softness.data)==len(ob.data.vertices),f'{ob.name}: missing per-vertex softness'
+        values=[value.value for value in softness.data]
+        assert all(math.isfinite(v) and 0<=v<=1 for v in values)
+        for vertex in ob.data.vertices:
+            weights=[g.weight for g in vertex.groups if g.weight>1e-6]
+            assert len(weights)<=4 and abs(sum(weights)-1)<1e-5,f'{ob.name}: invalid binding at vertex {vertex.index}'
+        flesh[ob.name]={'closed_shells':len(parts),'softness_range':[min(values),max(values)],
+                        'max_influences':max(sum(g.weight>1e-6 for g in v.groups) for v in ob.data.vertices)}
     report={'triangles':tris,'total_triangles':sum(tris.values()),'body_components':components,
             'body_nonmanifold_edges':len(bad),'body_volume_m3':volume,'bones':list(bones),
+            'flesh':flesh,'evidence_skinning':'dual quaternion; ordinary normalized glTF weights exported',
             'shape_keys':{o.name:list(o.data.shape_keys.key_blocks.keys()) if o.data.shape_keys else [] for o in objects}}
     (HERE/'validation.json').write_text(json.dumps(report,indent=2)+'\n')
     print('NAIWA VALIDATION',json.dumps(report))
@@ -628,10 +793,22 @@ def aim_bone(name,target,roll=0):
     bpy.context.view_layer.update()
 
 def skin_point(p):
-    result=Vector()
+    result=Vector();transforms=[]
     for name,weight in body_weights(p.z).items():
-        result+=(rig.pose.bones[name].matrix @ rig.data.bones[name].matrix_local.inverted() @ p)*weight
-    return result
+        matrix=rig.pose.bones[name].matrix @ rig.data.bones[name].matrix_local.inverted()
+        result+=(matrix @ p)*weight;transforms.append((matrix,weight))
+    if not bodyob.modifiers['Skeleton'].use_deform_preserve_volume: return result
+    real=[0.]*4;dual=[0.]*4;reference=None
+    for matrix,weight in transforms:
+        q=matrix.to_quaternion();t=matrix.translation
+        d=Quaternion((0.,t.x,t.y,t.z)) @ q
+        if reference is None: reference=q.copy()
+        sign=1 if reference.dot(q)>=0 else -1
+        for i in range(4): real[i]+=weight*sign*q[i];dual[i]+=.5*weight*sign*d[i]
+    norm=math.sqrt(sum(x*x for x in real))
+    q=Quaternion(tuple(x/norm for x in real));d=Quaternion(tuple(x/norm for x in dual))
+    translation=d @ q.conjugated()
+    return q @ p+2*Vector(tuple(translation)[1:])
 
 def solve_arm(side,target,pole):
     bpy.context.view_layer.update()
@@ -682,9 +859,9 @@ def pose(name):
         expression('tongue')
         rig.pose.bones['head'].rotation_quaternion=Quaternion((0,0,1),math.radians(-6))
         for side_sign,side in [(1,'L'),(-1,'R')]:
-            wrist_height=.85+(.025 if side=='R' else -.015)
-            solve_arm(side,Vector((side_sign*.24,-.075,wrist_height)),Vector((side_sign*.40,.01,.58)))
-            aim_bone('hand_'+side,(side_sign*.24,-.075,wrist_height+.11))
+            wrist_height=.89+(.020 if side=='R' else -.015)
+            solve_arm(side,Vector((side_sign*.28,-.075,wrist_height)),Vector((side_sign*.40,.01,.62)))
+            aim_bone('hand_'+side,(side_sign*.28,-.075,wrist_height+.11))
             for fn,spread,length in [('index',.020,.082),('middle',-.020,.088)]:
                 pb=rig.pose.bones[fn+'_'+side]
                 aim_bone(fn+'_'+side,pb.head+Vector((side_sign*spread,-.003,length)))
@@ -766,7 +943,7 @@ def render_all():
     scene,cam=studio()
     shots=[('01_holding_side','holding',(4.5,-2.2,1.3),(0,-.015,.50),1.18),
            ('02_belly_laugh','laugh',(1.9,-3.7,1.4),(0,-.08,.57),.98),
-           ('03_peace_tongue','peace',(0,-4,1.0),(0,-.025,.76),.65),
+           ('03_peace_tongue','peace',(0,-4,1.0),(0,-.025,.75),.78),
            ('04_rest_front','rest',(0,-4,1.15),(0,0,.51),1.16),
            ('05_rest_back','rest',(0,4,1.4),(0,0,.51),1.16),
            ('06_rest_profile','rest',(-4,0,1.3),(0,0,.51),1.16),

@@ -10,6 +10,23 @@
   "all_skinned": true,
   "neutral_morph_defaults": true,
   "three_softness_attribute": true,
+  "flesh_softness": {
+    "Body": {
+      "count": 4007,
+      "min": 0.15000000596046448,
+      "max": 1
+    },
+    "Arms": {
+      "count": 5518,
+      "min": 0.15000000596046448,
+      "max": 0.5
+    },
+    "Legs": {
+      "count": 4071,
+      "min": 0.15000000596046448,
+      "max": 0.5
+    }
+  },
   "embedded_texture_loaded": true,
   "animation_clips": 0,
   "height_m": 1.0000000132016538,
@@ -62,5 +79,5 @@
       "blink"
     ]
   },
-  "glb_sha256": "424760c94384a73e25fff097aa27e9b1c365caa1cfe5025607f0bd95787f8826"
+  "glb_sha256": "cd25b43f96d48cc4855656de6b5ae45c46eaa3e6dc40be21e6050a97413979ab"
 }

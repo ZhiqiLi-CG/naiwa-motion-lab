@@ -1,15 +1,15 @@
 {
   "triangles": {
-    "Body": 7172,
+    "Body": 7864,
     "Eyes": 4816,
-    "Arms": 7000,
-    "Legs": 5000,
+    "Arms": 11028,
+    "Legs": 8134,
     "MouthInside": 3608
   },
-  "total_triangles": 27596,
+  "total_triangles": 35450,
   "body_components": 1,
   "body_nonmanifold_edges": 0,
-  "body_volume_m3": 0.07496455043508982,
+  "body_volume_m3": 0.0746544070704723,
   "bones": [
     "root",
     "hips",
@@ -37,6 +37,33 @@
     "shin_R",
     "foot_R"
   ],
+  "flesh": {
+    "Body": {
+      "closed_shells": 1,
+      "softness_range": [
+        0.15000000596046448,
+        1.0
+      ],
+      "max_influences": 2
+    },
+    "Arms": {
+      "closed_shells": 2,
+      "softness_range": [
+        0.15000000596046448,
+        0.5
+      ],
+      "max_influences": 4
+    },
+    "Legs": {
+      "closed_shells": 2,
+      "softness_range": [
+        0.15000000596046448,
+        0.5
+      ],
+      "max_influences": 3
+    }
+  },
+  "evidence_skinning": "dual quaternion; ordinary normalized glTF weights exported",
   "shape_keys": {
     "Body": [
       "Basis",

@@ -25,7 +25,14 @@ try {
   if(JSON.stringify(names)!==JSON.stringify(expected)) throw Error('Mesh names: '+names);
   if(meshes.some(m=>!m.isSkinnedMesh)) throw Error('Unskinned mesh');
   if(meshes.some(m=>(m.morphTargetInfluences||[]).some(w=>Math.abs(w)>1e-8))) throw Error('Nonzero default morph weights');
-  if(!body.geometry.getAttribute('_softness')) throw Error('Missing Three _softness');
+  const fleshSoftness={};
+  for(const name of ['Body','Arms','Legs']) {
+    const attr=gltf.scene.getObjectByName(name).geometry.getAttribute('_softness');
+    if(!attr || attr.count!==gltf.scene.getObjectByName(name).geometry.attributes.position.count) throw Error('Missing Three _softness on '+name);
+    const values=Array.from(attr.array);
+    if(values.some(v=>!Number.isFinite(v)||v<0||v>1)) throw Error('Invalid softness on '+name);
+    fleshSoftness[name]={count:attr.count,min:Math.min(...values),max:Math.max(...values)};
+  }
   if(!body.material.map?.image) throw Error('Embedded belly texture failed to load');
   const box=new THREE.Box3().setFromObject(gltf.scene);
   const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
@@ -37,7 +44,7 @@ try {
   const camera=new THREE.PerspectiveCamera(32,720/800,.01,20);camera.position.set(1.15,.85,2.05);camera.lookAt(0,.51,0);
   renderer.render(scene,camera);
   window.result={passed:true,mesh_names:names,all_skinned:true,neutral_morph_defaults:true,three_softness_attribute:true,
-    embedded_texture_loaded:true,animation_clips:gltf.animations.length,
+    flesh_softness:fleshSoftness,embedded_texture_loaded:true,animation_clips:gltf.animations.length,
     height_m:box.max.y-box.min.y,floor_y:box.min.y,
     skeleton_bones:body.skeleton.bones.map(b=>b.name),
     morph_names:Object.fromEntries(meshes.map(m=>[m.name,Object.keys(m.morphTargetDictionary||{})]))};

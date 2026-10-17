@@ -32,6 +32,8 @@ from mathutils.bvhtree import BVHTree
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 MESH_NAMES = {'Body', 'Eyes', 'Arms', 'Legs', 'MouthInside'}
+FLESH_NAMES = {'Body', 'Arms', 'Legs'}
+EXPECTED_COMPONENTS = {'Body': 1, 'Arms': 2, 'Legs': 2}
 MORPH_NAMES = {'laugh', 'tongue', 'surprise', 'blink'}
 INTERMEDIATE_FACTORS = (.25, .5, .75)
 PARENTS = {'hips': 'root', 'spine': 'hips', 'chest': 'spine', 'head': 'chest'}
@@ -160,6 +162,61 @@ def coplanar_overlaps(vertices, triangles, welded_triangles):
     return pairs
 
 
+def distribution(values):
+    values = sorted(values)
+    if not values:
+        return {'count': 0}
+    def percentile(p):
+        offset = (len(values)-1)*p
+        lo = int(offset)
+        hi = min(lo+1, len(values)-1)
+        return values[lo]*(hi-offset)+values[hi]*(offset-lo) if lo != hi else values[lo]
+    mean = sum(values)/len(values)
+    return {'count': len(values), 'min': values[0], 'p01': percentile(.01), 'p05': percentile(.05),
+            'p50': percentile(.5), 'p95': percentile(.95), 'p99': percentile(.99), 'max': values[-1],
+            'mean': mean, 'coefficient_of_variation': (sum((v-mean)**2 for v in values)/len(values))**.5/mean if mean else 0}
+
+
+def skin_weight_report(vertices, triangles, weights):
+    """Rest-surface smoothness diagnostics; gradients are per metre, not per edge."""
+    representatives = {}
+    ids = []
+    seam_disagreement = 0.
+    for i, p in enumerate(vertices):
+        key = tuple(round(float(c), 6) for c in p)
+        if key in representatives:
+            other = representatives[key]
+            seam_disagreement = max(seam_disagreement, sum(abs(weights[i].get(n, 0)-weights[other].get(n, 0))
+                                                            for n in weights[i].keys() | weights[other].keys()))
+        else:
+            representatives[key] = i
+        ids.append(representatives[key])
+    edges = {tuple(sorted((ids[a], ids[b]))) for tri in triangles
+             for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])) if ids[a] != ids[b]}
+    jumps, gradients, ranked_edges = [], [], []
+    regional = defaultdict(list)
+    for a, b in edges:
+        delta = sum(abs(weights[a].get(n, 0)-weights[b].get(n, 0)) for n in weights[a].keys() | weights[b].keys())
+        length = (vertices[a]-vertices[b]).length
+        jumps.append(delta)
+        gradients.append(delta/max(length, 1e-12))
+        ranked_edges.append((delta/max(length, 1e-12), delta, length, a, b))
+        merged = Counter(weights[a]); merged.update(weights[b])
+        dominant = merged.most_common(1)[0][0] if merged else 'unweighted'
+        regional[dominant].append(delta/max(length, 1e-12))
+    return {'adjacent_weight_l1_delta': distribution(jumps),
+            'adjacent_weight_l1_delta_per_m': distribution(gradients),
+            'gradient_per_m_by_dominant_bone': {n: distribution(v) for n, v in sorted(regional.items())},
+            'largest_gradient_edges': [
+                {'gradient_per_m': gradient, 'weight_l1_delta': delta, 'edge_length_m': length,
+                 'vertex_indices': [a, b], 'bind_positions_gltf_y_up': [list(vertices[a]), list(vertices[b])],
+                 'bind_positions_blender_z_up': [[vertices[i].x, -vertices[i].z, vertices[i].y] for i in (a, b)],
+                 'weights': [weights[a], weights[b]]}
+                for gradient, delta, length, a, b in sorted(ranked_edges, reverse=True)[:8]],
+            'maximum_seam_weight_l1_disagreement': seam_disagreement,
+            'interpretation': 'L1 weight change lies in 0..2; dividing by edge length measures the spatial attachment transition. These are diagnostics, not arbitrary universal pass thresholds.'}
+
+
 def surface_report(vertices, triangles, intersections=True, vertex_groups=None):
     """Geometric topology remains valid despite glTF UV/normal seam duplication."""
     weld = {}
@@ -176,13 +233,19 @@ def surface_report(vertices, triangles, intersections=True, vertex_groups=None):
     neighbors = defaultdict(set)
     vertex_links = defaultdict(lambda: defaultdict(set))
     areas = []
+    qualities = []
+    triangle_volumes = []
     volume = 0.
     degenerate = []
     for index, (a, b, c) in enumerate(tris):
         va, vb, vc = (welded[i] for i in (a, b, c))
         area = (vb-va).cross(vc-va).length*.5
         areas.append(area)
-        volume += va.dot(vb.cross(vc))/6
+        triangle_volume = va.dot(vb.cross(vc))/6
+        volume += triangle_volume
+        triangle_volumes.append(triangle_volume)
+        edge_square_sum = (vb-va).length_squared+(vc-vb).length_squared+(va-vc).length_squared
+        qualities.append(4*math.sqrt(3)*area/max(edge_square_sum, 1e-30))
         if len({a, b, c}) < 3 or area < 1e-12:
             degenerate.append(index)
         for u, v in ((a, b), (b, c), (c, a)):
@@ -194,16 +257,21 @@ def surface_report(vertices, triangles, intersections=True, vertex_groups=None):
             vertex_links[center][v].add(u)
     remaining = set(range(len(welded)))
     components = []
+    component_ids = {}
     while remaining:
         todo = [remaining.pop()]
         count = 0
         while todo:
             u = todo.pop()
+            component_ids[u] = len(components)
             count += 1
             fresh = neighbors[u] & remaining
             remaining.difference_update(fresh)
             todo.extend(fresh)
         components.append(count)
+    component_volumes = [0.]*len(components)
+    for tri, value in zip(tris, triangle_volumes):
+        component_volumes[component_ids[tri[0]]] += value
     bad_vertices = []
     for vertex, link in vertex_links.items():
         todo = [next(iter(link))]
@@ -235,12 +303,16 @@ def surface_report(vertices, triangles, intersections=True, vertex_groups=None):
         'raw_vertices': len(vertices), 'welded_vertices': len(welded),
         'seam_duplicates': len(vertices)-len(welded), 'triangles': len(tris),
         'components': len(components), 'component_vertices': sorted(components, reverse=True),
+        'component_signed_volumes_m3': component_volumes,
         'boundary_edges': sum(len(v) == 1 for v in edges.values()),
         'nonmanifold_edges': sum(len(v) != 2 for v in edges.values()),
         'nonmanifold_vertices': len(bad_vertices),
         'inconsistent_winding_edges': sum(len(v) == 2 and sum(v) != 0 for v in edges.values()),
         'euler_characteristic': len(welded)-len(edges)+len(tris),
         'signed_volume_m3': volume, 'minimum_triangle_area_m2': min(areas, default=0),
+        'edge_length_m': distribution([(welded[a]-welded[b]).length for a, b in edges]),
+        'triangle_area_m2': distribution(areas),
+        'triangle_shape_quality': distribution(qualities),
         'degenerate_triangles': len(degenerate), 'degenerate_samples': degenerate[:10],
         'self_intersection_pairs': len(pairs) if intersections else None,
         'coplanar_overlap_pairs': len(coplanar_pairs) if intersections else None,
@@ -323,6 +395,7 @@ def audit_export(glb, report, check):
         check(all(math.isfinite(w) and abs(w) < 1e-7 for w in node_defaults),
               f'{name} node.weights must all default to zero; got {node_defaults}')
         positions, triangles, states = [], [], {key: [] for key in morphs}
+        skin_weights = []
         softness = []
         normal_lengths = []
         maximum_weight_error = 0.
@@ -349,26 +422,30 @@ def audit_export(glb, report, check):
                 influences = [(int(j), w) for js, ws in zip(joint_sets, weight_sets) for j, w in zip(js[vertex], ws[vertex])]
                 maximum_weight_error = max(maximum_weight_error, abs(sum(w for _, w in influences)-1))
                 maximum_influences = max(maximum_influences, sum(w > 1e-6 for _, w in influences))
+                vertex_weights = Counter()
                 for joint, weight in influences:
                     invalid_joint_indices += not 0 <= joint < len(joints)
                     negative_weights += weight < 0
                     if 0 <= joint < len(joints):
                         bone_weight_sums[nodes[joints[joint]]['name']] += weight
+                        if weight > 0:
+                            vertex_weights[nodes[joints[joint]]['name']] += weight
+                skin_weights.append(dict(vertex_weights))
             targets = primitive.get('targets', [])
             check(len(targets) == len(morphs), f'{name} morph labels/count mismatch')
             for key, target in zip(morphs, targets):
                 deltas = glb.accessor(target['POSITION']) if 'POSITION' in target else [(0, 0, 0)]*len(local_positions)
                 states[key].extend(world @ (p+Vector(d)) for p, d in zip(local_positions, deltas))
-            if name == 'Body':
+            if name in FLESH_NAMES:
                 # glTF custom semantics are uppercased by the Blender exporter;
                 # GLTFLoader lowercases them back to geometry attribute _softness.
                 softness_key = next((k for k in attrs if k.lower() == '_softness'), None)
-                check(softness_key is not None, 'Body is missing custom _softness attribute')
+                check(softness_key is not None, f'{name} is missing custom _softness attribute')
                 if softness_key:
                     a = doc['accessors'][attrs[softness_key]]
-                    check(a['componentType'] == 5126 and a['type'] == 'SCALAR', '_softness is not float scalar')
+                    check(a['componentType'] == 5126 and a['type'] == 'SCALAR', f'{name} _softness is not float scalar')
                     softness.extend(v[0] for v in glb.accessor(attrs[softness_key]))
-                    report['softness_export_semantic'] = softness_key
+                    report.setdefault('softness_export_semantics', {})[name] = softness_key
         check(all(math.isfinite(c) for v in positions for c in v), f'{name} contains nonfinite positions')
         check(maximum_weight_error < 1e-5, f'{name} weights do not sum to 1: max error {maximum_weight_error:g}')
         check(maximum_influences <= 4, f'{name} exceeds four exported skin influences')
@@ -379,16 +456,20 @@ def audit_export(glb, report, check):
               'maximum_weight_sum_error': maximum_weight_error, 'maximum_skin_influences': maximum_influences,
               'mean_bone_weights': {n: s/len(positions) for n, s in bone_weight_sums.items() if s > 0},
               'bounds': [[min(v[k] for v in positions) for k in range(3)], [max(v[k] for v in positions) for k in range(3)]]}
-        if name == 'Body':
-            check(3000 <= len(triangles) <= 12000, f'Body triangle count outside 3k-12k: {len(triangles)}')
+        if name in FLESH_NAMES:
+            if name == 'Body':
+                check(3000 <= len(triangles) <= 12000, f'Body triangle count outside 3k-12k: {len(triangles)}')
+            mr['skin_weight_continuity'] = skin_weight_report(positions, triangles, skin_weights)
+            check(mr['skin_weight_continuity']['maximum_seam_weight_l1_disagreement'] < 1e-5,
+                  f'{name} has inconsistent skin weights across exported geometric seams')
             mr['states'] = {}
             for state, vertices in {'Basis': positions, **states}.items():
                 sr = surface_report(vertices, triangles)
                 mr['states'][state] = sr
                 for metric in ('nonmanifold_edges', 'nonmanifold_vertices', 'inconsistent_winding_edges', 'degenerate_triangles', 'self_intersection_pairs'):
-                    check(sr[metric] == 0, f'Body {state}: {metric}={sr[metric]}')
-                check(sr['components'] == 1, f'Body {state} has {sr["components"]} connected components')
-                check(sr['signed_volume_m3'] > 0, f'Body {state} has inward overall winding')
+                    check(sr[metric] == 0, f'{name} {state}: {metric}={sr[metric]}')
+                check(sr['components'] == EXPECTED_COMPONENTS[name], f'{name} {state} has {sr["components"]} connected components; expected {EXPECTED_COMPONENTS[name]}')
+                check(all(v > 0 for v in sr['component_signed_volumes_m3']), f'{name} {state} has inward component winding')
             mr['intermediate_morph_states'] = {}
             for state, target_positions in states.items():
                 for factor in INTERMEDIATE_FACTORS:
@@ -397,20 +478,31 @@ def audit_export(glb, report, check):
                     sr = surface_report(vertices, triangles)
                     mr['intermediate_morph_states'][label] = sr
                     for metric in ('nonmanifold_edges', 'nonmanifold_vertices', 'inconsistent_winding_edges', 'degenerate_triangles', 'self_intersection_pairs'):
-                        check(sr[metric] == 0, f'Body morph {label}: {metric}={sr[metric]}')
-                    check(sr['components'] == 1 and sr['signed_volume_m3'] > 0,
-                          f'Body morph {label}: surface collapsed or split')
-            report['intermediate_morph_sample_count'] = len(mr['intermediate_morph_states'])
+                        check(sr[metric] == 0, f'{name} morph {label}: {metric}={sr[metric]}')
+                    check(sr['components'] == EXPECTED_COMPONENTS[name] and all(v > 0 for v in sr['component_signed_volumes_m3']),
+                          f'{name} morph {label}: surface collapsed or split')
+            report['intermediate_morph_sample_count'] = report.get('intermediate_morph_sample_count', 0)+len(mr['intermediate_morph_states'])
             if softness:
                 mr['softness_range'] = [min(softness), max(softness)]
-                check(len(softness) == len(positions), '_softness count does not match positions')
-                check(min(softness) >= 0 and max(softness) <= 1, '_softness outside 0..1')
-                belly = [s for v, s in zip(positions, softness) if abs(v.x) < .10 and .40 < v.y < .58 and v.z > .15]
-                back = [s for v, s in zip(positions, softness) if .40 < v.y < .70 and v.z < -.10]
-                mr['mean_belly_softness'] = sum(belly)/len(belly) if belly else None
-                mr['mean_back_softness'] = sum(back)/len(back) if back else None
-                check(bool(belly) and sum(belly)/len(belly) > .85, 'Central belly _softness is not near 1')
-                check(bool(back) and .1 <= sum(back)/len(back) <= .3, 'Back _softness is not near .2')
+                check(len(softness) == len(positions), f'{name} _softness count does not match positions')
+                check(min(softness) >= 0 and max(softness) <= 1, f'{name} _softness outside 0..1')
+                if name == 'Body':
+                    belly = [s for v, s in zip(positions, softness) if abs(v.x) < .10 and .40 < v.y < .58 and v.z > .15]
+                    back = [s for v, s in zip(positions, softness) if .40 < v.y < .70 and v.z < -.10]
+                    mr['mean_belly_softness'] = sum(belly)/len(belly) if belly else None
+                    mr['mean_back_softness'] = sum(back)/len(back) if back else None
+                    check(bool(belly) and sum(belly)/len(belly) > .85, 'Central belly _softness is not near 1')
+                    check(bool(back) and .1 <= sum(back)/len(back) <= .3, 'Back _softness is not near .2')
+                else:
+                    proximal = ('upperarm_',) if name == 'Arms' else ('thigh_',)
+                    firm = ('hand_', 'thumb_', 'index_', 'middle_', 'ring_') if name == 'Arms' else ('foot_',)
+                    for label, prefixes in [('proximal', proximal), ('hands_or_feet', firm)]:
+                        samples = [s for w, s in zip(skin_weights, softness) if sum(v for n, v in w.items() if n.startswith(prefixes)) > .7]
+                        mr.setdefault('regional_softness', {})[label] = distribution(samples)
+                        if samples:
+                            average = sum(samples)/len(samples)
+                            check(.30 <= average <= .70 if label == 'proximal' else .05 <= average <= .30,
+                                  f'{name} {label} softness differs substantially from contract: {average:g}')
         meshes[name] = mr
         all_vertices.extend(positions)
     report['meshes'] = meshes
@@ -429,24 +521,29 @@ def audit_export(glb, report, check):
     report['embedded_images'] = [{'name': image.get('name'), 'mimeType': image.get('mimeType'), 'embedded': 'bufferView' in image} for image in doc.get('images', [])]
 
 
-def audit_authoring_and_stress(blend_path, builder_path, report, check):
+def audit_authoring_and_stress(blend_path, builder_path, report, check, endpoints_only=False):
     bpy.ops.wm.open_mainfile(filepath=str(blend_path))
     rig = bpy.data.objects['NaiwaRig']
     objects = [bpy.data.objects[name] for name in sorted(MESH_NAMES)]
+    body = bpy.data.objects['Body']
     report['authoring_default_morph_values'] = {
         ob.name: {key.name: key.value for key in ob.data.shape_keys.key_blocks}
         for ob in objects if ob.data.shape_keys}
     for name, keys in report['authoring_default_morph_values'].items():
         check(all(math.isfinite(value) and abs(value) < 1e-7 for value in keys.values()),
               f'Authoring {name} saved shape key values must all be zero; got {keys}')
-    body = bpy.data.objects['Body']
-    body.data.calc_loop_triangles()
-    source_triangles = [tuple(t.vertices) for t in body.data.loop_triangles]
-    source = surface_report([v.co.copy() for v in body.data.vertices], source_triangles)
-    report['authoring_body'] = source
-    check(source['raw_vertices'] == source['welded_vertices'], 'Authoring Body contains duplicated geometric vertices')
-    check(source['nonmanifold_edges'] == 0 and source['components'] == 1, 'Authoring Body is not a single watertight manifold')
-    # Parse only a tightly bounded subset of definitions; never run build/export.
+    report['authoring_flesh'] = {}
+    for name in sorted(FLESH_NAMES):
+        ob = bpy.data.objects[name]
+        ob.data.calc_loop_triangles()
+        triangles = [tuple(t.vertices) for t in ob.data.loop_triangles]
+        source = surface_report([v.co.copy() for v in ob.data.vertices], triangles)
+        report['authoring_flesh'][name] = source
+        check(source['raw_vertices'] == source['welded_vertices'], f'Authoring {name} contains duplicated geometric vertices')
+        check(source['nonmanifold_edges'] == 0 and source['nonmanifold_vertices'] == 0 and
+              source['components'] == EXPECTED_COMPONENTS[name], f'Authoring {name} is not the expected closed manifold shells')
+        check(all(v > 0 for v in source['component_signed_volumes_m3']), f'Authoring {name} has inward component winding')
+    report['authoring_body'] = report['authoring_flesh']['Body']
     tree = ast.parse(builder_path.read_text())
     function_names = {'clamp', 'smooth', 'profile', 'front_y', 'body_weights',
                       'reset', 'expression', 'aim_bone', 'skin_point', 'solve_arm', 'solve_leg', 'pose'}
@@ -454,9 +551,15 @@ def audit_authoring_and_stress(blend_path, builder_path, report, check):
     assignments = [node for node in tree.body if isinstance(node, ast.Assign) and
                    any(isinstance(t, ast.Name) and t.id in {'PROFILE', 'STATES', 'PI'} for t in node.targets)]
     context = {'bpy': bpy, 'math': math, 'Vector': Vector, 'Matrix': Matrix,
-               'Quaternion': Quaternion, 'rig': rig, 'objects': objects}
+               'Quaternion': Quaternion, 'rig': rig, 'objects': objects, 'bodyob': body}
     exec(compile(ast.Module(body=assignments+kept, type_ignores=[]), str(builder_path), 'exec'), context)
-    def evaluate_state(label):
+    modifiers = [(ob.name, modifier, modifier.use_deform_preserve_volume) for ob in objects
+                 for modifier in ob.modifiers if modifier.type == 'ARMATURE']
+    report['authoring_default_preserve_volume'] = {name: flag for name, _, flag in modifiers}
+    report['skinning_modes'] = {}
+    report['skinning_mode_note'] = 'LBS is the ordinary glTF skin behavior. DQ is Blender armature preserve-volume evaluation; glTF does not encode DQ, so the application must supply that target implementation.'
+
+    def evaluate_state(label, mode_failures, rest_volumes):
         graph = bpy.context.evaluated_depsgraph_get()
         entries = {}
         for name in ('Body', 'Arms', 'Legs'):
@@ -466,69 +569,86 @@ def audit_authoring_and_stress(blend_path, builder_path, report, check):
             mesh.calc_loop_triangles()
             triangles = [tuple(t.vertices) for t in mesh.loop_triangles]
             vertices = [evaluated.matrix_world @ v.co for v in mesh.vertices]
-            vertex_groups = [{ob.vertex_groups[g.group].name: g.weight for g in v.groups}
-                             for v in mesh.vertices]
+            vertex_groups = [{ob.vertex_groups[g.group].name: g.weight for g in v.groups} for v in mesh.vertices]
             sr = surface_report(vertices, triangles, vertex_groups=vertex_groups)
             entries[name] = sr
-            if name == 'Body':
-                for metric in ('nonmanifold_edges', 'nonmanifold_vertices', 'inconsistent_winding_edges', 'degenerate_triangles', 'self_intersection_pairs'):
-                    check(sr[metric] == 0, f'Pose {label} Body: {metric}={sr[metric]}')
-                check(sr['components'] == 1 and sr['signed_volume_m3'] > 0, f'Pose {label}: Body surface collapsed or split')
+            if name in rest_volumes:
+                sr['signed_volume_ratio_to_rest'] = sr['signed_volume_m3']/rest_volumes[name]
+            for metric in ('nonmanifold_edges', 'nonmanifold_vertices', 'inconsistent_winding_edges', 'degenerate_triangles', 'self_intersection_pairs'):
+                if sr[metric] != 0:
+                    mode_failures.append(f'{label} {name}: {metric}={sr[metric]}')
+            if sr['components'] != EXPECTED_COMPONENTS[name] or not all(v > 0 for v in sr['component_signed_volumes_m3']):
+                mode_failures.append(f'{label} {name}: components or signed volumes invalid')
             evaluated.to_mesh_clear()
         return entries
 
-    report['stress_poses'] = {}
-    report['intermediate_poses'] = {}
-    for pose_name in ('rest', 'holding', 'laugh', 'peace', 'deep_bend', 'arms_up', 'belly_cross', 'squat', 'leg_lift', 'hop', 'twist'):
-        context['pose'](pose_name)
-        if pose_name != 'rest':
-            check(any(pb.location.length > 1e-6 or abs(pb.rotation_quaternion.angle) > 1e-5
-                      for pb in rig.pose.bones), f'Pose {pose_name} did not move any bones')
-        entries = evaluate_state(pose_name)
-        report['stress_poses'][pose_name] = entries
-        print('POSE CHECK', pose_name, {n: {'intersections': r['self_intersection_pairs'], 'degenerate': r['degenerate_triangles']} for n, r in entries.items()}, flush=True)
-        if pose_name == 'rest':
-            continue
-        target_bones = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy(), pb.scale.copy())
-                        for pb in rig.pose.bones}
-        target_shapes = {(ob.name, key.name): key.value for ob in objects if ob.data.shape_keys
-                         for key in ob.data.shape_keys.key_blocks if key.name != 'Basis'}
-        for factor in INTERMEDIATE_FACTORS:
-            context['reset']()
-            for name, (location, rotation, scale) in target_bones.items():
-                pb = rig.pose.bones[name]
-                pb.location = location*factor
-                pb.rotation_quaternion = Quaternion().slerp(rotation, factor)
-                pb.scale = Vector((1, 1, 1)).lerp(scale, factor)
-            for (name, shape_name), value in target_shapes.items():
-                bpy.data.objects[name].data.shape_keys.key_blocks[shape_name].value = value*factor
-            bpy.context.view_layer.update()
-            label = f'{pose_name}@{factor:g}'
-            samples = evaluate_state(label)
-            report['intermediate_poses'][label] = samples
-            findings = {name: metrics['self_intersection_pairs'] for name, metrics in samples.items()
-                        if metrics['self_intersection_pairs'] or metrics['degenerate_triangles']}
-            if findings:
-                print('INTERMEDIATE FINDING', label, findings, flush=True)
-        print('INTERMEDIATE CHECK', pose_name, '3 quaternion-slerp samples', flush=True)
+    pose_names = ('rest', 'holding', 'laugh', 'peace', 'deep_bend', 'arms_up', 'belly_cross', 'squat', 'leg_lift', 'hop', 'twist')
+    for mode in ('LBS', 'DQ'):
+        for _, modifier, _ in modifiers:
+            modifier.use_deform_preserve_volume = mode == 'DQ'
+        mode_report = {'stress_poses': {}, 'intermediate_poses': {}, 'failures': []}
+        rest_volumes = {}
+        for pose_name in pose_names:
+            context['pose'](pose_name)
+            if pose_name != 'rest':
+                check(any(pb.location.length > 1e-6 or abs(pb.rotation_quaternion.angle) > 1e-5 for pb in rig.pose.bones),
+                      f'Pose {pose_name} did not move any bones')
+            entries = evaluate_state(pose_name, mode_report['failures'], rest_volumes)
+            mode_report['stress_poses'][pose_name] = entries
+            if pose_name == 'rest':
+                rest_volumes = {name: sr['signed_volume_m3'] for name, sr in entries.items()}
+            print('POSE CHECK', mode, pose_name,
+                  {n: {'intersections': r['self_intersection_pairs'], 'degenerate': r['degenerate_triangles']} for n, r in entries.items()}, flush=True)
+            if pose_name == 'rest' or endpoints_only:
+                continue
+            target_bones = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy(), pb.scale.copy()) for pb in rig.pose.bones}
+            target_shapes = {(ob.name, key.name): key.value for ob in objects if ob.data.shape_keys
+                             for key in ob.data.shape_keys.key_blocks if key.name != 'Basis'}
+            for factor in INTERMEDIATE_FACTORS:
+                context['reset']()
+                for name, (location, rotation, scale) in target_bones.items():
+                    pb = rig.pose.bones[name]
+                    pb.location = location*factor
+                    pb.rotation_quaternion = Quaternion().slerp(rotation, factor)
+                    pb.scale = Vector((1, 1, 1)).lerp(scale, factor)
+                for (name, shape_name), value in target_shapes.items():
+                    bpy.data.objects[name].data.shape_keys.key_blocks[shape_name].value = value*factor
+                bpy.context.view_layer.update()
+                label = f'{pose_name}@{factor:g}'
+                samples = evaluate_state(label, mode_report['failures'], rest_volumes)
+                mode_report['intermediate_poses'][label] = samples
+                findings = {name: metrics['self_intersection_pairs'] for name, metrics in samples.items()
+                            if metrics['self_intersection_pairs'] or metrics['degenerate_triangles']}
+                if findings:
+                    print('INTERMEDIATE FINDING', mode, label, findings, flush=True)
+            print('INTERMEDIATE CHECK', mode, pose_name, '3 quaternion-slerp samples', flush=True)
+        mode_report['passed'] = not mode_report['failures']
+        mode_report['overlap_findings'] = [
+            {'pose': pose_name, 'mesh': name, 'pairs': metrics['self_intersection_pairs'],
+             'regions': metrics['self_intersection_region_pairs']}
+            for pose_name, meshes in {**mode_report['stress_poses'], **mode_report['intermediate_poses']}.items()
+            for name, metrics in meshes.items() if metrics['self_intersection_pairs']]
+        mode_report['endpoint_pose_sample_count'] = len(mode_report['stress_poses'])
+        mode_report['intermediate_pose_sample_count'] = len(mode_report['intermediate_poses'])
+        mode_report['posed_mesh_sample_count'] = 3*(len(mode_report['stress_poses'])+len(mode_report['intermediate_poses']))
+        report['skinning_modes'][mode] = mode_report
+        report[mode.lower()+'_passed'] = mode_report['passed']
     context['reset']()
-    report['endpoint_pose_sample_count'] = len(report['stress_poses'])
-    report['intermediate_pose_sample_count'] = len(report['intermediate_poses'])
-    report['posed_mesh_sample_count'] = 3*(len(report['stress_poses'])+len(report['intermediate_poses']))
-    report['limb_overlap_findings'] = [
-        {'pose': pose_name, 'mesh': name, 'pairs': metrics['self_intersection_pairs'],
-         'regions': metrics['self_intersection_region_pairs']}
-        for pose_name, meshes in {**report['stress_poses'], **report['intermediate_poses']}.items()
-        for name, metrics in meshes.items()
-        if name != 'Body' and metrics['self_intersection_pairs']]
-    report['stress_surfaces_clear'] = not report['limb_overlap_findings']
-
+    for _, modifier, original in modifiers:
+        modifier.use_deform_preserve_volume = original
+    selected = report['skinning_modes']['DQ']
+    report['stress_surfaces_clear'] = selected['passed']
+    report['limb_overlap_findings'] = [entry for entry in selected['overlap_findings'] if entry['mesh'] != 'Body']
+    report['endpoint_pose_sample_count'] = selected['endpoint_pose_sample_count']
+    report['intermediate_pose_sample_count'] = selected['intermediate_pose_sample_count']
+    report['posed_mesh_sample_count'] = sum(mode['posed_mesh_sample_count'] for mode in report['skinning_modes'].values())
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--glb', type=Path, default=ROOT/'public/models/naiwa.glb')
     parser.add_argument('--report', type=Path, default=HERE/'independent-validation.json')
     parser.add_argument('--stress', action='store_true')
+    parser.add_argument('--endpoints-only', action='store_true', help='Quick DQ/LBS diagnostic without pose interpolation samples')
     parser.add_argument('--blend', type=Path, default=HERE/'naiwa.blend')
     args = parser.parse_args(sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else [])
     failures = []
@@ -549,14 +669,19 @@ def main():
         builder_path = HERE/'build_naiwa.py'
         report['blend_sha256'] = hashlib.sha256(args.blend.read_bytes()).hexdigest()
         report['builder_sha256'] = hashlib.sha256(builder_path.read_bytes()).hexdigest()
-        audit_authoring_and_stress(args.blend, builder_path, report, check)
-    report['passed'] = not failures
+        audit_authoring_and_stress(args.blend, builder_path, report, check, endpoints_only=args.endpoints_only)
+    # Reject reports whose inputs changed while another agent/export was running.
+    check(report['glb_sha256'] == hashlib.sha256(args.glb.read_bytes()).hexdigest(), 'GLB changed during validation')
+    if args.stress:
+        check(report['blend_sha256'] == hashlib.sha256(args.blend.read_bytes()).hexdigest(), 'Blend changed during validation')
+        check(report['builder_sha256'] == hashlib.sha256(builder_path.read_bytes()).hexdigest(), 'Builder changed during validation')
+    report['passed'] = not failures and report.get('dq_passed', True)
     report['contract_passed'] = not failures
     report['failures'] = failures
     args.report.write_text(json.dumps(report, indent=2)+'\n')
-    print('NAIWA INDEPENDENT VALIDATION', 'PASS' if not failures else 'FAIL',
-          f'{len(failures)} failures; {report["total_triangles"]} triangles;', args.report, flush=True)
-    if failures:
+    print('NAIWA INDEPENDENT VALIDATION', 'PASS' if report['passed'] else 'FAIL',
+          f'{len(failures)} contract failures; DQ={report.get("dq_passed")}, LBS={report.get("lbs_passed")}; {report["total_triangles"]} triangles;', args.report, flush=True)
+    if not report['passed']:
         sys.exit(1)
 
 

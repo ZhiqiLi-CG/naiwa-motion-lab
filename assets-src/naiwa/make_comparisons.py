@@ -129,7 +129,7 @@ def make_pair(number: str, title: str, reference_name: str, render_name: str,
     canvas = Image.new("RGB", (PAIR_WIDTH, PAIR_HEIGHT), BACKGROUND)
     draw = ImageDraw.Draw(canvas)
     draw.text((34, 22), f"{number}  {title}", fill=INK, font=font(29, True))
-    draw.text((34, 64), "Reference fidelity and posed rig review", fill=MUTED, font=font(17))
+    draw.text((34, 64), "Reference fidelity and dual-quaternion rig review", fill=MUTED, font=font(17))
     boxes = [(30, 143, 625, 911), (655, 143, 1250, 911)]
     for box, label in zip(boxes, ("Reference", "Rig render")):
         draw.rounded_rectangle((box[0] - 1, 101, box[2] + 1, 917), radius=8,
@@ -165,7 +165,7 @@ def make_stress(renders: Path) -> None:
     canvas = Image.new("RGB", (width, height), BACKGROUND)
     draw = ImageDraw.Draw(canvas)
     draw.text((24, 18), "Naiwa / deformation stress poses", fill=INK, font=font(29, True))
-    draw.text((24, 61), "Seven poses of the same skinned rig. Complete render frames, uniformly resized.",
+    draw.text((24, 61), "Seven poses of the same rig with dual-quaternion skinning. Complete frames, uniformly resized.",
               fill=MUTED, font=font(17))
     for index, (title, filename) in enumerate(STRESS_POSES):
         row, column = divmod(index, 4)
