@@ -18,6 +18,7 @@ import { createEditor, type Editor, type EditorProblem } from "./editor";
 import { createLab, LAB_ASSEMBLY, labBlockId, type CompareResult, type Lab, type LabError, type LabHost } from "./lab";
 import { pageSource } from "./loader";
 import { renderMarkdown } from "./markdown";
+import { checkTypes, type TypeProblem } from "./typecheck";
 import type { MetricRow } from "./runs";
 import { browserStorage, type LabStorage, type UserBlock } from "./storage";
 
@@ -86,6 +87,8 @@ const T = {
     en: "This block has no learning page yet. Its summary is below; the API tab documents the slot.",
   },
   problems: { zh: "问题", en: "Problems" },
+  types: (n: number): Text => ({ zh: `类型检查：${n} 个问题`, en: `Type check: ${n} problem${n === 1 ? "" : "s"}` }),
+  typesNote: { zh: "不影响运行，但多半是 bug", en: "It still runs, but these are likely bugs" },
   noProblems: { zh: "没有问题", en: "No problems" },
   line: (l: number, c: number): Text => ({ zh: `第 ${l} 行，第 ${c} 列`, en: `line ${l}, column ${c}` }),
   phases: {
@@ -160,6 +163,9 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
   let openNow = false;
   let loadToken = 0;
   let saveTimer = 0;
+  let typeProblems: TypeProblem[] = [];
+  let typeToken = 0;
+  let typeTimer = 0;
 
   /* ---------------- skeleton ---------------- */
   const head = h("header", { class: "nw-cl-head" });
@@ -192,6 +198,7 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
         dirty = true;
         renderBar();
       }
+      scheduleTypes();
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         if (sel.type === "mine" && !lab.save(sel.key, editor.get())) renderBar();
@@ -342,41 +349,70 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
     root.dataset.view = tab;
   }
 
+  function problemList(list: { from: number; message: Text }[], cls: string) {
+    return h(
+      "ul",
+      { class: `nw-cl-err-list ${cls}` },
+      ...list.map((p) => {
+        const [l, c] = editor.lineCol(p.from);
+        return h("li", {}, h("button", { class: "nw-cl-err-at", type: "button", onclick: () => editor.reveal(p.from) }, tr(T.line(l, c))), " ", tr(p.message));
+      }),
+    );
+  }
+
+  /** The last apply's error (it did not reach the page, or was taken out of it) and the type checker's findings. */
   function renderProblems() {
     const err = lastError;
-    if (!err) {
-      problemsEl.hidden = true;
-      problemsEl.replaceChildren();
-      editor.problems([]);
-      return;
-    }
-    problemsEl.hidden = false;
-    const located = err.problems.filter((p) => p.to >= p.from);
-    editor.problems(located.map((p): EditorProblem => ({ from: p.from, to: Math.max(p.to, p.from + 1), message: tr(p.message), severity: "error" })));
-    const fallbackNote = err.phase === "runtime" ? null : h("span", { class: "nw-cl-err-note" }, tr(T.keptPrevious));
-    problemsEl.replaceChildren();
-    append(problemsEl, [
-      h(
-        "div",
-        { class: "nw-cl-err-head" },
-        icon("alert"),
-        h("b", {}, tr(T.phases[err.phase])),
-        fallbackNote,
-        h("button", { class: "nw-btn nw-btn--ghost nw-btn--sm nw-cl-err-close", type: "button", "aria-label": tr(T.close), onclick: () => ((lastError = null), renderProblems()) }, icon("close")),
-      ),
-      h("p", { class: "nw-cl-err-msg" }, err.message),
-      located.length
-        ? h(
-            "ul",
-            { class: "nw-cl-err-list" },
-            ...located.map((p) => {
-              const [l, c] = editor.lineCol(p.from);
-              return h("li", {}, h("button", { class: "nw-cl-err-at", type: "button", onclick: () => editor.reveal(p.from) }, tr(T.line(l, c))), " ", tr(p.message));
-            }),
-          )
-        : null,
-      err.stack ? h("details", { class: "nw-cl-stack" }, h("summary", {}, tr(T.stack)), h("pre", {}, err.stack)) : null,
+    const located = err ? err.problems.filter((p) => p.to >= p.from) : [];
+    editor.problems([
+      ...located.map((p): EditorProblem => ({ from: p.from, to: Math.max(p.to, p.from + 1), message: tr(p.message), severity: "error" })),
+      ...typeProblems.map((p): EditorProblem => ({ from: p.from, to: p.to, message: tr(p.message), severity: "warning" })),
     ]);
+    problemsEl.hidden = !err && !typeProblems.length;
+    problemsEl.classList.toggle("nw-cl-problems--types", !err);
+    problemsEl.replaceChildren();
+    if (err) {
+      append(problemsEl, [
+        h(
+          "div",
+          { class: "nw-cl-err-head" },
+          icon("alert"),
+          h("b", {}, tr(T.phases[err.phase])),
+          err.phase === "runtime" ? null : h("span", { class: "nw-cl-err-note" }, tr(T.keptPrevious)),
+          h("button", { class: "nw-btn nw-btn--ghost nw-btn--sm nw-cl-err-close", type: "button", "aria-label": tr(T.close), onclick: () => ((lastError = null), renderProblems()) }, icon("close")),
+        ),
+        h("p", { class: "nw-cl-err-msg" }, err.message),
+        located.length ? problemList(located, "") : null,
+        err.stack ? h("details", { class: "nw-cl-stack" }, h("summary", {}, tr(T.stack)), h("pre", {}, err.stack)) : null,
+      ]);
+    }
+    if (typeProblems.length) {
+      append(problemsEl, [
+        h("div", { class: "nw-cl-types-head" }, h("b", {}, tr(T.types(typeProblems.length))), h("span", { class: "nw-cl-err-note" }, tr(T.typesNote))),
+        problemList(typeProblems.slice(0, 30), "nw-cl-types"),
+      ]);
+    }
+  }
+
+  /** Type-check the user's code a moment after the last keystroke. */
+  function scheduleTypes() {
+    clearTimeout(typeTimer);
+    typeTimer = setTimeout(() => void runTypes(), 700) as unknown as number;
+  }
+
+  async function runTypes() {
+    const b = currentMine();
+    if (!b) return;
+    const token = ++typeToken;
+    const code = editor.get();
+    try {
+      const found = await checkTypes(b.path, code);
+      if (token !== typeToken || currentMine() !== b || editor.get() !== code) return;
+      typeProblems = found;
+      renderProblems();
+    } catch (e) {
+      console.warn("labcode: type check unavailable", e);
+    }
   }
 
   let sideToken = 0;
@@ -503,6 +539,8 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
     sel = next;
     dirty = false;
     lastError = null;
+    typeProblems = [];
+    ++typeToken;
     const token = ++loadToken;
     if (next.type === "page") {
       editor.set(tr(T.loading), false);
@@ -511,6 +549,7 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
       editor.set(code, false);
     } else if (next.type === "mine") {
       editor.set(lab.block(next.key)?.code ?? "", true);
+      scheduleTypes();
     } else editor.set("", false);
     renderBar();
     renderSlots();

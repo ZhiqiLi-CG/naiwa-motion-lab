@@ -1,8 +1,9 @@
 /**
  * The learning pages' Markdown, rendered simply as DOM (never as HTML strings): headings, paragraphs, lists, code
- * blocks, tables, inline code, bold, italics, links, and formulas shown as their TeX source in a formula style
- * (there is no math typesetter on the page).
+ * blocks, tables, inline code, bold, italics, links, and formulas as readable text (tex.ts; the TeX source is the
+ * formula's tooltip).
  */
+import { texToText } from "./tex";
 
 type Inline = Node | string;
 
@@ -12,6 +13,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string | null, .
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   e.append(...children);
+  return e;
+}
+
+function math(tag: "span" | "div", cls: string, tex: string): HTMLElement {
+  const e = el(tag, cls, texToText(tex));
+  e.title = tex;
   return e;
 }
 
@@ -32,7 +39,7 @@ export function inline(text: string): Inline[] {
     if (m.index! > at) out.push(text.slice(at, m.index));
     const [s] = m;
     if (m[1]) out.push(el("code", null, s.slice(1, -1)));
-    else if (m[2]) out.push(el("span", "nw-md-math", s.slice(1, -1)));
+    else if (m[2]) out.push(math("span", "nw-md-math", s.slice(1, -1)));
     else if (m[3]) out.push(el("strong", null, ...inline(s.slice(2, -2))));
     else if (m[4]) out.push(el("em", null, ...inline(s.slice(1, -1))));
     else if (m[5]) {
@@ -77,7 +84,7 @@ export function renderMarkdown(source: string): DocumentFragment {
         for (i++; i < lines.length && !lines[i].includes("$$"); i++) body.push(lines[i]);
         if (i < lines.length) body.push(lines[i++].split("$$")[0]);
       }
-      out.append(el("pre", "nw-md-math nw-md-display", body.join("\n").trim()));
+      out.append(math("div", "nw-md-math nw-md-display", body.join("\n").trim()));
       continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.*)/);

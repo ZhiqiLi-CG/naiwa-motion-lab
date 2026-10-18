@@ -18,7 +18,7 @@ import { h } from "../src/ui/dom";
 const url = new URLSearchParams(location.search);
 const theme = url.get("theme") === "dark" ? "dark" : "light";
 document.documentElement.dataset.theme = theme;
-if (url.get("lang") === "en" || url.get("lang") === "zh") setLang(url.get("lang") as "en" | "zh");
+setLang(url.get("lang") === "en" ? "en" : "zh");
 
 const store = createStore();
 store.set({ lang: url.get("lang") === "en" ? "en" : "zh", mode: "dance" });
