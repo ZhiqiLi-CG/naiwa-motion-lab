@@ -37,7 +37,7 @@ const escapeRe = (s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
 /** Cloudflare `_headers`: blocks of a URL pattern (one `*` splat, `:name` placeholders) and indented headers. */
 export function parseCloudflareHeaders(text) {
   const rules = [];
-  for (const line of text.split("\n")) {
+  for (const line of text.split(/\r?\n/)) {
     if (!line.trim() || line.trim().startsWith("#")) continue;
     if (!/^\s/.test(line)) {
       const pattern = line.trim();
@@ -120,6 +120,8 @@ export function listFiles(dir) {
 const GOOGLE = /(^|\.)(google|googleapis|gstatic|googleusercontent|googletagmanager|google-analytics|doubleclick|ggpht|youtube|ytimg)\.(com|cn)$/;
 const CDN = /(^|\.)(jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|esm\.sh|skypack\.dev|jspm\.io|fonts\.bunny\.net)$/;
 export const isGoogleHost = (h) => GOOGLE.test(h);
+/** The headers that make the page cross-origin isolated (vite.config.ts, public/_headers, vercel.json). */
+export const ISOLATION = [["cross-origin-opener-policy", "same-origin"], ["cross-origin-embedder-policy", "require-corp"]];
 const GOOGLE_ASSETS = /(^|\.)(googleapis|gstatic|googleusercontent|googletagmanager|google-analytics|doubleclick|ggpht|ytimg)\.(com|cn)$/;
 const isGoogleAssetHost = (h) => GOOGLE_ASSETS.test(h);
 export const isCdnHost = (h) => CDN.test(h);
@@ -210,7 +212,7 @@ export function checkBuild(root, dist) {
 
   // Caching: both hosts agree, hashed bundles immutable, big unhashed files revalidated, the page never stale.
   const { cf, vc } = loadHeaderRules(root);
-  const problems = [];
+  const problems = [], isolation = [];
   const paths = [...files.map((f) => f.path), "/"];
   for (const p of paths) {
     const a = headersFor(cf, p), b = headersFor(vc, p);
@@ -222,12 +224,17 @@ export function checkBuild(root, dist) {
     if (!hashed && /immutable|max-age=[1-9]/.test(ca)) problems.push(`${p}: unhashed but cached without revalidation ("${ca}")`);
     if ((p === "/" || p === "/index.html") && !/no-cache|max-age=0/.test(ca)) problems.push(`${p}: the page may be served stale ("${ca}")`);
     if (/\.(wasm|task|glb)$/.test(p) && ca === "(host default)") problems.push(`${p}: no cache rule`);
-    for (const k of ["cross-origin-opener-policy", "cross-origin-embedder-policy"]) {
-      if (a.headers[k] || b.headers[k]) problems.push(`${p}: sets ${k} (not needed: nothing uses SharedArrayBuffer)`);
+    // Cross-origin isolation (SharedArrayBuffer for the simulators' CPU-parallel fallback) on every path, both hosts.
+    for (const [k, want] of ISOLATION) {
+      for (const [host, h] of [["Cloudflare", a.headers], ["Vercel", b.headers]]) {
+        if (h[k] !== want) isolation.push(`${p}: ${host} ${k} "${h[k] ?? "(none)"}"`);
+      }
     }
   }
   add("deploy: Cloudflare and Vercel cache rules", problems.length ? "FAIL" : "PASS",
     problems.length ? problems.slice(0, 12).join("; ") + (problems.length > 12 ? ` … (${problems.length})` : "") : `${paths.length} paths checked against both configs`);
+  add("deploy: cross-origin isolation headers (COOP same-origin, COEP require-corp)", isolation.length ? "FAIL" : "PASS",
+    isolation.length ? isolation.slice(0, 8).join("; ") + (isolation.length > 8 ? ` … (${isolation.length})` : "") : `on all ${paths.length} paths in _headers and vercel.json`);
   return { results, files };
 }
 

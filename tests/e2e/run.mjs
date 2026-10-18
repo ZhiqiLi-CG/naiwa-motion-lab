@@ -26,7 +26,7 @@ import puppeteer from "puppeteer-core";
 import { chromePath, gpuArgs } from "../tools/chrome.mjs";
 import { checkBuild, mb, isGoogleHost, MEDIAPIPE_TELEMETRY } from "./lib/deploy.mjs";
 import { serve } from "./lib/server.mjs";
-import { ensureY4m } from "./lib/media.mjs";
+import { ensureY4m, ff } from "./lib/media.mjs";
 import { personPose } from "./lib/follow.mjs";
 import { openPage, shot } from "./lib/app.mjs";
 import * as S from "./scenarios.mjs";
@@ -46,6 +46,10 @@ const flag = (n) => argv.includes(`--${n}`);
 const opt = (n) => (argv.indexOf(`--${n}`) >= 0 ? argv[argv.indexOf(`--${n}`) + 1] : null);
 const only = opt("only")?.split(",");
 const started = Date.now();
+
+/** A package's CLI script, run with this node: no npx, so no shell (npx is npx.cmd on Windows, which spawn cannot run
+ *  without one) and no quoting of paths with spaces. */
+const bin = (p) => join(ROOT, "node_modules", p);
 
 const results = [];
 function check(group, name, status, detail = "") {
@@ -67,23 +71,29 @@ if (!appBase) {
     SRC = join(CACHE, "head");
     rmSync(SRC, { recursive: true, force: true });
     mkdirSync(SRC, { recursive: true });
-    const exp = spawnSync("sh", ["-c", `git -C "${ROOT}" archive HEAD | tar -x -C "${SRC}"`], { encoding: "utf8" });
-    if (exp.status !== 0) check("build", "export HEAD", "FAIL", exp.stderr.slice(0, 300));
-    symlinkSync(join(ROOT, "node_modules"), join(SRC, "node_modules"));
+    // git archive to a file, then tar with relative paths in its own folder: no shell pipe, and no "C:\…" argument
+    // that Git for Windows' tar would take for a remote host.
+    const tarFile = join(CACHE, "head.tar");
+    const arch = spawnSync("git", ["archive", "--format=tar", "-o", tarFile, "HEAD"], { cwd: ROOT, encoding: "utf8" });
+    const exp = arch.status === 0 ? spawnSync("tar", ["-xf", "../head.tar"], { cwd: SRC, encoding: "utf8" }) : arch;
+    if (exp.status !== 0) check("build", "export HEAD", "FAIL", (exp.stderr || exp.error?.message || "").slice(0, 300));
+    rmSync(tarFile, { force: true });
+    // A junction on Windows: it needs no administrator rights or developer mode, unlike a directory symlink.
+    symlinkSync(join(ROOT, "node_modules"), join(SRC, "node_modules"), process.platform === "win32" ? "junction" : "dir");
     const rev = spawnSync("git", ["log", "-1", "--format=%h %s"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
     check("build", "source", "INFO", `last commit ${rev} (not the working tree)`);
   }
   if (!flag("skip-build")) {
-    const tsc = spawnSync("npx", ["tsc", "--noEmit", "--pretty", "false"], { cwd: SRC, encoding: "utf8" });
+    const tsc = spawnSync(process.execPath, [bin("typescript/bin/tsc"), "--noEmit", "--pretty", "false"], { cwd: SRC, encoding: "utf8", maxBuffer: 64 << 20 });
     if (tsc.status === 0) check("build", "typecheck (tsc --noEmit)", "PASS");
     else {
       const byModule = {};
-      for (const l of (tsc.stdout + tsc.stderr).split("\n").filter((x) => /error TS/.test(x))) (byModule[l.split(/[/(]/).slice(0, 2).join("/")] ??= []).push(l);
+      for (const l of (tsc.stdout + tsc.stderr).split(/\r?\n/).filter((x) => /error TS/.test(x))) (byModule[l.split(/[/(]/).slice(0, 2).join("/")] ??= []).push(l);
       check("build", "typecheck (tsc --noEmit)", "FAIL", Object.entries(byModule).map(([m, ls]) => `${m}: ${ls.length} error(s), first: ${ls[0]}`).join(" | ") || tsc.stdout.slice(0, 400));
     }
-    const vite = spawnSync("npx", ["vite", "build", "--outDir", DIST, "--emptyOutDir"], { cwd: SRC, encoding: "utf8" });
+    const vite = spawnSync(process.execPath, [bin("vite/bin/vite.js"), "build", "--outDir", DIST, "--emptyOutDir"], { cwd: SRC, encoding: "utf8", maxBuffer: 64 << 20 });
     if (vite.status !== 0) {
-      const lines = (vite.stdout + vite.stderr).split("\n").filter((l) => l.trim() && !/^\s+at /.test(l));
+      const lines = (vite.stdout + vite.stderr).split(/\r?\n/).filter((l) => l.trim() && !/^\s+at /.test(l));
       const i = lines.findIndex((l) => /error during build/.test(l));
       check("build", "vite build", "FAIL", (i >= 0 ? lines.slice(i + 1, i + 4) : lines.slice(-4)).join(" | "));
       finish();
@@ -132,7 +142,7 @@ const clips = {};
 for (const [which, name] of [["portrait", "dance-naenae.mp4"], ["landscape", "dance-waacking.mp4"]]) {
   if (only && !only.includes(`video-${which}`)) continue;
   const file = join(MEDIA, name);
-  const probe = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file], { encoding: "utf8" }).stdout);
+  const probe = JSON.parse(spawnSync(ff().ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file], { encoding: "utf8" }).stdout);
   const v = probe.streams.find((s) => s.codec_type === "video");
   let pose = null;
   try {
