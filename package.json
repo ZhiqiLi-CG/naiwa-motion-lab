@@ -2,6 +2,7 @@
   "name": "naiwa-motion-lab",
   "private": true,
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "description": "Naiwa Motion Lab: a soft-body + skeleton 奶蛙 you can poke, throw and make dance with your camera, a video or preset dances, in the browser.",
   "type": "module",
   "engines": {
