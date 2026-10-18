@@ -185,7 +185,7 @@ function openBrowser(url) {
     else if (process.platform === "darwin") spawn("open", [url], { stdio: "ignore", detached: true }).unref();
     else {
       const hasDisplay = process.env.DISPLAY || process.env.WAYLAND_DISPLAY;
-      const opener = isWsl() ? which("wslview") : hasDisplay ? which("xdg-open") : null;
+      const opener = isWsl() ? which("wslview") : hasDisplay ? which("xdg-open") : null; // WSL: xdg-open would need a Linux browser
       if (!opener) return false;
       spawn(opener, [url], { stdio: "ignore", detached: true }).unref();
     }
@@ -286,5 +286,8 @@ log(`  本机 Lab / local Lab: ${labPort ? `http://127.0.0.1:${labPort}/` : "未
 log("  按 Ctrl+C 停止 / press Ctrl+C to stop");
 log("==================================================================");
 if (opts.open && !process.env.NAIWA_NO_OPEN) {
-  if (!openBrowser(pageUrl)) log(`没有可用的图形界面，请在浏览器里打开上面的地址 / no display to open a browser here: open the address above${isWsl() ? " in Windows" : ""}`);
+  if (!openBrowser(pageUrl)) {
+    log("没有可用的图形界面，请在浏览器里打开上面的地址 / no display to open a browser here: open the address above in a browser");
+    if (isWsl() && !opts.host) log("WSL：如果 Windows 里打不开 localhost，用 --host 启动后打开显示的局域网地址 / if Windows can't reach localhost, start with --host and open the LAN address shown");
+  }
 }
