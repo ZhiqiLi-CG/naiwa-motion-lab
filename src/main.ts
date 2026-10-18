@@ -6,7 +6,7 @@ import { createStore, MATERIAL_PRESETS } from "./store";
 import { setLang, tr } from "./i18n";
 import { createStage } from "./stage";
 import { loadCharacter } from "./character";
-import { createFrogSim, initPhysics } from "./sim";
+import { createFrogSim, initPhysics, listSimulators, onSimulatorsChanged } from "./sim";
 import { createMotion } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
 import { mountUI, type UICommands } from "./ui";
@@ -335,6 +335,8 @@ async function boot() {
   store.set({ loading: { active: true, message: tr({ zh: "正在叫醒奶蛙…", en: "Waking 奶蛙 up…" }) } });
   void motion.ready().then(() => setDances(motion.dances()));
   const [, loaded] = await Promise.all([initPhysics(), loadCharacter()]);
+  store.set({ simulators: listSimulators() });
+  onSimulatorsChanged(() => store.set({ simulators: listSimulators() }));
   character = loaded;
   stage.scene.add(character.object);
   motion.bind(character.rig);

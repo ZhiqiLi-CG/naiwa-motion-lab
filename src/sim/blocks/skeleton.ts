@@ -8,21 +8,9 @@
  */
 import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
-import { CORE_BONES, type CoreBone, type HitRegion, type RigBone, type RigSpec } from "../contracts";
-import type { BoneShape, SimBone } from "./api";
-import { segmentDistance, type TriMesh } from "./geometry";
-
-/* Collision groups: membership << 16 | filter. */
-const G = { floor: 1, body: 2, limbFlesh: 4, core: 8, contact: 16, ball: 32 };
-const groups = (member: number, filter: number) => (member << 16) | filter;
-export const GROUPS = {
-  floor: groups(G.floor, G.body | G.limbFlesh | G.core | G.ball),
-  body: groups(G.body, G.floor | G.ball | G.contact),
-  limbFlesh: groups(G.limbFlesh, G.floor | G.ball),
-  core: groups(G.core, G.floor | G.ball),
-  contact: groups(G.contact, G.body),
-  ball: groups(G.ball, G.floor | G.body | G.limbFlesh | G.core | G.ball),
-};
+import { CORE_BONES, type BodyMode, type BoneName, type CoreBone, type HitRegion, type PhysicsParams, type RigBone, type RigSpec } from "../../contracts";
+import type { BlockDefinition, BoneShape, Scene, SimBone, SkeletonBlock } from "../api";
+import { TriMesh, segmentDistance } from "../geometry";
 
 export const TORSO: readonly CoreBone[] = ["hips", "spine", "chest", "head"];
 
@@ -118,6 +106,7 @@ export class Skeleton {
     spec: RigSpec,
     body: TriMesh,
     limbFlesh: Map<CoreBone, BoneFlesh>,
+    private groups: { core: number; contact: number },
   ) {
     this.raw = world.impulseJoints.raw;
     const specBones = new Map(spec.bones.map((b) => [b.name, b]));
@@ -151,7 +140,7 @@ export class Skeleton {
     );
     this.uprightJoint.setLocalFrame2(zero, q4(hips.restRot.clone().invert()));
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {
-      this.raw.jointConfigureMotorModel(this.uprightJoint.handle, axis, RAPIER.MotorModel.ForceBased);
+      this.raw.jointConfigureMotorModel(this.uprightJoint.handle, axis as number, RAPIER.MotorModel.ForceBased as number);
     }
   }
 
@@ -221,7 +210,7 @@ export class Skeleton {
         .setRotation(q4(rot))
         .setMass(mass)
         .setFriction(0.9)
-        .setCollisionGroups(role === "core" ? GROUPS.core : GROUPS.contact),
+        .setCollisionGroups(role === "core" ? this.groups.core : this.groups.contact),
       bone.body,
     );
     this.byCollider.set(c.handle, bone);
@@ -242,7 +231,7 @@ export class Skeleton {
     }
     const desc = RAPIER.ColliderDesc.convexHull(local);
     if (!desc) throw new Error(`sim: no sole for ${bone.name}`);
-    const col = this.world.createCollider(desc.setMass(mass).setFriction(0.9).setCollisionGroups(GROUPS.core), bone.body);
+    const col = this.world.createCollider(desc.setMass(mass).setFriction(0.9).setCollisionGroups(this.groups.core), bone.body);
     this.byCollider.set(col.handle, bone);
     bone.shapes.push({ kind: "hull", role: "core", points: local });
   }
@@ -256,9 +245,9 @@ export class Skeleton {
     // Rapier hands spherical joints back as generic ones, without the motor methods: use the raw set.
     const { swing, twist } = jointOf(bone.name);
     for (const axis of ANG_AXES) {
-      this.raw.jointConfigureMotorModel(joint.handle, axis, RAPIER.MotorModel.ForceBased);
+      this.raw.jointConfigureMotorModel(joint.handle, axis as number, RAPIER.MotorModel.ForceBased as number);
       const lim = (axis === RAPIER.JointAxis.AngY ? twist : swing) * DEG;
-      this.raw.jointSetLimits(joint.handle, axis, -lim, lim);
+      this.raw.jointSetLimits(joint.handle, axis as number, -lim, lim);
     }
     bone.joint = joint;
   }
@@ -271,7 +260,7 @@ export class Skeleton {
     // Reconfigured only on change; little damping, since Rapier's soft motors trade static stiffness for damping.
     if (!bone.joint || Math.abs(k - bone.stiffness) < 1e-3 * (k + 1)) return;
     bone.stiffness = k;
-    for (const axis of ANG_AXES) this.raw.jointConfigureMotorPosition(bone.joint.handle, axis, 0, k, 0.2 * Math.sqrt(k));
+    for (const axis of ANG_AXES) this.raw.jointConfigureMotorPosition(bone.joint.handle, axis as number, 0, k, 0.2 * Math.sqrt(k));
   }
 
   /** Free mode: every joint holds the rest pose at `tone` (0..1) of its strength, and the hips are pulled upright with
@@ -292,7 +281,7 @@ export class Skeleton {
     if (Math.abs(k - this.uprightStiffness) < 0.5) return;
     this.uprightStiffness = k;
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {
-      this.raw.jointConfigureMotorPosition(this.uprightJoint.handle, axis, 0, k, 0.1 * k);
+      this.raw.jointConfigureMotorPosition(this.uprightJoint.handle, axis as number, 0, k, 0.1 * k);
     }
   }
 
@@ -417,3 +406,107 @@ export function limbFlesh(spec: RigSpec): Map<CoreBone, BoneFlesh> {
   }
   return out;
 }
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+/* The skeleton block                                                                                                 */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** Seconds to blend from where the bones are into driven mode. */
+const DRIVE_BLEND = 0.35;
+
+/** Free mode: the frog's tone (stubbornness) holds the rest pose and rights it; a knock makes it floppy for a moment.
+ *  Driven mode: the torso follows the targets, the limbs' motors pull them there. */
+class RigidSkeleton implements SkeletonBlock {
+  readonly skeleton: Skeleton;
+  private mode: BodyMode = "free";
+  private params: PhysicsParams;
+  private driveBlend = 1;
+  /** Time since the frog was knocked about (landing, throw). */
+  private sinceKnock = 10;
+  private rootFromHips: THREE.Matrix4;
+  private rootTarget: THREE.Matrix4 | null = null;
+
+  constructor(scene: Scene) {
+    const spec = scene.spec;
+    this.params = scene.params;
+    const body = new TriMesh(spec.body.positions, spec.body.indices);
+    this.skeleton = new Skeleton(scene.world, spec, body, limbFlesh(spec), scene.collisionGroups);
+    const root = spec.bones.find((b) => b.name === "root");
+    this.rootFromHips = this.skeleton.bone("hips").restInverse.clone().multiply(root ? root.restWorld : new THREE.Matrix4());
+  }
+
+  get bones(): ReadonlyMap<CoreBone, SimBone> {
+    return this.skeleton.bones;
+  }
+
+  setParams(p: PhysicsParams) {
+    this.params = p;
+    for (const b of this.skeleton.bones.values()) b.body.wakeUp();
+  }
+
+  setMode(mode: BodyMode) {
+    this.mode = mode;
+    this.skeleton.setMode(mode === "driven");
+    this.driveBlend = mode === "driven" ? 0 : 1;
+  }
+
+  setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>) {
+    const s = new THREE.Vector3();
+    for (const [name, m] of boneWorld) {
+      if (name === "root") (this.rootTarget ??= new THREE.Matrix4()).copy(m);
+      const b = this.skeleton.bones.get(name as CoreBone);
+      if (b) m.decompose(b.targetPos, b.targetRot, s);
+    }
+  }
+
+  knock() {
+    this.sinceKnock = 0;
+  }
+
+  velocity() {
+    return this.skeleton.velocity();
+  }
+
+  addVelocity(dv: THREE.Vector3) {
+    this.skeleton.addVelocity(dv);
+  }
+
+  root(out: THREE.Matrix4) {
+    if (this.mode === "driven" && this.rootTarget) return out.copy(this.rootTarget);
+    return this.skeleton.bone("hips").pose(out).multiply(this.rootFromHips);
+  }
+
+  beforeStep(scene: Scene) {
+    if (this.mode === "driven") {
+      this.driveBlend = Math.min(1, this.driveBlend + scene.dt / DRIVE_BLEND);
+      this.skeleton.drive(THREE.MathUtils.smoothstep(this.driveBlend, 0, 1));
+    } else {
+      // Stubbornness sets the tone; right after a knock the frog goes floppy and gathers itself again.
+      const s = clamp01(this.params.stubbornness);
+      const recover = clamp01((this.sinceKnock - 0.4) / 1.2);
+      this.skeleton.balance(lerp(0.04, 1, s) * lerp(0.15, 1, recover), 150 * s * lerp(0.3, 1, recover));
+    }
+    this.sinceKnock += scene.dt;
+  }
+
+  reset() {
+    this.skeleton.reset();
+    this.rootTarget = null;
+    this.sinceKnock = 10;
+  }
+}
+
+export const rigidSkeleton: BlockDefinition<"skeleton"> = {
+  id: "rapier-skeleton",
+  slot: "skeleton",
+  name: { zh: "刚体骨骼", en: "Rigid skeleton" },
+  summary: {
+    zh: "每根骨头一个 Rapier 刚体，球铰带马达和限位；自由模式靠肌张力站稳、自己回正，驱动模式跟随姿态目标。",
+    en: "One Rapier rigid body per bone, ball joints with motors and limits; free mode holds itself up and rights itself, driven mode follows the pose targets.",
+  },
+  device: "cpu",
+  parameters: [],
+  create: (scene) => new RigidSkeleton(scene),
+};

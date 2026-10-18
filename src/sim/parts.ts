@@ -53,3 +53,36 @@ function deriveRegions(V: Float32Array, bones: readonly SimBone[], softness?: Fl
   }
   return out;
 }
+
+/** For each particle of a part (xyz in P): its nearest surface vertex, and so its region and softness. */
+export function particleAttributes(part: SimPart, P: Float32Array): { region: Uint8Array; softness: Float32Array } {
+  const n = P.length / 3, V = part.positions;
+  const region = new Uint8Array(n), softness = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
+    let best = Infinity, vertex = 0;
+    for (let v = 0; v < V.length / 3; v++) {
+      const d = (V[v * 3] - x) ** 2 + (V[v * 3 + 1] - y) ** 2 + (V[v * 3 + 2] - z) ** 2;
+      if (d < best) {
+        best = d;
+        vertex = v;
+      }
+    }
+    region[i] = part.regions[vertex];
+    softness[i] = part.softness[vertex];
+  }
+  return { region, softness };
+}
+
+/** The bone of a part nearest to a point (distance to the bone's segment), and that distance. */
+export function nearestBone(part: SimPart, p: THREE.Vector3): { bone: SimBone; distance: number } {
+  let bone = part.bones[0], distance = Infinity;
+  for (const b of part.bones) {
+    const d = segmentDistance(p, b.restPos, b.tail);
+    if (d < distance) {
+      distance = d;
+      bone = b;
+    }
+  }
+  return { bone, distance };
+}

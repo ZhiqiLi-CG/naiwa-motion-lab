@@ -10,7 +10,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { BoneName, Expression, ExpressionWeights, FrogEvent, FrogEventKind, FrogSim, HitRegion, PoseFrame } from "../contracts";
-import { createFrogSim, initPhysics } from "../sim";
+import { createFrogSim, initPhysics, type LabFrogSim } from "../sim";
 import { createStage } from "../stage";
 import { MATERIAL_PRESETS } from "../store";
 import { loadCharacter } from ".";
@@ -106,7 +106,7 @@ const character = await loadCharacter(url);
 scene.add(character.object);
 if (params.has("still")) character.setLively(false);
 
-let sim: (FrogSim & { stats(): { particles: number; deformation: number } }) | null = null;
+let sim: LabFrogSim | null = null;
 /**
  * ?fake=bend|squash|dent: no simulation; the flesh is bent, squashed or dented by a known smooth field while the
  * bones stay put, to check that the face and limb roots ride on the deformed surface whatever the simulation does.
@@ -145,7 +145,7 @@ function deformFake(t: number) {
 if (!params.has("nosim") && !fake) {
   await initPhysics();
   const preset = MATERIAL_PRESETS.find((p) => p.id === params.get("preset")) ?? MATERIAL_PRESETS[0];
-  sim = createFrogSim(character.spec, { ...preset.params });
+  sim = createFrogSim(character.spec, { ...preset.params }, { id: "cpu-constraints", settings: {} });
   sim.setMode(params.get("mode") === "free" ? "free" : "driven");
   sim.onEvent((e) => {
     character.react(e);
@@ -332,7 +332,7 @@ function frame(now: number) {
     `soft limbs ${character.limbReport.soft.join(",") || "none"}  ` +
     `${fps.toFixed(0)} fps, character+sim ${frameMs.toFixed(2)} ms\n` +
     `mode ${mode}${pose ? `  pose ${pose}` : ""}` +
-    (sim ? `  particles ${sim.stats().particles} jiggle ${(sim.stats().deformation * 1000).toFixed(1)} mm` : "") +
+    (sim ? `  particles ${sim.stats().particles} deviation ${((sim.stats().deviation ?? 0) * 1000).toFixed(1)} mm` : "") +
     `\n${events.join("  |  ")}`;
   requestAnimationFrame(frame);
 }
