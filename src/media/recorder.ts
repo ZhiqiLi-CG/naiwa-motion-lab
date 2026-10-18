@@ -40,8 +40,13 @@ const BACKUP_SILENT = ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/
  *  of it a second apart (about 0.8 s of audio between them); the backup goes when they pass. */
 const CHECK_AFTER_AUDIO_FRAMES = 120;
 const CHECK_STEP_AUDIO_FRAMES = 40;
-/** stop() records on for at most this long while no encoder has delivered a frame yet. */
+/** stop() records on for at most this long while the clip is short of what was asked for (the encoders started late). */
 const MAX_WAIT_FOR_PICTURE_MS = 8000;
+/** Shortest clip (ms). */
+const MIN_CLIP_MS = 500;
+/** Slack between the clip asked for (start() to stop()) and the one encoded: the first composed frame and the
+ *  encoder's ordinary start. */
+const START_SLACK_MS = 1000;
 
 export function canRecord(): boolean {
   return (
@@ -77,6 +82,7 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
   let stopping: Promise<Recording> | null = null;
   let stopRec: (() => Promise<Recording>) | null = null;
   let last: Recording | null = null;
+  if (canRecord()) scheduleWarmUp(() => running);
 
   return {
     get active() {
@@ -84,6 +90,7 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
     },
     start(stage, audio, recOpts) {
       if (running) throw new Error("recorder already running");
+      const requestedAt = performance.now();
       const comp = createCompositor(stage, {
         companion: recOpts?.companion ?? null,
         layout: recOpts?.layout ?? "frog",
@@ -140,7 +147,18 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
       };
       document.addEventListener("visibilitychange", onVisibility);
 
+      // The clip starts when the encoder does (its start event), which can be seconds after start() while the H.264
+      // encoder loads; frames before that are not in the file.
       let startedAt = performance.now();
+      let encoding = false;
+      main.mr.addEventListener(
+        "start",
+        () => {
+          startedAt = performance.now();
+          encoding = true;
+        },
+        { once: true },
+      );
       const begin = () => {
         if (main.mr.state !== "inactive") return;
         startedAt = performance.now();
@@ -216,14 +234,15 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
       const finish = async (): Promise<Recording> => {
         // Stopped before the first frame: start, so that stop() still delivers a (tiny) clip.
         begin();
-        // The encoders can take seconds to deliver their first frame (the first clip after the page loads, a busy
-        // GPU), and a clip stopped before that has no picture in either file. The WebM writes nothing before its first
-        // frame (header and audio come with it): keep recording until it has, a few seconds at most. The MP4 is not to blame for a slow start.
+        // A clip stopped before the encoders got going has no picture in either file: record on until the encoder has
+        // started, the clip holds about what was asked for, and the WebM (which writes nothing before its first frame)
+        // has data; a few seconds at most. The MP4 is not to blame for a slow start.
+        const asked = Math.max(MIN_CLIP_MS, performance.now() - requestedAt - START_SLACK_MS);
         let slowStart = false;
-        for (const until = performance.now() + MAX_WAIT_FOR_PICTURE_MS; backup && !checked && performance.now() < until; ) {
-          if (bytes(backup) >= 1024) break;
-          slowStart = true;
-          backup.mr.requestData();
+        for (const until = performance.now() + MAX_WAIT_FOR_PICTURE_MS; running && performance.now() < until; slowStart = true) {
+          const webm = backup ?? (isMp4(main) ? null : main);
+          if (encoding && performance.now() - startedAt >= asked && (!webm || bytes(webm) >= 1024)) break;
+          webm?.mr.requestData();
           await new Promise((r) => setTimeout(r, 250));
         }
         const encs = backup ? [main, backup] : [main];
@@ -272,6 +291,51 @@ export function createRecorder(opts: RecorderOptions = {}): Recorder {
       return Promise.reject(new Error("recorder not started"));
     },
   };
+}
+
+/**
+ * The first MP4 recording of a page can take seconds to start while the browser loads its H.264 encoder (4.6 s
+ * measured on Windows with an AMD GPU, for any frame size), and a clip stopped before then holds sound only. A tiny
+ * silent recording right after the page loads gets that done before anyone presses record.
+ */
+function scheduleWarmUp(recording: () => boolean) {
+  const type = pickMimeType(true);
+  if (!type.startsWith("video/mp4")) return;
+  const run = () => {
+    if (recording()) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 64;
+    const g = canvas.getContext("2d");
+    if (!g) return;
+    const stream = canvas.captureStream(30);
+    let k = 0;
+    // a changing picture, so frames keep coming
+    const draw = setInterval(() => {
+      g.fillStyle = k++ % 2 ? "#fff3d1" : "#2a2418";
+      g.fillRect(0, 0, 64, 64);
+    }, 33);
+    let mr: MediaRecorder;
+    const end = () => {
+      clearInterval(draw);
+      clearTimeout(cap);
+      for (const t of stream.getTracks()) t.stop();
+      if (mr?.state !== "inactive") mr?.stop();
+    };
+    const cap = setTimeout(end, 15_000);
+    try {
+      mr = new MediaRecorder(stream, { mimeType: type });
+      // Started means the encoder is loaded; the first data means it encodes.
+      mr.ondataavailable = end;
+      mr.onerror = end;
+      mr.onstart = () => setTimeout(() => mr.state === "recording" && mr.requestData(), 300);
+      mr.start();
+    } catch {
+      end();
+    }
+  };
+  // At once, not at idle time: the page is rarely idle while the frog moves, and the loading happens off the main
+  // thread.
+  setTimeout(run, 0);
 }
 
 function bytes(enc: Encoder): number {
