@@ -20,5 +20,8 @@
 /index.html
   Cache-Control: no-cache
 
+# Cross-origin isolation (SharedArrayBuffer for the simulators' CPU-parallel fallback); keep in step with vite.config.ts.
 /*
   X-Content-Type-Options: nosniff
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
