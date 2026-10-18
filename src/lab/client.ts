@@ -24,7 +24,8 @@ export type Availability =
   | { state: "logged-out"; status: ServerStatus };
 
 export function availability(status: ServerStatus | null): Availability {
-  if (!status) return { state: "no-server" };
+  // Anything that is not a status from our server (another service on the port, an error body) counts as no server.
+  if (!status?.codex) return { state: "no-server" };
   if (!status.codex.installed) return { state: "not-installed", status };
   if (!status.codex.loggedIn) return { state: "logged-out", status };
   return { state: "ready", status };
