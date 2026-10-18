@@ -27,6 +27,7 @@
 import { spawnSync } from "node:child_process";
 import { createServer as createNetServer } from "node:net";
 import { mkdirSync, rmSync, writeFileSync, readdirSync, existsSync, symlinkSync } from "node:fs";
+import { removeTree, unlinkLink } from "./lib/fsafe.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -54,6 +55,10 @@ const opt = (n) => (argv.indexOf(`--${n}`) >= 0 ? argv[argv.indexOf(`--${n}`) + 
 const only = opt("only")?.split(",");
 const started = Date.now();
 
+/** The --head export's junction to node_modules: removed (the link only) as soon as the build is done, at the end of
+ *  the run, and before the export is deleted, which never goes through a link (lib/fsafe.mjs). */
+const unlinkHeadModules = () => unlinkLink(join(CACHE, "head", "node_modules"));
+
 /** A package's CLI script, run with this node: no npx, so no shell (npx is npx.cmd on Windows, which spawn cannot run
  *  without one) and no quoting of paths with spaces. */
 const bin = (p) => join(ROOT, "node_modules", p);
@@ -76,7 +81,8 @@ let SRC = ROOT;
 if (!appBase) {
   if (flag("head") && !flag("skip-build")) {
     SRC = join(CACHE, "head");
-    rmSync(SRC, { recursive: true, force: true });
+    unlinkHeadModules();
+    removeTree(SRC, [join(ROOT, "node_modules")]);
     mkdirSync(SRC, { recursive: true });
     // git archive to a file, then tar with relative paths in its own folder: no shell pipe, and no "C:\…" argument
     // that Git for Windows' tar would take for a remote host.
@@ -106,6 +112,7 @@ if (!appBase) {
       finish();
     }
     check("build", "vite build", "PASS", `into ${DIST.replace(ROOT, "")}`);
+    unlinkHeadModules(); // built: the export needs node_modules no longer
   }
   if (!existsSync(join(DIST, "index.html"))) {
     check("build", "build present", "FAIL", `no ${DIST}/index.html (run without --skip-build)`);
@@ -255,6 +262,7 @@ await noGpu?.close();
 finish();
 
 function finish() {
+  unlinkHeadModules();
   server?.close();
   const counts = {};
   for (const r of results) counts[r.status] = (counts[r.status] ?? 0) + 1;
