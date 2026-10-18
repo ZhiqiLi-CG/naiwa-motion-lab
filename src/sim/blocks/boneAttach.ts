@@ -14,10 +14,12 @@ import type { CoreBone } from "../../contracts";
 import type { BlockDefinition, CouplingBlock, Scene, Settings, SimBone, SimPart } from "../api";
 import { nearestBone, particleAttributes } from "../parts";
 
-/** The part of the flesh's thickness around a bone that rides on it, for the firmest flesh (softness 0). */
+/** The part of the flesh's thickness around a bone that rides on it, for the firmest flesh (softness 0). A limb is
+ *  only a few lattice steps thick, so its flesh rides whole on its bones and bends in the cells at the joints: free
+ *  nodes there hung on soft cells and crumpled when the limbs swung. */
 const CARRIED: Record<string, number> = {
   head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55,
-  upperarm: 0.75, forearm: 0.75, hand: 0.9, thigh: 0.75, shin: 0.8, foot: 0.9,
+  upperarm: 2, forearm: 2, hand: 2, thigh: 2, shin: 2, foot: 2,
 };
 /** The softest flesh (the belly) keeps this much less on the bone. */
 const SOFT_LOOSENS = 0.35;
