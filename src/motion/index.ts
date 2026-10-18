@@ -181,6 +181,8 @@ export function createMotion(): NaiwaMotion {
       const e = entries.find((d) => d.info.id === id);
       if (!e) console.warn(`motion: unknown dance "${id}", playing ${entries[0].info.id}`);
       const entry = e ?? entries[0];
+      const { name, nameEn } = entry.info;
+      emit({ state: "tracking", text: { zh: `正在播放：${name}`, en: `Playing: ${nameEn ?? name}` } });
       if (!entry.track) return proceduralSource(PROCEDURAL_DANCES.find((d) => d.id === entry.info.id)!, open);
       return trackSource(entry.track(), entry.info.duration, open, emit);
     },
