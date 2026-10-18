@@ -7,6 +7,7 @@ import { setLang, tr } from "./i18n";
 import { createStage } from "./stage";
 import { loadCharacter } from "./character";
 import { createFrogSim, initPhysics, listSimulators, onSimulatorsChanged } from "./sim";
+import { registerMotionLibrary } from "./algorithms/motion";
 import { createMotion, metricReadouts } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
 import { mountUI, type UICommands } from "./ui";
@@ -21,6 +22,7 @@ store.set(decodeConfig(location.hash));
 const stage = createStage(document.getElementById("stage")!);
 const sfx = createSfx();
 const motion = createMotion();
+registerMotionLibrary();
 const recorder = createRecorder({
   onAutoStop: (rec) => finishRecording(rec),
 });

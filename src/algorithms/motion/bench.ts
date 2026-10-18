@@ -47,13 +47,13 @@ export function measureRetargeter(rig: Binding, o: RetargetOptions, track: Track
   // Cost: a fresh pipeline's solver and an output block of the same kind, timed over the same goals.
   const q = createRetargetPipeline(rig, options, recordingOf(track));
   const r = resolve(options).get("output")!;
-  const output = (r.def.create as (s: typeof q.scene, x: Settings) => { pose(f: ReturnType<typeof q.scene.solver.solve>): unknown })(q.scene, r.settings);
+  const output = (r.def.create as (s: typeof q.scene, x: Settings) => { pose(f: ReturnType<typeof q.scene.solver.solve>, dt: number): unknown })(q.scene, r.settings);
   let solve = 0, out = 0;
   for (const g of goals) {
     const t0 = performance.now();
     const frog = q.scene.solver.solve(g);
     const t1 = performance.now();
-    output.pose(frog);
+    output.pose(frog, 1 / 60);
     solve += t1 - t0;
     out += performance.now() - t1;
   }

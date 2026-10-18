@@ -25,7 +25,6 @@ import type { Binding } from "../../motion/rig";
 type XZ = { x: number; z: number };
 const UP = new THREE.Vector3(0, 1, 0);
 /** Display frame time used until the core passes dt to output blocks. */
-const FRAME = 1 / 60;
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 /** Heading of a horizontal vector, so that a turn by ψ about +Y adds ψ (three.js: x' = x cos ψ + z sin ψ). */
@@ -67,8 +66,7 @@ class FootPlant implements OutputBlock {
     this.twist = 0;
   }
 
-  /** dt: the core does not pass it yet (FRAME until it does). */
-  pose(frog: FrogPose, dt = FRAME): PoseFrame {
+  pose(frog: FrogPose, dt: number): PoseFrame {
     const contact = this.s.contactHeight as number, limit = this.s.twistLimit as number;
     const homing = (this.s.homing as number) * dt;
     const feet = { L: frog.joints.get("foot_L")!, R: frog.joints.get("foot_R")! };
@@ -132,7 +130,7 @@ class FootPlant implements OutputBlock {
     }
     frog.yaw = this.yaw;
     frog.shift = this.offset.x;
-    const frame = this.inner.pose(frog);
+    const frame = this.inner.pose(frog, dt);
     frame.rootOffset!.z = this.offset.z;
     return frame;
   }

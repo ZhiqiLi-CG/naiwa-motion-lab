@@ -75,7 +75,7 @@ export function createRetargetPipeline(
     goal: (frame, dt, mirror) => view(b.goal.goal(frame, dt), mirror),
     pose(goal, dt) {
       const frog = b.solver.solve(goal);
-      const frame = b.output.pose(frog);
+      const frame = b.output.pose(frog, dt);
       metrics.add(goal, frog, frame, dt, b.constraints);
       return frame;
     },

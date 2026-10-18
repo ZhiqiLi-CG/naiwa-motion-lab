@@ -23,7 +23,7 @@ person landmarks ─▶ filter ─▶ goal ─▶ solver ◀─▶ constraints �
 | `constraints` | `ConstraintsBlock` | `frog-body` | The frog's own body: `clearance(p)` from its surface, `pushOut`, joint `limit`s, `spread` so legs never cross. |
 | `goal` | `GoalBlock` | `person-directions` | Person frame → `Goal` (limb directions, belly holds, hops, face). Procedural dances are written directly as Goals and skip the first two slots. |
 | `solver` | `SolverBlock` | `projected-directions` | `Goal` → `FrogPose` (world rotations and joint positions) under the constraints: the numerical core. |
-| `output` | `OutputBlock` | `planted-rotations` | `FrogPose` → `PoseFrame` (local bone quaternions, root offset, heading, expressions); the lower foot on the floor. |
+| `output` | `OutputBlock` | `planted-rotations` | `pose(frog, dt)`: `FrogPose` → `PoseFrame` (local bone quaternions, root offset, heading, expressions); the lower foot on the floor. The default retargeter `planted-feet` uses the library's `foot-plant` here, which also pins standing feet. |
 
 The core builds blocks in the order `filter, constraints, goal, solver, output`. Each block gets the **scene**: the
 frog's rest rig (`scene.rig`), the recording if there is one, and the blocks built before it. The core runs
@@ -102,4 +102,6 @@ called `setTorso`. Two kinds of solver fit the slot:
 - **Constrained optimisation**: it minimises the distance to the person's directions subject to clearance ≥ thickness
   and the joint limits.
 
-Learning pages for these algorithms are planned under `docs/learn/`.
+The library in `src/algorithms/motion/` (registered by `registerMotionLibrary()`) has CCD, FABRIK, damped least
+squares and a penalty Gauss–Newton optimiser as solver blocks, Kalman and Savitzky–Golay filters and a foot-planting
+output block; their learning pages and a measured comparison are in `docs/learn/motion-index.md`.

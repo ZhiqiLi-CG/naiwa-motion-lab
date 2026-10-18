@@ -38,7 +38,7 @@ export function initialState(): AppState {
     motion: { state: "idle" },
     simulator: { id: "cpu-constraints", settings: {} },
     simulators: [],
-    retargeter: { id: "direction-copy", settings: {} },
+    retargeter: { id: "planted-feet", settings: {} },
     retargeters: [],
     playback: { paused: false, timeScale: 1 },
     stats: { fps: 0, stepMs: 0, particles: 0, cells: 0, volumeRatio: 1 },

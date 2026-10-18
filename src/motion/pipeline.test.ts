@@ -142,7 +142,7 @@ describe("registry and settings", () => {
       id: "test-lift", slot: "output", name: { zh: "抬高", en: "Lift" }, summary: { zh: "", en: "" }, parameters: [],
       create: (scene, settings) => {
         const inner = plantedRotations.create(scene, settings);
-        return { pose: (frog) => ((f) => (f.rootOffset!.y += 0.1, f))(inner.pose(frog)) };
+        return { pose: (frog, dt) => ((f) => (f.rootOffset!.y += 0.1, f))(inner.pose(frog, dt)) };
       },
     });
     const removeAssembly = registerRetargeter({ id: "test", name: { zh: "测试", en: "Test" }, summary: { zh: "", en: "" }, blocks: { ...listBlocksOf(DEFAULT_RETARGETER), output: "test-lift" } });

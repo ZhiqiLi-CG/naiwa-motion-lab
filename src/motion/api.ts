@@ -156,8 +156,8 @@ export interface SolverBlock extends Block {
 }
 
 export interface OutputBlock extends Block {
-  /** Bone rotations and the rest of the pose target for the character. */
-  pose(frog: FrogPose): PoseFrame;
+  /** Bone rotations and the rest of the pose target for the character, dt seconds after the previous frame. */
+  pose(frog: FrogPose, dt: number): PoseFrame;
 }
 
 export interface SlotBlocks {
