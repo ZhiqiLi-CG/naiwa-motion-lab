@@ -1,6 +1,6 @@
 /** The bar under the viewport: playback (pause, single step, 0.25× / 0.5× / 1×), the ways to perturb the body
  *  (poke / drag, probe ball) and reset. */
-import { SPEEDS, TOOLS, copy } from "./copy";
+import { SPEEDS, TOOLS, copy, type ShownTool } from "./copy";
 import { changed, type Ctx, type Part } from "./ctx";
 import { h, icon } from "./dom";
 import { segmented } from "./panel";
@@ -66,7 +66,7 @@ export function createTransport(ctx: Ctx, host: HTMLElement): Part {
         playback.toggleAttribute("data-lab-only", plain);
         playbackDivider.toggleAttribute("data-lab-only", plain);
       }
-      tools.set(s.tool);
+      tools.set(s.tool as ShownTool);
     },
   };
 }

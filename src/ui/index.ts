@@ -28,6 +28,7 @@ import { createTransport } from "./transport";
 
 export type { CameraCommands, UICommands } from "./ctx";
 export type { Insets } from "./insets";
+export type { PluginInfo } from "./plugins";
 export { resolveTheme } from "./format";
 
 export interface UIOptions {
@@ -49,6 +50,7 @@ export interface MountedUI extends UIHandles {
 }
 
 type Tab = "motion" | "sim";
+const PHONE = "(max-width: 720px)";
 
 /** One build of the UI in one language. */
 interface View {
@@ -114,6 +116,11 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
         // storage blocked (private window): the choice lasts for this visit only
       }
       if (!next && root.dataset.tab === "sim") root.dataset.tab = "motion";
+      // on a phone the lab is a tab of the bottom sheet: opening it shows that tab
+      if (next && window.matchMedia(PHONE).matches) {
+        root.dataset.tab = "sim";
+        root.dataset.sheet = "open";
+      }
       for (const b of root.querySelectorAll("[data-lab-toggle]")) b.setAttribute("aria-pressed", String(next));
       view?.sheetChanged();
     },

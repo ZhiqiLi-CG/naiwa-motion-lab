@@ -1,4 +1,4 @@
-/** 仿真 Simulation: the simulator and its parameters, material presets, the global knobs with exact values and units
+/** 实验室 Lab: the simulator and its parameters, the motion-transfer retargeter and its parameters, material presets, the global knobs with exact values and units
  *  (softness, damping, gravity, volume, upright recovery), and material by region with a body map that marks the
  *  region being adjusted. */
 import type { AppState, FleshRegion, PhysicsParams } from "../contracts";
@@ -52,6 +52,7 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
   const simulator = createPluginSection(ctx, {
     id: "sim",
     title: T.sim.simulator,
+    empty: T.sim.noSimulators,
     list: (s) => s.simulators,
     chosen: (s) => s.simulator,
     choose: (simulator) => store.set({ simulator }),
@@ -67,6 +68,7 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
   const retargeter = createPluginSection(ctx, {
     id: "retarget",
     title: T.sim.retargeter,
+    empty: T.sim.noRetargeters,
     list: (s) => s.retargeters,
     chosen: (s) => s.retargeter,
     choose: (retargeter) => store.set({ retargeter }),
@@ -96,6 +98,7 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
       step: d.step,
       digits: d.digits,
       unit: d.unit,
+      inline: true,
       set: (v) => store.set({ params: { [d.param]: d.fromView(v) } as Partial<PhysicsParams> }),
     });
     return { d, k };

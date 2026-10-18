@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MATERIAL_PRESETS } from "../store";
-import { KNOBS, REGION_GROUPS, SHORTCUT_KEYS, copy, formatDuration } from "./copy";
+import { KNOBS, REGION_GROUPS, SHORTCUT_KEYS, STRINGS, copy, formatDuration, isText } from "./copy";
 import { formatClock, formatCount, formatMs, formatValue, matchingPreset, resolveTheme } from "./format";
 import { danceNameFrom } from "./motion";
 import { groupValue, withGroup } from "./simulation";
@@ -59,11 +59,26 @@ describe("regions", () => {
 });
 
 describe("copy", () => {
-  // every string the UI shows exists in both languages, with the same shape
-  const shape = (v: unknown): unknown =>
-    Array.isArray(v) ? v.map(shape) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x)])) : typeof v;
-  it("中文 and English have the same keys", () => {
-    expect(shape(copy("en"))).toEqual(shape(copy("zh")));
+  // every string the UI shows exists in both languages
+  const leaves = (v: unknown, path: string): [string, unknown][] =>
+    isText(v)
+      ? [[path, v]]
+      : typeof v === "function"
+        ? [[`${path}()`, (v as (...a: unknown[]) => unknown)(1)]]
+        : v && typeof v === "object"
+          ? Object.entries(v).flatMap(([k, x]) => leaves(x, `${path}.${k}`))
+          : [[path, null]];
+  it("every string has 中文 and English", () => {
+    for (const [path, text] of leaves(STRINGS, "")) {
+      expect(isText(text), path).toBe(true);
+      expect((text as { zh: string }).zh.length, path).toBeGreaterThan(0);
+      expect((text as { en: string }).en.length, path).toBeGreaterThan(0);
+    }
+  });
+  it("copy() resolves to one language", () => {
+    expect(copy("zh").lab).toBe("实验室");
+    expect(copy("en").lab).toBe("Lab");
+    expect(copy("en").dance.loop(1.5)).toBe("1.5 s loop");
   });
   it("every shortcut is described", () => {
     expect(copy("zh").shortcuts.length).toBe(SHORTCUT_KEYS.length);

@@ -1,6 +1,6 @@
 /** The recording result sheet and the help dialog. */
 import type { AppState, Recording, ThemeChoice } from "../contracts";
-import type { Lang } from "../i18n";
+import { LANGS, type Lang } from "../i18n";
 import { SHORTCUT_KEYS, copy, formatDuration } from "./copy";
 import { changed, type Ctx, type Part } from "./ctx";
 import { frogMark, h, icon } from "./dom";
@@ -87,7 +87,7 @@ export function createHelp(ctx: Ctx, dialogs: Dialogs) {
     );
     themes.set(store.get().theme);
     // switching the language rebuilds the UI in the other one, this dialog included
-    const langs = segmented<Lang>(T.langTitle, [{ value: "zh", text: "中文" }, { value: "en", text: "English" }], (lang) => store.set({ lang }));
+    const langs = segmented<Lang>(T.langTitle, LANGS.map((l) => ({ value: l, text: T.langNames[l] })), (lang) => store.set({ lang }));
     langs.set(store.get().lang);
     dialogs.open({
       title: T.product,

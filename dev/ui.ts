@@ -1,7 +1,8 @@
 /** Dev page for the UI: the real stage and the real 奶蛙 (public/models/naiwa.glb) behind mountUI, with a mock store
  *  and commands (no simulation or motion). The frog is framed in the free middle from ui.onInsets, as the integration
- *  can do. Query: ?theme=light|dark ?mode=… ?tool=… ?loading=1 ?motion=state&msg=… ?custom ?paused ?slow ?gpu
- *  ?lab ?recording ?rec ?help ?toast ?sheet=motion|sim ?collapsed ?regions ?preview ?analyse ?analysed ?mine ?lang=zh|en. window.mock
+ *  can do. Query: ?theme=light|dark ?mode=… ?tool=… ?loading=1 ?motion=state&msg=… ?custom ?paused ?slow ?gpu (choose gpu-mpm)
+ *  ?lab|nolab ?nogpu ?empty ?recording ?rec ?help ?toast ?sheet=motion|sim ?collapsed ?regions ?preview ?analyse ?analysed ?mine
+ *  ?lang=zh|en. window.mock
  *  for scripts. */
 import * as THREE from "three";
 import "../src/styles/index.css";
@@ -9,11 +10,15 @@ import { loadCharacter } from "../src/character";
 import type { BoneName, DanceInfo, Recording, Tool } from "../src/contracts";
 import { createStage } from "../src/stage";
 import { createStore, initialState, MATERIAL_PRESETS } from "../src/store";
-import { mountUI, type UICommands } from "../src/ui";
+import { mountUI, type PluginInfo, type UICommands } from "../src/ui";
 
 const q = new URLSearchParams(location.search);
-// the lab opens with ?lab, so screenshots do not depend on what an earlier visit left in storage
-localStorage.setItem("naiwa.lab", q.has("lab") ? "open" : "closed");
+// ?lab / ?nolab force the lab open / closed; without either the page keeps what the last visit left
+try {
+  if (q.has("lab") || q.has("nolab")) localStorage.setItem("naiwa.lab", q.has("lab") ? "open" : "closed");
+} catch {
+  // storage blocked: the lab starts closed
+}
 const store = createStore(initialState());
 const theme = q.get("theme");
 if (theme === "light" || theme === "dark") store.set({ theme });
@@ -171,58 +176,77 @@ function analyse(to = 1) {
 
 /* ---------------- simulators as the integration registers them (src/sim/api.ts), and live readouts ---------------- */
 const gpu = q.has("gpu");
-store.set({
-  simulators: [
-    {
-      id: "cpu-constraints",
-      name: { zh: "约束求解（CPU）", en: "Constraint solver (CPU)" },
-      device: "cpu",
-      summary: { zh: "Rapier 软体约束，快速稳定，适合实时跟随动作", en: "Rapier soft-body constraints; fast and stable for live motion" },
-      parameters: [
-        { key: "substeps", label: { zh: "子步数", en: "Substeps" }, kind: "number", min: 1, max: 16, step: 1, default: 4, help: { zh: "每帧的仿真子步", en: "Simulation substeps per frame" } },
-        { key: "iterations", label: { zh: "迭代次数", en: "Iterations" }, kind: "number", min: 1, max: 32, step: 1, default: 8 },
-        { key: "compliance", label: { zh: "柔度", en: "Compliance" }, kind: "number", min: 0, max: 0.01, step: 0.0001, unit: "m/N", default: 0.002 },
-        { key: "cellModel", label: { zh: "单元模型", en: "Cell model" }, kind: "choice", default: "volume", rebuild: true, choices: [
-          { value: "volume", label: { zh: "体积保持", en: "Volume" } },
-          { value: "corotational", label: { zh: "共旋", en: "Corotational" } },
-          { value: "neohookean", label: { zh: "Neo-Hookean", en: "Neo-Hookean" } },
-        ] },
-        { key: "resolution", label: { zh: "分辨率", en: "Resolution" }, kind: "choice", default: "medium", rebuild: true, choices: [
-          { value: "low", label: { zh: "低", en: "Low" } },
-          { value: "medium", label: { zh: "中", en: "Medium" } },
-          { value: "high", label: { zh: "高", en: "High" } },
-        ] },
-        { key: "selfCollision", label: { zh: "自碰撞", en: "Self-collision" }, kind: "boolean", default: true, help: { zh: "手臂与肚子互不穿透", en: "Arms and belly do not pass through each other" } },
-      ],
-      unavailable: null,
-      origin: "builtin",
-    },
-    {
-      id: "gpu-mpm",
-      name: { zh: "MPM / FEM（WebGPU）", en: "MPM / FEM (WebGPU)" },
-      device: "gpu",
-      summary: { zh: "整体求解弹性，形变更准确，需要 WebGPU", en: "Solves the whole body's elasticity; truer deformation, needs WebGPU" },
-      parameters: [
-        { key: "youngs", label: { zh: "杨氏模量", en: "Young's modulus" }, kind: "number", min: 1, max: 200, step: 1, unit: "kPa", default: 40 },
-        { key: "poisson", label: { zh: "泊松比", en: "Poisson's ratio" }, kind: "number", min: 0, max: 0.49, step: 0.01, default: 0.45 },
-        { key: "grid", label: { zh: "网格", en: "Grid" }, kind: "number", min: 32, max: 256, step: 32, default: 96, rebuild: true },
-      ],
-      unavailable: gpu ? null : { zh: "这个浏览器没有 WebGPU", en: "This browser has no WebGPU" },
-      origin: "builtin",
-    },
-    {
-      id: "user-pbd",
-      name: { zh: "我的 PBD 试验", en: "My PBD experiment" },
-      device: "cpu",
-      summary: { zh: "用户自己写的位置动力学求解器", en: "A position-based solver written by the user" },
-      parameters: [{ key: "stiffness", label: { zh: "刚度", en: "Stiffness" }, kind: "number", min: 0, max: 1, step: 0.01, default: 0.6 }],
-      unavailable: null,
-      origin: "user",
-    },
-  ],
-});
+// the backend that runs gpu-mpm, as the integration reports it (no GPU → CPU workers)
+const backend = q.has("nogpu") ? { zh: "CPU 并行 · 8 线程", en: "CPU parallel · 8 workers" } : "WebGPU";
+const SIMULATORS: PluginInfo[] = [
+  {
+    id: "cpu-constraints",
+    name: { zh: "约束求解", en: "Constraint solver" },
+    device: "cpu",
+    summary: { zh: "Rapier 软体约束，快速稳定，适合实时跟随动作", en: "Rapier soft-body constraints; fast and stable for live motion" },
+    parameters: [
+      { key: "substeps", label: { zh: "子步数", en: "Substeps" }, kind: "number", min: 1, max: 16, step: 1, default: 4, help: { zh: "每帧的仿真子步", en: "Simulation substeps per frame" } },
+      { key: "iterations", label: { zh: "迭代次数", en: "Iterations" }, kind: "number", min: 1, max: 32, step: 1, default: 8 },
+      { key: "compliance", label: { zh: "柔度", en: "Compliance" }, kind: "number", min: 0, max: 0.01, step: 0.0001, unit: "m/N", default: 0.002 },
+      { key: "dt", label: { zh: "时间步长", en: "Time step" }, kind: "number", min: 1, max: 16.7, step: 0.1, unit: "ms", default: 8.3 },
+      { key: "cellModel", label: { zh: "单元模型", en: "Cell model" }, kind: "choice", default: "volume", rebuild: true, choices: [
+        { value: "volume", label: { zh: "体积保持", en: "Volume" } },
+        { value: "corotational", label: { zh: "共旋", en: "Corotational" } },
+        { value: "neohookean", label: { zh: "Neo-Hookean", en: "Neo-Hookean" } },
+      ] },
+      { key: "resolution", label: { zh: "分辨率", en: "Resolution" }, kind: "choice", default: "medium", rebuild: true, choices: [
+        { value: "low", label: { zh: "低", en: "Low" } },
+        { value: "medium", label: { zh: "中", en: "Medium" } },
+        { value: "high", label: { zh: "高", en: "High" } },
+      ] },
+      { key: "selfCollision", label: { zh: "自碰撞", en: "Self-collision" }, kind: "boolean", default: true, help: { zh: "手臂与肚子互不穿透", en: "Arms and belly do not pass through each other" } },
+    ],
+    unavailable: null,
+    origin: "builtin",
+  },
+  {
+    id: "gpu-mpm",
+    name: { zh: "MPM / FEM", en: "MPM / FEM" },
+    device: "gpu",
+    summary: { zh: "整体求解弹性，形变更准确", en: "Solves the whole body's elasticity; truer deformation" },
+    backend,
+    parameters: [
+      { key: "youngs", label: { zh: "杨氏模量", en: "Young's modulus" }, kind: "number", min: 1, max: 200, step: 1, unit: "kPa", default: 40 },
+      { key: "poisson", label: { zh: "泊松比", en: "Poisson's ratio" }, kind: "number", min: 0, max: 0.49, step: 0.01, default: 0.45 },
+      { key: "grid", label: { zh: "网格", en: "Grid" }, kind: "number", min: 32, max: 256, step: 32, default: 96, rebuild: true },
+      { key: "transfer", label: { zh: "粒子-网格传递", en: "Transfer" }, kind: "choice", default: "apic", choices: [
+        { value: "pic", label: { zh: "PIC", en: "PIC" } },
+        { value: "flip", label: { zh: "FLIP", en: "FLIP" } },
+        { value: "apic", label: { zh: "APIC", en: "APIC" } },
+        { value: "mls", label: { zh: "MLS", en: "MLS" } },
+        { value: "pola", label: { zh: "PolyPIC", en: "PolyPIC" } },
+      ] },
+    ],
+    unavailable: null,
+    origin: "builtin",
+  },
+  {
+    id: "gpu-xpbd",
+    name: { zh: "XPBD 布料式肉体", en: "XPBD flesh" },
+    device: "gpu",
+    summary: { zh: "扩展位置动力学，大步长下稳定", en: "Extended position-based dynamics; stable at large steps" },
+    parameters: [],
+    unavailable: { zh: "需要 WebGPU 的 32 位浮点原子操作", en: "Needs WebGPU 32-bit float atomics" },
+    origin: "builtin",
+  },
+  {
+    id: "user-pbd",
+    name: { zh: "我的 PBD 试验", en: "My PBD experiment" },
+    device: "cpu",
+    summary: { zh: "用户自己写的位置动力学求解器", en: "A position-based solver written by the user" },
+    parameters: [{ key: "stiffness", label: { zh: "刚度", en: "Stiffness" }, kind: "number", min: 0, max: 1, step: 0.01, default: 0.6 }],
+    unavailable: null,
+    origin: "user",
+  },
+];
+if (!q.has("empty")) store.set({ simulators: SIMULATORS });
 if (gpu) store.set({ simulator: { id: "gpu-mpm", settings: {} } });
-store.set({
+if (!q.has("empty")) store.set({
   retargeters: [
     {
       id: "retarget-default",

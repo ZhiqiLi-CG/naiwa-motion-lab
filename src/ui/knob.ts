@@ -1,4 +1,5 @@
-/** A slider with an exact numeric field beside it (and its unit); both edit the same value. */
+/** A slider with an exact numeric field beside it (and its unit); both edit the same value. Stacked (label and field
+ *  over the slider with its range ends) or inline (label, slider, field on one row, for long parameter lists). */
 import { h, icon } from "./dom";
 import { formatValue } from "./format";
 
@@ -14,6 +15,7 @@ export interface KnobOpts {
   unit: string;
   /** Mark it as rebuilding the simulation when changed. */
   rebuild?: boolean;
+  inline?: boolean;
   set(v: number): void;
 }
 
@@ -41,20 +43,20 @@ export function knob(o: KnobOpts) {
     step: o.step,
     oninput: (e: Event) => o.set(Number((e.target as HTMLInputElement).value)),
   });
-  const unit = o.unit && o.unit !== "×" ? h("span", { class: "nw-num-unit" }, o.unit) : null;
+  // inline rows keep a unit column (empty or not) so their fields line up
+  const unit = o.inline ? h("span", { class: "nw-num-unit" }, o.unit) : o.unit && o.unit !== "×" ? h("span", { class: "nw-num-unit" }, o.unit) : null;
   // the range's ends sit beside the slider, without the unit (the field shows it)
   const end = (v: number) => h("span", { class: "nw-knob-end", "aria-hidden": "true" }, formatValue(v, o.digits, o.unit === "×" ? "×" : ""));
-  const row = h(
-    "div",
-    { class: "nw-knob", title: o.hint || null },
-    h(
-      "div",
-      { class: "nw-knob-head" },
-      h("label", { for: o.id, class: "nw-knob-label" }, o.label, o.rebuild ? icon("rebuild") : null),
-      h("span", { class: "nw-num-wrap" }, field, unit),
-    ),
-    h("div", { class: "nw-knob-track" }, end(o.min), slider, end(o.max)),
-  );
+  const label = h("label", { for: o.id, class: "nw-knob-label" }, h("span", { class: "nw-truncate", title: o.label }, o.label), o.rebuild ? icon("rebuild") : null);
+  const num = h("span", { class: "nw-num-wrap" }, field, unit);
+  const row = o.inline
+    ? h("div", { class: "nw-knob nw-knob--inline", title: o.hint || null }, label, slider, num)
+    : h(
+        "div",
+        { class: "nw-knob", title: o.hint || null },
+        h("div", { class: "nw-knob-head" }, label, num),
+        h("div", { class: "nw-knob-track" }, end(o.min), slider, end(o.max)),
+      );
   return {
     row,
     slider,

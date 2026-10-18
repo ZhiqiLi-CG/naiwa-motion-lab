@@ -185,8 +185,10 @@
   left: calc(var(--gutter) + env(safe-area-inset-left));
 }
 
+/* the lab is a little wider: its rows carry a label, a slider, an exact value and a unit */
 .nw-panel--sim {
   right: calc(var(--gutter) + env(safe-area-inset-right));
+  width: calc(var(--panel-w) + var(--space-4));
 }
 
 .nw-panel-head {
@@ -358,6 +360,31 @@
   display: none;
 }
 
+/* label · slider · value + unit on one row, for a plugin's declared parameters */
+.nw-knob--inline {
+  display: grid;
+  grid-template-columns: minmax(0, 6em) minmax(64px, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+}
+
+.nw-knob--inline .nw-knob-label {
+  color: var(--text-secondary);
+}
+
+.nw-knob--inline .nw-num {
+  width: 60px;
+  padding: 0 var(--space-1);
+}
+
+/* a fixed unit column keeps the sliders of every row the same length */
+.nw-knob--inline .nw-num-unit {
+  width: 32px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 /* ---------- Simulator list ---------- */
 .nw-sims {
   display: flex;
@@ -388,7 +415,9 @@
 }
 
 .nw-sim:disabled {
-  background: var(--bg-sunken);
+  border-style: dashed;
+  background: transparent;
+  cursor: not-allowed;
 }
 
 .nw-sim-head {
@@ -413,6 +442,37 @@
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+}
+
+/* the backend that actually runs it (e.g. a GPU method on CPU workers) */
+.nw-sim-backend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.nw-sim-backend-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success-text);
+}
+
+.nw-rebuild-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.nw-rebuild-note .nw-icon,
+.nw-switch-label .nw-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--text-tertiary);
 }
 
 .nw-sim-why {
@@ -573,6 +633,9 @@
 }
 
 .nw-switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   font-weight: var(--weight-medium);
@@ -1255,6 +1318,11 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     transform: none;
+  }
+
+  /* with the lab closed the bar holds only the tools and reset, spread apart: no divider between them */
+  .nw-ui:not([data-lab="open"]) .nw-transport .nw-divider {
+    display: none;
   }
 
   /* the tools show their icons only; the word is their label */
