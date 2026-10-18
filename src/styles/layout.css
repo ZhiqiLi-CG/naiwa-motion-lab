@@ -1251,14 +1251,52 @@
     --control-lg: 44px;
   }
 
+  /* the track stays thin; the whole 44 px band takes the finger */
   .nw-slider {
-    height: 32px;
+    height: 44px;
   }
 
   .nw-slider::-webkit-slider-thumb {
     width: 22px;
     height: 22px;
     margin-top: -9px;
+  }
+
+  .nw-num {
+    height: var(--control-md);
+  }
+
+  /* Hit areas at least 44 px tall (WCAG 2.5.5, Apple HIG) around compact visuals: a transparent ::before as tall as
+     the control or 44 px, whichever is more. As wide as the control, so neighbours in a tight row do not take each
+     other's taps; those rows keep every control at least 40 px wide instead. :where() leaves a control that is
+     positioned for its own reasons (.nw-row-del) as it is. */
+  :where(.nw-btn, .nw-icon-btn, .nw-seg-btn, .nw-chip, .nw-lang, .nw-switch) {
+    position: relative;
+  }
+
+  :is(.nw-btn, .nw-icon-btn, .nw-seg-btn, .nw-chip, .nw-lang, .nw-switch)::before {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc(50% - 22px)) 0;
+  }
+
+  /* a switch sits alone at the end of its row: room to grow sideways too */
+  .nw-switch {
+    width: 40px;
+    height: 24px;
+  }
+
+  .nw-switch-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .nw-switch[aria-checked="true"] .nw-switch-thumb {
+    transform: translateX(16px);
+  }
+
+  .nw-switch::before {
+    inset: -10px -4px;
   }
 }
 
@@ -1300,6 +1338,10 @@
 
   .nw-btn--rec {
     padding: 0 var(--space-2);
+  }
+
+  .nw-actions .nw-btn {
+    min-width: var(--control-md);
   }
 
   /* the preview sits in the corner of the viewport, under the top bar */
@@ -1376,15 +1418,30 @@
     transform: none;
   }
 
-  /* with the lab closed the bar holds only the tools and reset, spread apart: no divider between them */
-  .nw-ui:not([data-lab="open"]) .nw-transport .nw-divider {
-    display: none;
-  }
-
   /* the tools show their icons only; the word is their label */
   .nw-transport .nw-seg-btn .nw-icon + span,
   .nw-transport .nw-btn span {
     display: none;
+  }
+
+  /* finger-sized: the tools and reset 44 px wide, the speeds 40 (with the lab open playback shares the row, which
+     then has no room for dividers) */
+  .nw-transport {
+    gap: var(--space-1);
+  }
+
+  .nw-transport .nw-divider {
+    display: none;
+  }
+
+  .nw-transport .nw-seg-btn,
+  .nw-transport > .nw-btn {
+    min-width: 44px;
+    height: var(--control-md);
+  }
+
+  .nw-transport .nw-seg--mono .nw-seg-btn {
+    min-width: var(--control-md);
   }
 
   .nw-tabs {
