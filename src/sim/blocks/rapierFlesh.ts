@@ -221,6 +221,8 @@ class CarriedPiece implements FleshPiece {
   private neighbour: (RAPIER.RigidBody | null)[] = [];
   private offset2: Float32Array;
   private share: Float32Array;
+  private bodies: RAPIER.RigidBody[] | null = null;
+  private slept = false;
   /** The flesh across the joints: cells whose particles ride on different bones, their particles (the rest are held
    *  by their bones), their edges with rest lengths, and the cells' rest volumes. */
   private joint: { cells: Uint32Array; free: Uint8Array; edges: Uint32Array; lengths: Float32Array; volumes: Float32Array };
@@ -323,6 +325,8 @@ class CarriedPiece implements FleshPiece {
   attach(i: number, body: RAPIER.RigidBody) {
     if (body === this.carrier[i]) return;
     this.carrier[i] = body;
+    this.bodies = null;
+    this.slept = false;
     this.share[i] = 0;
     const p = new THREE.Vector3().fromArray(this.P, i * 3);
     p.applyMatrix4(poseOf(body, new THREE.Matrix4()).invert()).toArray(this.offset, i * 3);
@@ -332,8 +336,13 @@ class CarriedPiece implements FleshPiece {
     return this.carrier[i];
   }
 
-  /** Move the particles with their bodies (after the world stepped); the surface follows when it is read. */
+  /** Move the particles with their bodies (after the world stepped); the surface follows when it is read. Nothing to
+   *  do while every body carrying them sleeps. */
   afterStep() {
+    const bodies = (this.bodies ??= [...new Set([...this.carrier, ...this.neighbour.filter((b): b is RAPIER.RigidBody => !!b)])]);
+    const asleep = bodies.every((b) => b.isSleeping());
+    if (asleep && this.slept) return;
+    this.slept = asleep;
     const poses = new Map<RAPIER.RigidBody, THREE.Matrix4>();
     const pose = (b: RAPIER.RigidBody) => {
       let m = poses.get(b);
@@ -389,6 +398,7 @@ class CarriedPiece implements FleshPiece {
   addVelocity() {}
   setParams() {}
   reset() {
+    this.slept = false;
     this.afterStep();
   }
 }

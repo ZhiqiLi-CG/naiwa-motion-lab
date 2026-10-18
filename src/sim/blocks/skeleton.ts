@@ -29,15 +29,19 @@ const JOINTS: Record<string, Joint> = {
   spine: { mass: 3, hold: 3000, drive: 0, swing: 40, twist: 30 },
   chest: { mass: 3, hold: 3000, drive: 0, swing: 40, twist: 30 },
   head: { mass: 2, hold: 1500, drive: 0, swing: 60, twist: 70 },
-  upperarm: { mass: 0.6, hold: 120, drive: 120, swing: 100, twist: 70 },
-  forearm: { mass: 0.4, hold: 80, drive: 80, swing: 140, twist: 60 },
-  hand: { mass: 0.2, hold: 30, drive: 30, swing: 80, twist: 40 },
+  // The arms' drive carries their flesh too (it rides on the bones): three times the hold, or a fast dance's hands
+  // lagged and swung past their targets by half again (狗熊哆嗦毛: hand 8.7 cm off its target on median, 4.4 now).
+  upperarm: { mass: 0.6, hold: 120, drive: 360, swing: 100, twist: 70 },
+  forearm: { mass: 0.4, hold: 80, drive: 240, swing: 140, twist: 60 },
+  hand: { mass: 0.2, hold: 30, drive: 90, swing: 80, twist: 40 },
   thigh: { mass: 1.5, hold: 5000, drive: 1500, swing: 100, twist: 40 },
   shin: { mass: 1, hold: 5000, drive: 1500, swing: 140, twist: 20 },
   foot: { mass: 1, hold: 3000, drive: 800, swing: 60, twist: 20 },
 };
 const jointOf = (name: CoreBone) => JOINTS[name.replace(/_[LR]$/, "")];
 
+/** Damping of the drive motors in driven mode (times √stiffness): a little more than the hold's, against overshoot. */
+const DRIVE_DAMPING = 0.3;
 /** A planted foot's hold (pinFeet): N/m and N·s/m against moving, N·m/rad against turning. */
 const PIN_STIFFNESS = 6000;
 const PIN_DAMPING = 2 * Math.sqrt(PIN_STIFFNESS * 2);
@@ -347,11 +351,11 @@ export class Skeleton {
   /* Driving                                                                                                      */
   /* ---------------------------------------------------------------------------------------------------------- */
 
-  private setMotors(bone: Bone, k: number) {
+  private setMotors(bone: Bone, k: number, damping = 0.2) {
     // Reconfigured only on change; little damping, since Rapier's soft motors trade static stiffness for damping.
     if (!bone.joint || Math.abs(k - bone.stiffness) < 1e-3 * (k + 1)) return;
     bone.stiffness = k;
-    for (const axis of ANG_AXES) this.raw.jointConfigureMotorPosition(bone.joint.handle, axis as number, 0, k, 0.2 * Math.sqrt(k));
+    for (const axis of ANG_AXES) this.raw.jointConfigureMotorPosition(bone.joint.handle, axis as number, 0, k, damping * Math.sqrt(k));
   }
 
   /** Free mode: every joint holds the rest pose at `tone` (0..1) of its strength, and the hips are held upright with
@@ -404,7 +408,7 @@ export class Skeleton {
       rel.copy(b.fromRel).slerp(q.copy(b.restRel).multiply(delta), w);
       b.commandRel.slerp(rel, Math.min(1, (MAX_TURN * dt) / Math.max(1e-9, b.commandRel.angleTo(rel))));
       b.joint.setLocalFrame1(v3(b.anchor), q4(b.commandRel));
-      this.setMotors(b, jointOf(b.name).drive);
+      this.setMotors(b, jointOf(b.name).drive, DRIVE_DAMPING);
     }
   }
 
