@@ -1,7 +1,7 @@
 /** Dev page for the UI: the real stage and the real 奶蛙 (public/models/naiwa.glb) behind mountUI, with a mock store
  *  and commands (no simulation or motion). The frog is framed in the free middle from ui.onInsets, as the integration
  *  can do. Query: ?theme=light|dark ?mode=… ?tool=… ?loading=1 ?motion=state&msg=… ?custom ?paused ?slow ?gpu (choose gpu-mpm)
- *  ?lab|nolab ?nogpu ?empty ?recording ?rec ?help ?toast ?sheet=motion|sim ?collapsed ?regions ?preview ?analyse ?analysed ?mine
+ *  ?lab|nolab ?nogpu ?empty ?recording ?rec ?help ?toast ?sheet=motion|feel|sim ?collapsed ?regions ?preview ?analyse ?analysed ?mine
  *  ?lang=zh|en. window.mock
  *  for scripts. */
 import * as THREE from "three";
