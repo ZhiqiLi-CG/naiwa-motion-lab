@@ -90,11 +90,15 @@ Reading it · 怎么读:
 - **Hands in the belly.** The SDF contacts push the Body's surface off the hands' capsules after the flesh's step;
   how much of that survives the next step depends on how hard the solver pulls back: from 0–7 mm (PBD, shape matching)
   to 28 mm (PD, linear FEM). The built-in resolves contacts inside its solve (8 mm).
-- **Cost.** Every simulator fits the page's 4 ms physics budget per frame at its defaults (1 step per frame at 60 Hz).
-  Shape matching and XPBD are the cheapest, neo-Hookean FEM and fem-tethers the dearest. A busy machine doubles these
-  numbers (the bench takes the fastest of three runs; in a loaded headless browser all simulators, the built-in
-  included, ran 2–10 × slower).
+- **Cost.** In Node on a quiet machine (the table) a whole step takes 0.6–2.6 ms (the built-in 1.5 ms), and they
+  all fit the page's 4 ms physics budget per frame (one step per frame at 60 Hz). JavaScript in the browser is slower
+  than Rapier's WebAssembly: in Chrome, on a busy machine, with the torso swaying (all simulators in one page, best of
+  two rounds), a step took cpu-constraints 3.6–3.9 ms, shape-matching 1.9–2.0, mass-spring 2.1–2.2, xpbd 2.5–3.1,
+  pbd 3.5–4.3, projective-dynamics 4.4–5.1, implicit-fem 5.4–6.3 and fem-tethers 5.6–6.6 ms. So XPBD, shape matching and
+  mass–spring are the safe interactive choices; PD and FEM cost about 1.2–1.6 × the built-in and need a quiet machine
+  (or fewer `bodyParticles`, CG iterations or PD iterations) to stay within 4 ms.
 
 ## Not covered yet · 还没有
+The belly pump (`bellySize`) inflates only PBD and XPBD (their volume constraints); the other solvers ignore it.
 Contacts inside the solvers (XPBD contact constraints, FEM with barrier or penalty contacts); self-collision of the
 Body's flesh; GPU versions (the `gpu` slot of the API is another agent's work); a skinned (multi-bone) target.

@@ -49,7 +49,8 @@ v = (x − x_old) / h;   reaction (attached) = f(x) · h
 ## When to use it
 When the material must mean something: Young's modulus and Poisson ratio are the real ones, and the corotational and
 neo-Hookean materials keep the head and chest in shape through the bend (head 8 mm from rigid, 0 inverted cells, the
-Body's volume within 3 % and 1.6 %). It is the most expensive block (1.5–2 ms of flesh per step on the frog); the
+Body's volume within 3 % and 1.6 %). It is the most expensive block (1.5–2 ms of flesh per step on the frog in Node, about 1.5 × the built-in step in the
+browser); the
 CG iterations are the knob. The linear material is here to show what goes wrong without rotation invariance.
 
 Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5 cm):
