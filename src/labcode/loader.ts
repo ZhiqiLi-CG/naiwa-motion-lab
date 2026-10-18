@@ -15,8 +15,8 @@ import * as THREE from "three";
 import { compile, scanImports, type SourceLang, type SourceProblem } from "./compile";
 
 /** The page's modules by path below src/ ("sim/api.ts"), loaded on demand. */
-const MODULES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts"]);
-const SOURCES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts"], {
+const MODULES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../algorithms/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts"]);
+const SOURCES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../algorithms/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts"], {
   query: "?raw",
   import: "default",
 }) as Record<string, () => Promise<string>>;
@@ -56,6 +56,9 @@ export class LoadError extends Error {
   constructor(
     message: string,
     readonly problems: SourceProblem[],
+    /** compile: the source is not valid TypeScript the lab can run; load: an import is missing, or the module threw
+     *  while it ran. */
+    readonly phase: "compile" | "load",
   ) {
     super(message);
   }
@@ -93,13 +96,13 @@ async function load(src: UserSource): Promise<LoadedModule> {
   for (const spec of scanImports(src.code, src.lang)) {
     const url = await shimFor(spec, src.path).catch((e: Error) => {
       const at = src.code.indexOf(spec);
-      throw new LoadError(e.message, [{ from: Math.max(0, at), to: Math.max(0, at) + spec.length, message: { zh: e.message, en: e.message } }]);
+      throw new LoadError(e.message, [{ from: Math.max(0, at), to: Math.max(0, at) + spec.length, message: { zh: e.message, en: e.message } }], "load");
     });
     urls.set(spec, url);
   }
   const { code, problems, syntax } = compile(src.code, src.lang, (spec) => urls.get(spec) ?? spec);
-  if (problems.length) throw new LoadError(problems[0].message.en, problems);
-  const url = URL.createObjectURL(new Blob([`${code}\n//# sourceURL=${src.name}`], { type: "text/javascript" }));
+  if (problems.length) throw new LoadError(problems[0].message.en, problems, "compile");
+  const url = moduleUrl(`${code}\n//# sourceURL=${src.name}`);
   userUrls.set(url, src);
   capturing = [];
   try {
@@ -107,12 +110,12 @@ async function load(src: UserSource): Promise<LoadedModule> {
     return { exports, registered: capturing };
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
-    if (err instanceof SyntaxError) throw new LoadError(`SyntaxError: ${err.message}`, syntax.slice(0, 1));
+    if (err instanceof SyntaxError) throw new LoadError(`SyntaxError: ${err.message}`, syntax.slice(0, 1), "compile");
     const at = locate(err);
-    throw new LoadError(`${err.name}: ${err.message}`, at && at.source === src ? [lineProblem(src.code, at.line, at.column, err.message)] : []);
+    throw new LoadError(`${err.name}: ${err.message}`, at && at.source === src ? [lineProblem(src.code, at.line, at.column, err.message)] : [], "load");
   } finally {
     capturing = null;
-    URL.revokeObjectURL(url);
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   }
 }
 
@@ -128,9 +131,16 @@ async function shimFor(spec: string, from: string): Promise<string> {
     `const m = globalThis[Symbol.for("naiwa.labcode.modules")].get(${JSON.stringify(id)});\n` +
     (names.length ? `export const { ${names.join(", ")} } = m;\n` : "") +
     ("default" in ns ? "export default m.default;\n" : "");
-  const url = URL.createObjectURL(new Blob([shim], { type: "text/javascript" }));
+  const url = moduleUrl(shim);
   shimUrls.set(id, url);
   return url;
+}
+
+/** A URL the module's code can be imported from: a Blob URL in the browser (short, so stack traces stay readable);
+ *  Node (the tests) imports only data: URLs. */
+function moduleUrl(code: string): string {
+  if (typeof window === "undefined") return `data:text/javascript;charset=utf-8,${encodeURIComponent(code)}`;
+  return URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
 }
 
 /** A package name, or a page file's path for a relative specifier. */
