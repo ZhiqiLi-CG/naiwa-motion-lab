@@ -5,12 +5,15 @@
  *   free 10 s   standing on its own: head height against rest, lean of the hips, drift on the floor, jitter at the end
  *   bend 50°    driven: spine and chest 25° forward each, head 17° more, held 3 s: deviation of the flesh from its
  *               target, inverted cells, Body volume, head shape (error against the head bone carrying it rigidly)
- *   ms/step     the whole step (skeleton, flesh, collision, coupling…) during the bend, and the flesh block alone
+ *   hands       driven: both hands pressed 3 cm into the belly for 2 s: how deep a limb's contact capsule ends up in
+ *               the Body's surface (the contacts keep them out)
+ *   ms/step     the whole step (skeleton, flesh, collision, coupling…) during the bend, and the flesh block alone:
+ *               the fastest of three runs, so that other programs on a busy machine count less
  */
 import * as THREE from "three";
 import type { BoneName, RigSpec, SimulatorOptions } from "../../contracts";
 import { createFrogSim, type LabFrogSim, type Slot } from "../../sim";
-import { PARAMS, bent, headShape, position, tilt } from "./testSupport";
+import { PARAMS, bent, handsOnBelly, headShape, position, tilt } from "./testSupport";
 
 export interface SimRun {
   head: number;
@@ -23,6 +26,7 @@ export interface SimRun {
   volume: number;
   headError: number;
   headSize: number;
+  penetration: number;
   /** Mean ms per step: the whole step during the bend, and the flesh block's share; the free run's whole step. */
   msStep: number;
   msFlesh: number;
@@ -78,23 +82,37 @@ export async function measureSimulator(spec: RigSpec, o: BenchOptions): Promise<
   };
   free.dispose();
 
-  const driven = await make(spec, o, "driven");
-  const timer = timeFlesh(driven);
-  driven.setTargets(bent(spec, { spine: 25, chest: 25, head: 17 }));
-  t0 = performance.now();
-  for (let k = 0; k < 180; k++) driven.step(1 / 60);
-  const msStep = (performance.now() - t0) / 180;
-  const s = driven.stats(), head = headShape(driven, spec);
-  driven.dispose();
+  let msStep = Infinity, msFlesh = Infinity;
+  let s: ReturnType<LabFrogSim["stats"]> | null = null, head = { error: NaN, size: NaN };
+  for (let run = 0; run < 3; run++) {
+    const driven = await make(spec, o, "driven");
+    const timer = timeFlesh(driven);
+    driven.setTargets(bent(spec, { spine: 25, chest: 25, head: 17 }));
+    t0 = performance.now();
+    for (let k = 0; k < 180; k++) driven.step(1 / 60);
+    msStep = Math.min(msStep, (performance.now() - t0) / 180);
+    msFlesh = Math.min(msFlesh, timer.ms());
+    if (!s) {
+      s = driven.stats();
+      head = headShape(driven, spec);
+    }
+    driven.dispose();
+  }
+  const hands = await make(spec, o, "driven");
+  hands.setTargets(handsOnBelly(spec));
+  for (let k = 0; k < 120; k++) hands.step(1 / 60);
+  const penetration = hands.stats().penetration ?? NaN;
+  hands.dispose();
   return {
     ...run,
-    deviation: s.deviation ?? NaN,
-    inverted: s.invertedCells ?? NaN,
-    volume: s.volume?.body ?? NaN,
+    penetration,
+    deviation: s!.deviation ?? NaN,
+    inverted: s!.invertedCells ?? NaN,
+    volume: s!.volume?.body ?? NaN,
     headError: head.error,
     headSize: head.size,
     msStep,
-    msFlesh: timer.ms(),
+    msFlesh,
     msFree,
   };
 }
@@ -102,10 +120,10 @@ export async function measureSimulator(spec: RigSpec, o: BenchOptions): Promise<
 const f = (x: number, d: number) => (Number.isFinite(x) ? x.toFixed(d) : "—");
 
 export const TABLE_HEAD = [
-  "| simulator | particles / cells | head height | lean ° | drift cm | jitter mm/s | bend: deviation cm | inverted | volume | head error mm | ms/step (flesh) |",
-  "|---|---|---|---|---|---|---|---|---|---|---|",
+  "| simulator | particles / cells | head height | lean ° | drift cm | jitter mm/s | bend: deviation cm | inverted | volume | head error mm | hands in belly mm | ms/step (flesh) |",
+  "|---|---|---|---|---|---|---|---|---|---|---|---|",
 ];
 
 export function tableRow(name: string, r: SimRun): string {
-  return `| ${name} | ${r.particles} / ${r.cells} | ${f(r.head, 3)} | ${f(r.lean, 1)} | ${f(r.drift * 100, 1)} | ${f(r.jitter * 1000, 1)} | ${f(r.deviation * 100, 2)} | ${r.inverted} | ${f(r.volume, 3)} | ${f(r.headError * 1000, 1)} | ${f(r.msStep, 2)} (${f(r.msFlesh, 2)}) |`;
+  return `| ${name} | ${r.particles} / ${r.cells} | ${f(r.head, 3)} | ${f(r.lean, 1)} | ${f(r.drift * 100, 1)} | ${f(r.jitter * 1000, 1)} | ${f(r.deviation * 100, 2)} | ${r.inverted} | ${f(r.volume, 3)} | ${f(r.headError * 1000, 1)} | ${f(r.penetration * 1000, 1)} | ${f(r.msStep, 2)} (${f(r.msFlesh, 2)}) |`;
 }

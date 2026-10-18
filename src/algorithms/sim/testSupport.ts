@@ -70,6 +70,30 @@ export function bent(spec: RigSpec, turns: Partial<Record<BoneName, number>>): M
   return out;
 }
 
+/** Targets with both hands pressed onto the belly: each arm aimed from its shoulder through an elbow at the side to a
+ *  palm a few centimetres inside the belly's front, so only the contacts keep the hands out. */
+export function handsOnBelly(spec: RigSpec): Map<BoneName, THREE.Matrix4> {
+  const out = bent(spec, {});
+  const body = spec.body.positions;
+  let front = -Infinity;
+  for (let v = 0; v < body.length; v += 3) if (Math.abs(body[v + 1] - 0.48) < 0.03 && Math.abs(body[v]) < 0.05) front = Math.max(front, body[v + 2]);
+  const aim = (name: BoneName, from: THREE.Vector3, to: THREE.Vector3) => {
+    const b = spec.bones.find((x) => x.name === name)!;
+    const restQ = new THREE.Quaternion().setFromRotationMatrix(b.restWorld);
+    const restDir = b.tail.clone().sub(position(b.restWorld)).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(restDir, to.clone().sub(from).normalize()).multiply(restQ);
+    out.set(name, new THREE.Matrix4().compose(from, q, new THREE.Vector3(1, 1, 1)));
+  };
+  for (const [s, side] of [[1, "L"], [-1, "R"]] as const) {
+    const shoulder = position(out.get(`upperarm_${side}`)!);
+    const elbow = new THREE.Vector3(s * 0.26, 0.55, 0.06), wrist = new THREE.Vector3(s * 0.11, 0.5, front - 0.03);
+    aim(`upperarm_${side}`, shoulder, elbow);
+    aim(`forearm_${side}`, elbow, wrist);
+    aim(`hand_${side}`, wrist, new THREE.Vector3(s * 0.04, 0.48, front - 0.04));
+  }
+  return out;
+}
+
 /** How well the head keeps its shape: the head region of the Body's surface against where the head bone would carry
  *  it rigidly (mean distance, m), and its size against rest (mean distance from the head bone). */
 export function headShape(sim: LabFrogSim, spec: RigSpec) {

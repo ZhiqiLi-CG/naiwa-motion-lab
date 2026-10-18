@@ -13,7 +13,7 @@
  */
 import * as THREE from "three";
 import type { BlockDefinition, CollisionBlock, ParticleView, Scene, Settings, SimBall, SimBone, SimPart } from "../../sim/api";
-import { isSimParticles } from "./flesh";
+import { isSimParticles, type SimParticles } from "./flesh";
 
 interface Capsule {
   bone: SimBone;
@@ -32,6 +32,7 @@ class SdfContacts implements CollisionBlock {
    *  margin (the lattice reaches past the surface) is only kept from going deeper, so contact and elasticity do not
    *  fight at rest. */
   private restDistance = new Map<SimPart, Float32Array>();
+  private restSurface = new Map<SimPart, Float32Array>();
   private friction: number;
   private restitution = 0;
   private margin = 0;
@@ -65,6 +66,15 @@ class SdfContacts implements CollisionBlock {
         for (let i = 0; i < n; i++) dist[i * list.length + k] = seg.closestPointToPoint(p.fromArray(rest, i * 3), true, c).distanceTo(p);
       });
       this.restDistance.set(part, dist);
+      // The rendered surface's distance from each limb capsule at rest (vertex-major), likewise.
+      const contacts = list.filter((cap) => cap.contact), V = part.positions, nv = V.length / 3;
+      const surf = new Float32Array(nv * contacts.length);
+      contacts.forEach((cap, k) => {
+        const m = cap.bone.restInverse.clone().invert();
+        seg.set(cap.a.clone().applyMatrix4(m), cap.b.clone().applyMatrix4(m));
+        for (let v = 0; v < nv; v++) surf[v * contacts.length + k] = seg.closestPointToPoint(p.fromArray(V, v * 3), true, c).distanceTo(p);
+      });
+      this.restSurface.set(part, surf);
     }
   }
 
@@ -103,9 +113,12 @@ class SdfContacts implements CollisionBlock {
         }
         for (let k = 0; k < nc; k++) {
           const cap = caps[k];
-          if (cap.contact && !this.limbContact) continue;
+          const rest = restDistance[i * nc + k];
+          // A particle that starts inside a shape (flesh around the bone, or the lattice reaching past the surface)
+          // belongs to it: the coupling holds it there.
+          if ((cap.contact && !this.limbContact) || rest < cap.radius) continue;
           seg.set(cap.a, cap.b).closestPointToPoint(p, true, c);
-          const d = p.distanceTo(c), depth = Math.min(cap.radius + margin, restDistance[i * nc + k]) - d;
+          const d = p.distanceTo(c), depth = Math.min(cap.radius + margin, rest) - d;
           if (depth <= 0 || d < 1e-9) continue;
           this.contact(view, V, i, p, (p.x - c.x) / d, (p.y - c.y) / d, (p.z - c.z) / d, depth, cap.bone.body);
         }
@@ -117,7 +130,83 @@ class SdfContacts implements CollisionBlock {
         }
       }
       if (onFloor) scene.reportContact({ part, with: "floor" });
+      if (this.limbContact && isSimParticles(view)) this.surfaceContacts(view, caps.filter((c) => c.contact), this.restSurface.get(part)!);
     }
+  }
+
+  /**
+   * Limb against Body at the rendered surface's resolution: the particles are a lattice step apart, so a hand can sit
+   * between them; each surface vertex inside a limb's contact capsule moves the particles of its cell out (by their
+   * barycentric weights, so the vertex lands on the capsule), and the cell's speed into the capsule goes to the limb.
+   * Corrections to a particle from several vertices are averaged.
+   */
+  private surfaceContacts(view: SimParticles, caps: { bone: SimBone; a: THREE.Vector3; b: THREE.Vector3; radius: number }[], rest: Float32Array) {
+    const { tets: T, embedTet: ET, embedWeight: EW } = view.mesh;
+    const X = view.positions(), V = view.velocities(), n = view.count;
+    const dx = this.scratch(n * 3), dv = this.scratch(n * 3, 1), count = this.scratch(n, 2);
+    const seg = new THREE.Line3(), p = new THREE.Vector3(), c = new THREE.Vector3(), box = new THREE.Box3();
+    // The surface once for all capsules, and its bounds to skip the capsules nowhere near it.
+    const S = view.surface(), bounds = new THREE.Box3();
+    for (let v = 0; v < S.length; v += 3) bounds.expandByPoint(p.fromArray(S, v));
+    const nc = caps.length;
+    caps.forEach((cap, ci) => {
+      box.setFromPoints([cap.a, cap.b]).expandByScalar(cap.radius);
+      if (!box.intersectsBox(bounds)) return;
+      seg.set(cap.a, cap.b);
+      const limb = cap.bone.body;
+      dx.fill(0); dv.fill(0); count.fill(0);
+      let touched = false;
+      for (let v = 0; v < S.length / 3; v++) {
+        p.fromArray(S, v * 3);
+        if (!box.containsPoint(p)) continue;
+        seg.closestPointToPoint(p, true, c);
+        // A vertex that starts inside the capsule (an arm resting on the side) is only kept from going deeper.
+        const d = p.distanceTo(c), depth = Math.min(cap.radius, rest[v * nc + ci]) - d;
+        if (depth <= 0 || d < 1e-9) continue;
+        const nx = (p.x - c.x) / d, ny = (p.y - c.y) / d, nz = (p.z - c.z) / d;
+        const t = ET[v] * 4;
+        let ww = 0, vx = 0, vy = 0, vz = 0;
+        for (let j = 0; j < 4; j++) {
+          const k = T[t + j], w = EW[v * 4 + j];
+          vx += w * V[k * 3]; vy += w * V[k * 3 + 1]; vz += w * V[k * 3 + 2];
+          if (!view.attachedTo(k)) ww += w * w;
+        }
+        if (ww < 1e-6) continue;
+        const lv = limb.velocityAtPoint({ x: c.x, y: c.y, z: c.z });
+        const vn = Math.min(0, (vx - lv.x) * nx + (vy - lv.y) * ny + (vz - lv.z) * nz);
+        // Move the cell's free particles by their weights so that the vertex lands on the capsule.
+        for (let j = 0; j < 4; j++) {
+          const k = T[t + j], w = EW[v * 4 + j];
+          if (view.attachedTo(k) || w <= 0) continue;
+          const sc = w / ww;
+          dx[k * 3] += sc * depth * nx; dx[k * 3 + 1] += sc * depth * ny; dx[k * 3 + 2] += sc * depth * nz;
+          dv[k * 3] -= sc * vn * nx; dv[k * 3 + 1] -= sc * vn * ny; dv[k * 3 + 2] -= sc * vn * nz;
+          count[k]++;
+          touched = true;
+        }
+      }
+      if (!touched) return;
+      let jx = 0, jy = 0, jz = 0;
+      for (let k = 0; k < n; k++) {
+        if (!count[k]) continue;
+        const q = 1 / count[k], m = view.mass(k);
+        view.setPosition(k, X[k * 3] + dx[k * 3] * q, X[k * 3 + 1] + dx[k * 3 + 1] * q, X[k * 3 + 2] + dx[k * 3 + 2] * q);
+        view.setVelocity(k, V[k * 3] + dv[k * 3] * q, V[k * 3 + 1] + dv[k * 3 + 1] * q, V[k * 3 + 2] + dv[k * 3 + 2] * q);
+        jx -= m * dv[k * 3] * q; jy -= m * dv[k * 3 + 1] * q; jz -= m * dv[k * 3 + 2] * q;
+      }
+      // The limb takes the opposite of the momentum the flesh gained.
+      if (limb.isDynamic() && !limb.isSleeping()) {
+        const mid = cap.a.clone().add(cap.b).multiplyScalar(0.5);
+        limb.applyImpulseAtPoint({ x: jx, y: jy, z: jz }, { x: mid.x, y: mid.y, z: mid.z }, false);
+      }
+    });
+  }
+
+  private buffers: Float64Array[] = [];
+  /** A reusable scratch array (slot k) of at least n numbers. */
+  private scratch(n: number, k = 0): Float64Array {
+    if (!this.buffers[k] || this.buffers[k].length < n) this.buffers[k] = new Float64Array(n);
+    return this.buffers[k].subarray(0, n);
   }
 
   /** Move particle i out by depth along n; remove its velocity into the shape (relative to the shape's), slow its

@@ -17,7 +17,7 @@ class MassSpring implements PieceSolver {
   /** Explicit: the substeps asked for, and those the stability limit needs (whichever is more). */
   private substeps = 10;
   private omega = 0;
-  private dampingRatio = 0.1;
+  private dampingRatio = 0.3;
   private E = 0;
   private f: Float64Array;
   // Semi-implicit: the system over the free particles.
@@ -55,7 +55,7 @@ class MassSpring implements PieceSolver {
   setSettings(s: Readonly<Settings>) {
     this.implicit = s.integrator === "semi-implicit";
     this.substeps = Math.max(1, Math.round(Number(s.springSubsteps ?? 10)));
-    this.dampingRatio = Number(s.springDamping ?? 0.1);
+    this.dampingRatio = Number(s.springDamping ?? 0.3);
     this.iterations = Math.max(1, Math.round(Number(s.springCgIterations ?? 30)));
   }
 
@@ -98,16 +98,20 @@ class MassSpring implements PieceSolver {
     for (let i = 0; i < n; i++) if (fixed[i]) for (let k = 0; k < 3; k++) X[i * 3 + k] -= V[i * 3 + k] * h;
     if (this.implicit) this.implicitStep(h, g);
     else {
+      // Explicit: symplectic Euler in substeps short enough for the stiffest spring.
       const substeps = Math.max(this.substeps, Math.ceil(h * this.omega)), hs = h / substeps;
       for (let s = 0; s < substeps; s++) {
         this.forces(X, V);
         for (let i = 0; i < n; i++) {
+          // A free particle moves by the force; an attached one passes it to its bone.
           if (!fixed[i]) for (let k = 0; k < 3; k++) V[i * 3 + k] += hs * (g[k] + this.f[i * 3 + k] * w[i]);
+          else for (let k = 0; k < 3; k++) this.piece.reaction[i * 3 + k] += this.f[i * 3 + k] * hs;
           for (let k = 0; k < 3; k++) X[i * 3 + k] += hs * V[i * 3 + k];
         }
       }
+      return;
     }
-    // What the springs pull on the attached particles with, at the end of the step, over the step.
+    // Semi-implicit: what the springs pull on the attached particles with at the end of the step, over the step.
     this.forces(X, V);
     for (let i = 0; i < n; i++) if (fixed[i]) for (let k = 0; k < 3; k++) this.piece.reaction[i * 3 + k] += this.f[i * 3 + k] * h;
   }
@@ -201,7 +205,7 @@ export const massSpring = particleFleshBlock({
       help: { zh: "显式积分每步的子步数：太少会炸开。", en: "Substeps per step of the explicit integrator: too few and it blows up." },
     },
     {
-      key: "springDamping", kind: "number", default: 0.1, min: 0, max: 1, step: 0.05,
+      key: "springDamping", kind: "number", default: 0.3, min: 0, max: 1, step: 0.05,
       label: { zh: "弹簧阻尼比", en: "Spring damping ratio" },
     },
     {

@@ -28,6 +28,10 @@ export interface SimParticles extends ParticleView {
   velocities(): Float32Array;
   /** Half the particle spacing (m): how far a particle stands for the flesh around it. */
   readonly radius: number;
+  /** The rendered surface (same vertex order as the part) and how it is embedded: vertex v is Σⱼ weight[4v+j] ×
+   *  particle tets[4·tet[v]+j]. */
+  surface(): Float32Array;
+  readonly mesh: Pick<TetMesh, "tets" | "embedTet" | "embedWeight">;
 }
 
 export function isSimParticles(view: ParticleView): view is SimParticles {

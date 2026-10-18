@@ -13,7 +13,7 @@ export const pbd = particleFleshBlock({
     en: "Predict positions, project edge-length and volume constraints one at a time (Gauss–Seidel), take velocities from the motion; the stiffness k ∈ [0, 1] depends on the iteration count.",
   },
   parameters: [
-    { key: "pbdIterations", kind: "number", default: 10, min: 1, max: 40, step: 1, label: { zh: "迭代次数", en: "Iterations" } },
+    { key: "pbdIterations", kind: "number", default: 6, min: 1, max: 40, step: 1, label: { zh: "迭代次数", en: "Iterations" } },
     {
       key: "pbdStiffness", kind: "number", default: 0.5, min: 0.05, max: 1, step: 0.05,
       label: { zh: "边刚度 k", en: "Edge stiffness k" },

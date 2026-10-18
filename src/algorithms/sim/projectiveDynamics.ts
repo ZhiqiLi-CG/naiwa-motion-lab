@@ -19,7 +19,7 @@ import { lame, youngModulus } from "./material";
 
 class ProjectiveDynamics implements PieceSolver {
   private el: Elements;
-  private iterations = 5;
+  private iterations = 3;
   private poisson = 0.4;
   private E = 0;
   /** Weights of the two constraints of each cell: as rigid as possible (2μV) and volume (λV). */
@@ -53,7 +53,7 @@ class ProjectiveDynamics implements PieceSolver {
   }
 
   setSettings(s: Readonly<Settings>) {
-    this.iterations = Math.max(1, Math.round(Number(s.pdIterations ?? 5)));
+    this.iterations = Math.max(1, Math.round(Number(s.pdIterations ?? 3)));
     const nu = Number(s.pdPoisson ?? 0.4);
     if (nu !== this.poisson) {
       this.poisson = nu;
@@ -201,7 +201,7 @@ export const projectiveDynamics = particleFleshBlock({
     en: "Implicit Euler as energy minimisation: a local step projects each cell onto its nearest rotation and a volume-keeping shape, a global step solves one prefactored linear system.",
   },
   parameters: [
-    { key: "pdIterations", kind: "number", default: 5, min: 1, max: 30, step: 1, label: { zh: "局部/全局迭代", en: "Local/global iterations" } },
+    { key: "pdIterations", kind: "number", default: 3, min: 1, max: 30, step: 1, label: { zh: "局部/全局迭代", en: "Local/global iterations" } },
     { key: "pdPoisson", kind: "number", default: 0.4, min: 0, max: 0.48, step: 0.02, label: { zh: "泊松比（体积权重）", en: "Poisson ratio (volume weight)" } },
   ],
   solver: (piece, scene, settings) => {

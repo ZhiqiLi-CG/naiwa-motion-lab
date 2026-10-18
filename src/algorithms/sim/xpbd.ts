@@ -15,7 +15,7 @@ export const xpbd = particleFleshBlock({
   },
   parameters: [
     {
-      key: "xpbdSubsteps", kind: "number", default: 8, min: 1, max: 30, step: 1,
+      key: "xpbdSubsteps", kind: "number", default: 5, min: 1, max: 30, step: 1,
       label: { zh: "子步数", en: "Substeps" },
       help: { zh: "越多越接近真实刚度（硬的材质需要更多）。", en: "More gets closer to the true stiffness (firm material needs more)." },
     },

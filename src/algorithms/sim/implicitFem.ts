@@ -16,7 +16,7 @@ import type { PhysicsParams } from "../../contracts";
 import type { Settings } from "../../sim/api";
 import { addStressForces, deformation, elements, type Elements } from "./elements";
 import { particleFleshBlock, type Piece, type PieceSolver } from "./flesh";
-import { BlockSparse, CGWork, det3, extractRotation, m3 } from "./linalg";
+import { BlockSparse, CGWork, det3, extractRotation, m3, mulT3 } from "./linalg";
 import { lame, youngModulus } from "./material";
 
 type Material = "linear" | "corotational" | "neohookean";
@@ -116,7 +116,7 @@ class ImplicitFem implements PieceSolver {
   private material: Material = "corotational";
   private model: Model = rotatedLinear(true);
   private newton = 1;
-  private cg = 20;
+  private cg = 10;
   private poisson = 0.4;
   private E = 0;
   private quat: Float64Array;
@@ -169,7 +169,7 @@ class ImplicitFem implements PieceSolver {
     if (m !== this.material) this.model = m === "neohookean" ? neoHookean() : rotatedLinear(m === "corotational");
     this.material = m;
     this.newton = Math.max(1, Math.round(Number(s.femNewton ?? 1)));
-    this.cg = Math.max(1, Math.round(Number(s.femCgIterations ?? 20)));
+    this.cg = Math.max(1, Math.round(Number(s.femCgIterations ?? 10)));
     this.poisson = Number(s.femPoisson ?? 0.4);
     this.updateLame();
   }
@@ -249,12 +249,50 @@ class ImplicitFem implements PieceSolver {
 
   private h = 1 / 60;
 
-  /** H = M/h² + Σ V ∂P/∂x over the free particles: each cell's 12 × 12 block, column by column from dP. */
+  /** H = M/h² + Σ V ∂P/∂x over the free particles. */
   private assemble(x: ArrayLike<number>) {
-    const A = this.A!, piece = this.piece, T = piece.mesh.tets, grad = this.el.grad, slots = this.slots, Av = A.values;
-    const F = m3(), dF = m3(), dP = m3(), h2 = this.h * this.h;
+    const A = this.A!, piece = this.piece, h2 = this.h * this.h;
     A.clear();
     this.free.forEach((i, k) => A.addDiagonal(k, piece.m[i] / h2));
+    if (this.material === "neohookean") this.assembleNonlinear(x);
+    else this.assembleRotated();
+  }
+
+  /** Linear and corotational: each cell's constant stiffness K turned by its rotation, R K_ab Rᵀ for each pair of
+   *  nodes, with K_ab = V [μ (∇N_a·∇N_b) I + μ ∇N_b ∇N_aᵀ + λ ∇N_a ∇N_bᵀ]. */
+  private assembleRotated() {
+    const piece = this.piece, grad = this.el.grad, slots = this.slots, Av = this.A!.values;
+    const K = m3(), KR = m3(), corot = this.material === "corotational";
+    piece.activeTets.forEach((t, q) => {
+      const V = this.el.volume[t], mu = this.mu[t], la = this.la[t], R = this.rotOf(t);
+      for (let a = 0; a < 4; a++) {
+        const ga = t * 12 + a * 3;
+        for (let b = 0; b < 4; b++) {
+          const s = slots[q * 16 + a * 4 + b];
+          if (s < 0) continue;
+          const gb = t * 12 + b * 3;
+          const dot = grad[ga] * grad[gb] + grad[ga + 1] * grad[gb + 1] + grad[ga + 2] * grad[gb + 2];
+          for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) K[r * 3 + c] = V * ((r === c ? mu * dot : 0) + mu * grad[gb + r] * grad[ga + c] + la * grad[ga + r] * grad[gb + c]);
+          }
+          if (!corot) {
+            for (let k = 0; k < 9; k++) Av[s + k] += K[k];
+            continue;
+          }
+          // R K Rᵀ
+          mulT3(K, R, KR);
+          for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) Av[s + r * 3 + c] += R[r * 3] * KR[c] + R[r * 3 + 1] * KR[3 + c] + R[r * 3 + 2] * KR[6 + c];
+          }
+        }
+      }
+    });
+  }
+
+  /** Neo-Hookean: each cell's 12 × 12 block column by column, from dP for each node moving along each axis. */
+  private assembleNonlinear(x: ArrayLike<number>) {
+    const piece = this.piece, T = piece.mesh.tets, grad = this.el.grad, slots = this.slots, Av = this.A!.values;
+    const F = m3(), dF = m3(), dP = m3();
     piece.activeTets.forEach((t, q) => {
       const R = this.rotOf(t), V = this.el.volume[t], mu = this.mu[t], la = this.la[t];
       deformation(T, grad, x, t, F);
@@ -342,7 +380,7 @@ export const implicitFem = particleFleshBlock({
       },
     },
     { key: "femNewton", kind: "number", default: 1, min: 1, max: 5, step: 1, label: { zh: "牛顿迭代", en: "Newton iterations" } },
-    { key: "femCgIterations", kind: "number", default: 20, min: 5, max: 100, step: 5, label: { zh: "CG 迭代", en: "CG iterations" } },
+    { key: "femCgIterations", kind: "number", default: 10, min: 5, max: 100, step: 5, label: { zh: "CG 迭代", en: "CG iterations" } },
     { key: "femPoisson", kind: "number", default: 0.4, min: 0, max: 0.48, step: 0.02, label: { zh: "泊松比", en: "Poisson ratio" } },
   ],
   solver: (piece, scene, settings) => {

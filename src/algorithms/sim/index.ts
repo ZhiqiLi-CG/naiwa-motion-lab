@@ -19,10 +19,11 @@ import { particleMetrics } from "./particleMetrics";
 import { pbd } from "./pbd";
 import { projectiveDynamics } from "./projectiveDynamics";
 import { shapeMatching } from "./shapeMatching";
+import { softTethers } from "./softTethers";
 import { xpbd } from "./xpbd";
 import { sdfContacts } from "./sdfContacts";
 
-export const SIM_LIBRARY_BLOCKS: BlockDefinition[] = [massSpring, pbd, xpbd, shapeMatching, projectiveDynamics, implicitFem, sdfContacts, particleMetrics] as BlockDefinition[];
+export const SIM_LIBRARY_BLOCKS: BlockDefinition[] = [massSpring, pbd, xpbd, shapeMatching, projectiveDynamics, implicitFem, sdfContacts, softTethers, particleMetrics] as BlockDefinition[];
 
 /** The built-in blocks the assemblies keep (src/sim/blocks), with the library's contacts and metrics. */
 const BASE = {
@@ -84,6 +85,15 @@ export const SIM_LIBRARY_SIMULATORS: AssemblyDefinition[] = [
       en: "Tetrahedral FEM (linear, corotational or neo-Hookean), backward Euler with Newton–CG; SDF contacts, the deep flesh riding on the bones (two-way).",
     },
     blocks: { ...BASE, flesh: implicitFem.id },
+  },
+  {
+    id: "fem-tethers",
+    name: { zh: "隐式有限元 + 柔性系带", en: "Implicit FEM, soft tethers" },
+    summary: {
+      zh: "共旋有限元，肉用强度随深度平滑衰减的弹簧系在骨头上（没有硬挂/自由的分界），双向；SDF 接触。",
+      en: "Corotational FEM with the flesh tied to the bones by springs that weaken smoothly with depth (no seam between carried and free flesh), two-way; SDF contacts.",
+    },
+    blocks: { ...BASE, flesh: implicitFem.id, coupling: softTethers.id },
   },
 ];
 
