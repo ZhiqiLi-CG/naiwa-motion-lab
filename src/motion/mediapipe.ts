@@ -7,8 +7,33 @@ import type { LandmarkFrame } from "./api";
 
 let landmarker: Promise<PoseLandmarker> | null = null;
 
+/** The usage-logging endpoint @mediapipe/tasks-vision posts to (from every task, every minute, with no option to turn
+ *  it off). Nothing may leave for Google. */
+export const MEDIAPIPE_LOG_HOST = "odml.pa.googleapis.com";
+let telemetryBlocked = false;
+
+/**
+ * Keep MediaPipe's usage logging on the device: the runtime sends it with the page's fetch, so fetch answers requests
+ * to its host itself (204, no network). The logger takes a non-200 answer as a failure and stops for good.
+ */
+export function blockMediapipeTelemetry(): void {
+  if (telemetryBlocked || typeof globalThis.fetch !== "function") return;
+  telemetryBlocked = true;
+  const fetch0 = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    try {
+      if (new URL(url, location.href).hostname === MEDIAPIPE_LOG_HOST) return Promise.resolve(new Response(null, { status: 204 }));
+    } catch {
+      // not a URL we can read: let fetch handle it
+    }
+    return fetch0(input, init);
+  };
+}
+
 /** The shared detector (loaded once; a failed load can be retried). Phones get the lite model. */
 export function loadLandmarker(): Promise<PoseLandmarker> {
+  blockMediapipeTelemetry();
   landmarker ??= (async () => {
     const base = new URL(`${import.meta.env.BASE_URL}mediapipe/`, document.baseURI).href;
     const fileset = await FilesetResolver.forVisionTasks(`${base}wasm`);

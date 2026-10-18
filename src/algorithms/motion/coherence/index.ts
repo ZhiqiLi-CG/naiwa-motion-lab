@@ -14,8 +14,8 @@
  *   6. feet: contacts found and pinned, the drift of standing feet taken off the whole person (contacts.ts)
  *   7. a seamless loop (loop.ts)
  *
- * AUTO is what an uploaded video gets as it is analysed (the steps that only remove what is certainly the camera's or
- * certainly wrong; the retargeter's own filter smooths after). DEFAULTS is everything, for the Lab's job.
+ * AUTO is what an uploaded video gets as it is analysed (only what is certainly the camera's: its motion in shots
+ * that clearly moved, the cuts it saw, landmarks outside the picture; the retargeter's own filter smooths after). DEFAULTS is everything, for the Lab's job.
  */
 import type { PersonFrame, Settings } from "../../../motion/api";
 import type { Track } from "../../../motion/track";
@@ -85,9 +85,10 @@ export const DEFAULTS: CoherenceParams = {
   contactHeight: 0.15, contactSpeed: 0.4, pin: 0.5, loop: 0.5, segments: [],
 };
 
-/** For uploads as they are analysed: camera, cuts, off-picture landmarks and clear left/right flips. */
+/** For uploads as they are analysed: camera, cuts and off-picture landmarks only. Left/right flip repair is left to
+ *  the job: on fast arm moves (waacking) it also "repaired" arms that crossed, which the frog then copied wrongly. */
 export const AUTO: CoherenceParams = {
-  ...DEFAULTS, minCameraMotion: 0.03, detectCuts: false, outliers: false, smooth: "none", pin: 0, loop: 0,
+  ...DEFAULTS, minCameraMotion: 0.03, detectCuts: false, flips: false, outliers: false, smooth: "none", pin: 0, loop: 0,
 };
 
 export interface CoherenceReport {

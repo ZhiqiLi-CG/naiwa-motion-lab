@@ -384,12 +384,12 @@ export async function startVideo(
   const seen = frames.filter((f) => f.world.length >= 33).length;
   if (seen < Math.max(3, n * 0.2)) return fail({ zh: "视频里没有找到人，换一个人物全身入镜的视频试试", en: "No one found in this video. Try one with a person in full view." });
   // The pipeline exists once the rig is bound (the character may still be loading while the video is analysed).
-  // The camera taken out, shots anchored onto each other, clear left/right flips undone (before the smoothing).
+  // The camera taken out and shots anchored onto each other (before the smoothing).
   const analysed: Track = { id: "", name: "", fps, duration: n / fps, aspect, source: { title, url: "", start: 0, end: n / fps }, frames };
   if (estimate) Object.assign(analysed, { camera: cameraTrack, cuts });
   const coherent = videoAnalysis.camera ? coherence(analysed, AUTO) : { track: analysed, report: null };
   const r = coherent.report;
-  if (r) console.info(`motion: coherence ${r.ms.toFixed(0)} ms: ${r.shots} shot(s), ${r.movingShots} with a moving camera, cuts at ${JSON.stringify(r.cuts)}, ${r.flips} flips undone`);
+  if (r) console.info(`motion: coherence ${r.ms.toFixed(0)} ms: ${r.shots} shot(s), ${r.movingShots} with a moving camera, cuts at ${JSON.stringify(r.cuts)}`);
   const filter = await new Promise<RetargetPipeline>((resolve) => {
     const r = open();
     const poll = () => {
@@ -433,10 +433,15 @@ export async function startVideo(
   const along: Text = capped
     ? { zh: `跟着视频跳（只分析了前 ${MAX_VIDEO_SECONDS} 秒）`, en: `Dancing along (first ${MAX_VIDEO_SECONDS} s of the video)` }
     : { zh: "跟着视频跳", en: "Dancing along with the video" };
+  let status: Status = { state: "tracking", text: along, progress: 1 };
   if (video.muted) {
-    emit({ state: "tracking", text: { zh: `${along.zh} · 点一下视频打开声音`, en: `${along.en} · tap the video for sound` }, progress: 1 });
-    view.root.addEventListener("pointerdown", () => ((video.muted = false), emit({ state: "tracking", text: along, progress: 1 })), { once: true });
-  } else emit({ state: "tracking", text: along, progress: 1 });
+    status = { state: "tracking", text: { zh: `${along.zh} · 点一下视频打开声音`, en: `${along.en} · tap the video for sound` }, progress: 1 };
+    view.root.addEventListener("pointerdown", () => ((video.muted = false), emit((status = { state: "tracking", text: along, progress: 1 }))), { once: true });
+  }
+  emit(status);
+  // This status goes out before the caller has the source; it is said again on the first update, when the caller has
+  // it (the page offers to keep the analysed dance once a video source reports tracking).
+  let announced = false;
 
   // Motion time runs on the dt the caller gives (pause, single step, slow motion) and the video follows it: paused at
   // dt = 0, a single step after a pause is a seek, otherwise it plays at the caller's time scale.
@@ -457,6 +462,10 @@ export async function startVideo(
       view.setMirror(on);
     },
     update(nowMs, dt) {
+      if (!announced) {
+        announced = true;
+        if (!wasLost) emit(status);
+      }
       const step = Math.min(Math.max(dt, 0), MAX_STEP);
       const wall = lastNow < 0 ? step : (nowMs - lastNow) / 1000;
       lastNow = nowMs;
