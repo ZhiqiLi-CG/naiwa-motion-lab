@@ -2,6 +2,8 @@
 export const ICONS = {
   // a four-fingered mitten, like 奶蛙's own hands
   hand: `<path d="M7.5 13.5V8a1.5 1.5 0 0 1 3 0v3.5M10.5 11V5.5a1.5 1.5 0 0 1 3 0V11M13.5 11V6.5a1.5 1.5 0 0 1 3 0V12M16.5 12.5V10a1.5 1.5 0 0 1 3 0v4a7 7 0 0 1-7 7h-.6a6 6 0 0 1-4.7-2.3l-2.7-3.4a1.6 1.6 0 0 1 2.4-2.1l1.1 1.3"/>`,
+  // a jelly dome with a highlight: the flesh's feel
+  feel: `<path d="M4.5 18.5c0-6.5 3.4-12 7.5-12s7.5 5.5 7.5 12c0 1.2-3 2-7.5 2s-7.5-.8-7.5-2z"/><path d="M8.6 13c.4-1.8 1.3-3.2 2.6-3.8"/>`,
   ball: `<circle cx="12" cy="12" r="8.5"/><path d="M6.2 5.8c2.6 2.4 2.6 10 0 12.4M17.8 5.8c-2.6 2.4-2.6 10 0 12.4"/>`,
   feather: `<path d="M19.5 4.5C12.5 4.5 8 9.5 8 16v.5h.5c6.5 0 11-4.5 11-12z"/><path d="M4.5 19.5l9-9M10 14h4.5M12.5 10.5h4"/>`,
   pump: `<path d="M8 3.5h8M12 3.5V8"/><rect x="9" y="8" width="6" height="11" rx="2"/><path d="M6.5 20.5h11M15 15.5c2.5 0 4 1 4 3v2"/>`,

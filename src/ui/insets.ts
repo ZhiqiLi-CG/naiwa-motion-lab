@@ -19,7 +19,7 @@ export function measureInsets(root: HTMLElement): Insets {
   // on a phone the sheet is a real box; on a desktop it only groups the floating panels
   const phone = getComputedStyle(root.querySelector(".nw-sheet")!).display !== "contents";
   const bottom = rect(phone ? ".nw-sheet" : ".nw-transport");
-  const left = phone ? null : rect(".nw-panel--motion");
+  const left = phone ? null : rect(".nw-dock");
   const right = phone ? null : rect(".nw-panel--sim");
   return {
     top: Math.round(rect(".nw-topbar")?.bottom ?? 0),

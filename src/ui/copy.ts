@@ -46,6 +46,9 @@ export const KNOBS: KnobDef[] = [
   { id: "upright", param: "stubbornness", min: 0, max: 1, step: 0.01, digits: 2, unit: "", toView: same, fromView: same },
 ];
 
+/** The 手感 / Feel panel's sliders, in everyday words (feel.ts maps them to PhysicsParams). */
+export type FeelSliderId = "firm" | "settle" | "belly";
+
 /** Material by region: four sliders over the seven flesh regions. Each writes the same relative softness to its
  *  regions; `nominal` is where the thumb sits while the regions keep the simulation's defaults. */
 export interface RegionGroupDef {
@@ -98,6 +101,8 @@ export const SHORTCUT_KEYS: string[][] = [
 /** The lab (simulator, retargeter, parameters, playback, readouts) is closed by default; each visitor's choice is
  *  remembered under this key. */
 export const LAB_KEY = "naiwa.lab";
+/** Whether the 手感 / Feel panel is folded, per visitor. */
+export const FEEL_KEY = "naiwa.feel";
 
 const t = (zh: string, en: string): Text => ({ zh, en });
 
@@ -224,6 +229,22 @@ export const STRINGS = {
     copyLink: t("复制当前设置的链接", "Copy a link to these settings"),
     collapse: t("收起 / 展开", "Collapse / expand"),
   },
+  feel: {
+    title: t("手感", "Feel"),
+    sub: t("材质、软硬、晃动", "Material, firmness, wobble"),
+    material: t("材质", "Material"),
+    sliders: {
+      firm: { label: t("软硬", "Firmness"), low: t("软", "Soft"), high: t("硬", "Firm"), mid: t("适中", "Medium") },
+      settle: { label: t("晃动", "Wobble"), low: t("晃得久", "Wobbles long"), high: t("很快停", "Settles fast"), mid: t("适中", "Medium") },
+      belly: { label: t("肚子", "Belly"), low: t("肚子小", "Small belly"), high: t("肚子大", "Big belly"), mid: t("正常", "Normal") },
+    } as Record<FeelSliderId, { label: Text; low: Text; high: Text; mid: Text }>,
+    slow: t("慢动作", "Slow motion"),
+    slowHint: t("放慢仿真，看清每一下晃动", "Slows the simulation so every wobble shows"),
+    moon: t("月球重力", "Moon gravity"),
+    moonHint: t("身体变轻，落得更慢", "The body is lighter and falls slower"),
+    reset: t("恢复默认", "Back to default"),
+    resetHint: t("回到默认材质、正常速度和重力", "Default material, normal speed and gravity"),
+  },
   transport: {
     playback: t("播放", "Playback"),
     pause: t("暂停", "Pause"),
@@ -258,7 +279,7 @@ export const STRINGS = {
   lab: t("实验室", "Lab"),
   labHint: t("模拟器、动作迁移、参数、播放控制与读数", "Simulator, motion transfer, parameters, playback and readouts"),
   help: t("帮助", "Help"),
-  tabs: { motion: t("动作", "Motion"), sim: t("实验室", "Lab") },
+  tabs: { motion: t("动作", "Motion"), feel: t("手感", "Feel"), sim: t("实验室", "Lab") },
   sheetToggle: t("展开 / 收起面板", "Expand / collapse the panel"),
   rec: {
     title: t("录制完成", "Recording ready"),

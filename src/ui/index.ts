@@ -1,8 +1,8 @@
 /**
  * The DOM interface of Naiwa Motion Lab: a top bar (brand, simulation readouts, record, language, sound, theme,
- * help), the Motion panel (source, transfer status, the person's preview with skeleton, per-source controls), the
- * Simulation panel (material presets, global knobs, material by region) and the bar under the viewport (playback,
- * interaction, reset). On phones the two panels are tabs of one bottom sheet. It floats over the 3D stage (#stage)
+ * help), the Motion panel (source, transfer status, the person's preview with skeleton, per-source controls), under it
+ * the Feel panel (the material in everyday words, for anyone), the Simulation panel (material presets, global knobs, material by region) and the bar under the viewport (playback,
+ * interaction, reset). On phones the panels are tabs of one bottom sheet. It floats over the 3D stage (#stage)
  * with pointer events only on its own controls, renders from the store and writes the store (mode, tool, params,
  * preset, dance, mirror, sound, theme, lang, recordLayout, playback); everything else goes through the commands.
  * Switching the language rebuilds it in the other language (the preview element survives).
@@ -19,6 +19,7 @@ import { resolveTheme } from "./format";
 import { watchInsets, type Insets } from "./insets";
 import { bindKeys } from "./keys";
 import { createMotionPanel } from "./motion";
+import { createFeelPanel } from "./feel";
 import { createDialogs, createDropTarget, createLoading, createToasts } from "./overlays";
 import { createReadouts } from "./readouts";
 import { createHelp, createRecordingSheet } from "./sheets";
@@ -49,7 +50,7 @@ export interface MountedUI extends UIHandles {
   dispose(): void;
 }
 
-type Tab = "motion" | "sim";
+type Tab = "motion" | "feel" | "sim";
 const PHONE = "(max-width: 720px)";
 
 /** One build of the UI in one language. */
@@ -137,7 +138,7 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
     root.replaceChildren(layer, sheet, overlays);
 
     // Phone: the sheet's head holds the transport, the readouts and the two tabs; tapping the open tab closes it.
-    const tabs = (["motion", "sim"] as Tab[]).map((t) =>
+    const tabs = (["motion", "feel", "sim"] as Tab[]).map((t) =>
       h(
         "button",
         {
@@ -152,23 +153,27 @@ export function mountUI(root: HTMLElement, store: Store, commands: UICommands, o
             }
           },
         },
-        icon(t === "motion" ? "motion" : "sliders"),
+        icon(t === "motion" ? "motion" : t === "feel" ? "feel" : "sliders"),
         T.tabs[t],
         icon("chevronDown", "nw-icon nw-tab-chevron"),
       ),
     );
-    tabs[1]!.setAttribute("data-lab-only", "");
+    tabs[2]!.setAttribute("data-lab-only", "");
     const head = h("div", { class: "nw-sheet-head" }, h("div", { class: "nw-tabs", role: "group", "aria-label": T.sheetToggle }, ...tabs));
     sheet.append(head);
 
     const toast = createToasts(overlays);
     const dialogs = createDialogs(overlays);
-    // Desktop: the panels and the transport float on their own (the sheet wrapper is transparent to layout).
+    // Desktop: the panels and the transport float on their own (the sheet wrapper is transparent to layout); Motion
+    // and Feel stack in one column on the left.
+    const dock = h("div", { class: "nw-dock" });
+    sheet.append(dock);
     const parts: Part[] = [
       createTopbar(ctx, layer, theme),
       createTransport(ctx, head),
       createReadouts(head, true),
-      createMotionPanel(ctx, sheet, layer, preview, opts.dances),
+      createMotionPanel(ctx, dock, layer, preview, opts.dances),
+      createFeelPanel(ctx, dock),
       createSimulationPanel(ctx, sheet),
       createRecordingSheet(ctx, dialogs),
       createLoading(overlays),

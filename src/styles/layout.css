@@ -1,6 +1,7 @@
-/* Where everything sits. Desktop: a slim top bar, the Motion panel on the left, the Simulation panel on the right,
-   the playback / interaction bar under the viewport; the middle stays free for the frog. Phone (≤ 720 px): the top
-   bar, and one bottom sheet whose head holds the bar, the readouts and the two panels as tabs. */
+/* Where everything sits. Desktop: a slim top bar, the Motion panel on the left with the Feel panel under it, the
+   Simulation panel on the right, the playback / interaction bar under the viewport; the middle stays free for the
+   frog. Phone (≤ 720 px): the top bar, and one bottom sheet whose head holds the bar, the readouts and the panels as
+   tabs. */
 
 .nw-layer,
 .nw-sheet,
@@ -183,6 +184,32 @@
 
 .nw-panel--motion {
   left: calc(var(--gutter) + env(safe-area-inset-left));
+}
+
+/* Motion and Feel share the left column: Feel keeps its (small) height, Motion scrolls inside what is left */
+.nw-dock {
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--gutter) + env(safe-area-inset-top));
+  left: calc(var(--gutter) + env(safe-area-inset-left));
+  z-index: var(--z-panel);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: var(--panel-w);
+  max-height: calc(100dvh - var(--topbar-h) - 2 * var(--gutter) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.nw-dock > .nw-panel {
+  position: static;
+  flex: 0 1 auto;
+  width: auto;
+  max-height: none;
+  min-height: 0;
+}
+
+.nw-dock > .nw-panel--feel {
+  flex: none;
 }
 
 /* the lab is a little wider: its rows carry a label, a slider, an exact value and a unit */
@@ -645,6 +672,34 @@
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+}
+
+/* ---------- Feel panel ---------- */
+.nw-feel-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* the two words at the slider's ends stand in for its numbers */
+.nw-feel-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
+}
+
+.nw-feel-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2) var(--space-4);
+}
+
+.nw-feel-toggles .nw-switch-hint {
+  display: none;
 }
 
 /* the person's picture with the tracked skeleton (dark in both themes) */
@@ -1174,7 +1229,8 @@
 
 /* ---------- Narrower desktops: the bar under the viewport would meet the panels ---------- */
 @media (max-width: 1240px) {
-  .nw-panel {
+  .nw-panel,
+  .nw-dock {
     max-height: calc(100dvh - var(--topbar-h) - 3 * var(--gutter) - var(--control-lg) - 8px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 }
@@ -1389,9 +1445,14 @@
     display: flex;
   }
 
+  .nw-dock {
+    display: contents;
+  }
+
   .nw-ui[data-sheet="closed"] .nw-sheet .nw-panel,
-  .nw-ui[data-tab="motion"] .nw-panel--sim,
-  .nw-ui[data-tab="sim"] .nw-panel--motion {
+  .nw-ui:not([data-tab="motion"]) .nw-panel--motion,
+  .nw-ui:not([data-tab="feel"]) .nw-panel--feel,
+  .nw-ui:not([data-tab="sim"]) .nw-panel--sim {
     display: none;
   }
 

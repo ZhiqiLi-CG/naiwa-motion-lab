@@ -5,8 +5,9 @@ import type { Ctx } from "./ctx";
 import { h, icon } from "./dom";
 import type { IconName } from "./icons";
 
-/** A floating panel (a tab of the bottom sheet on phones) with a collapsible body. */
-export function panel(ctx: Ctx, id: "motion" | "sim", iconName: IconName, title: string, sub: string) {
+/** A floating panel (a tab of the bottom sheet on phones) with a collapsible body. With `remember`, the folded state
+ *  is also kept in localStorage under that key, across visits. */
+export function panel(ctx: Ctx, id: "motion" | "feel" | "sim", iconName: IconName, title: string, sub: string, remember?: string) {
   const T = copy();
   const titleId = `nw-${id}-title`;
   const body = h("div", { class: "nw-panel-body", id: `nw-${id}-body` });
@@ -34,8 +35,24 @@ export function panel(ctx: Ctx, id: "motion" | "sim", iconName: IconName, title:
     toggle.setAttribute("aria-expanded", String(open));
     ctx.root.dataset[key] = String(!open);
   };
+  if (remember && ctx.root.dataset[key] === undefined) {
+    try {
+      ctx.root.dataset[key] = String(localStorage.getItem(remember) === "collapsed");
+    } catch {
+      // storage blocked (private window): it starts open
+    }
+  }
   show(ctx.root.dataset[key] !== "true");
-  toggle.addEventListener("click", () => show(el.classList.contains("is-collapsed")));
+  toggle.addEventListener("click", () => {
+    const open = el.classList.contains("is-collapsed");
+    show(open);
+    if (!remember) return;
+    try {
+      localStorage.setItem(remember, open ? "open" : "collapsed");
+    } catch {
+      // storage blocked: the choice lasts for this visit only
+    }
+  });
   return { el, body };
 }
 
