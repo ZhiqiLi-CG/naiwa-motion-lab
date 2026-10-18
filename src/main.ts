@@ -7,7 +7,7 @@ import { setLang, tr } from "./i18n";
 import { createStage } from "./stage";
 import { loadCharacter } from "./character";
 import { createFrogSim, initPhysics, listSimulators, onSimulatorsChanged } from "./sim";
-import { createMotion } from "./motion";
+import { createMotion, metricReadouts } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
 import { mountUI, type UICommands } from "./ui";
 
@@ -166,6 +166,7 @@ store.subscribe((s, prev) => {
   if (s.sound !== prev.sound) sfx.setEnabled(s.sound);
   if (s.params !== prev.params) sim?.setParams(effectiveParams());
   if (s.simulator !== prev.simulator) rebuildSim();
+  if (s.retargeter !== prev.retargeter) motion.setRetargeter(s.retargeter);
   const mirrorMatters = s.mode === "camera" || s.mode === "video";
   if (s.mode !== prev.mode || s.dance !== prev.dance || (mirrorMatters && s.mirror !== prev.mirror)) void switchMotion();
 });
@@ -335,7 +336,9 @@ async function boot() {
   store.set({ loading: { active: true, message: tr({ zh: "正在叫醒奶蛙…", en: "Waking 奶蛙 up…" }) } });
   void motion.ready().then(() => setDances(motion.dances()));
   const [, loaded] = await Promise.all([initPhysics(), loadCharacter()]);
-  store.set({ simulators: listSimulators() });
+  store.set({ simulators: listSimulators(), retargeters: motion.retargeters() });
+  motion.onRetargetersChanged((retargeters) => store.set({ retargeters }));
+  motion.setRetargeter(store.get().retargeter);
   onSimulatorsChanged(() => store.set({ simulators: listSimulators() }));
   character = loaded;
   stage.scene.add(character.object);
@@ -386,7 +389,9 @@ async function boot() {
       fpsFrames = 0;
       fpsSince = now;
       const s = sim.stats();
+      const m = motion.metrics();
       store.set({
+        motion: { ...store.get().motion, metrics: m ? metricReadouts(m) : [] },
         stats: { fps, stepMs: Math.round(stepMs * 100) / 100, particles: s.particles, cells: s.cells, volumeRatio: Math.round(s.volumeRatio * 1000) / 1000 },
       });
     }

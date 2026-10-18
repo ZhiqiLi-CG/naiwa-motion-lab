@@ -144,6 +144,8 @@ export interface MotionStatus {
   fps?: number;
   /** 0..1 while an uploaded video is being analysed before it plays. */
   progress?: number;
+  /** The retargeter's quality readouts (fidelity, smoothness, limbs in the body, foot sliding), formatted. */
+  metrics?: { label: Text; value: string }[];
 }
 
 export interface MotionSource {
