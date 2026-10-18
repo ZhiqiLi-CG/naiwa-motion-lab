@@ -455,7 +455,8 @@ class Core implements LabFrogSim {
       this.world.free();
     };
     if (this.built) free();
-    else void this.ready.then(free);
+    // A block that failed to build leaves the others built so far: free them and the world either way.
+    else void this.ready.then(free, free);
   }
 }
 

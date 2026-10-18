@@ -177,8 +177,8 @@ export interface FleshBlock extends Block {
   particles(part: SimPart): ParticleView;
   /** The part's surface if the solver tracks one itself (the "flesh surface" output block shows it). */
   surface?(part: SimPart): Float32Array;
-  /** The Rapier soft body of a part, for blocks that work with Rapier directly (the Rapier collision block). */
-  rapier?(part: SimPart): RAPIER.SoftBody;
+  /** The Rapier soft body of a part, for blocks that work with Rapier directly (null for a part it does not solve). */
+  rapier?(part: SimPart): RAPIER.SoftBody | null;
   /** The part's cells (tetrahedra, 4 particle indices each) and its volume against the rest volume. */
   cells?(part: SimPart): Uint32Array;
   volumeRatio?(part: SimPart): number;

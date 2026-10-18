@@ -219,11 +219,13 @@ export class Skeleton {
         .setRotation(q4(rot))
         .setDensity(0)
         .setFriction(0.9)
-        .setCollisionGroups(role === "core" ? this.groups.core : this.groups.contact),
+        .setCollisionGroups(role === "core" ? this.groups.core : this.groups.contact)
+        // The hard bones' floor and ball contacts become events (the feet stand on their soles).
+        .setActiveEvents(role === "core" ? RAPIER.ActiveEvents.COLLISION_EVENTS : RAPIER.ActiveEvents.NONE),
       bone.body,
     );
     this.byCollider.set(c.handle, bone);
-    bone.shapes.push({ kind: "capsule", role, a: la, b: lb, radius });
+    bone.shapes.push({ kind: "capsule", role, a: la, b: lb, radius, collider: c });
   }
 
   private sole(bone: Bone, points: Float32Array) {
@@ -240,9 +242,12 @@ export class Skeleton {
     }
     const desc = RAPIER.ColliderDesc.convexHull(local);
     if (!desc) throw new Error(`sim: no sole for ${bone.name}`);
-    const col = this.world.createCollider(desc.setDensity(0).setFriction(0.9).setCollisionGroups(this.groups.core), bone.body);
+    const col = this.world.createCollider(
+      desc.setDensity(0).setFriction(0.9).setCollisionGroups(this.groups.core).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+      bone.body,
+    );
     this.byCollider.set(col.handle, bone);
-    bone.shapes.push({ kind: "hull", role: "core", points: local });
+    bone.shapes.push({ kind: "hull", role: "core", points: local, collider: col });
   }
 
   private join(bone: Bone, parent: Bone) {
