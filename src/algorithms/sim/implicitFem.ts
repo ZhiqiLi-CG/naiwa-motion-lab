@@ -219,11 +219,11 @@ class ImplicitFem implements PieceSolver {
     }
   }
 
-  /** Elastic forces of the active cells into f. */
-  private forces(x: ArrayLike<number>) {
+  /** Elastic forces of the active cells (or of those given) into f. */
+  private forces(x: ArrayLike<number>, tets = this.piece.activeTets) {
     const T = this.piece.mesh.tets, grad = this.el.grad, V = this.el.volume, F = m3(), P = m3();
     this.f.fill(0);
-    for (const t of this.piece.activeTets) {
+    for (const t of tets) {
       const R = this.rotOf(t);
       deformation(T, grad, x, t, F);
       this.model.P(F, R, this.mu[t], this.la[t], P);
@@ -352,8 +352,8 @@ class ImplicitFem implements PieceSolver {
       });
     }
     for (const i of free) for (let k = 0; k < 3; k++) V[i * 3 + k] = (X[i * 3 + k] - old[i * 3 + k]) / h;
-    // What the flesh pulls on the attached particles with, over the step.
-    this.forces(X);
+    // What the flesh pulls on the attached particles with, over the step (only cells with an attached particle).
+    this.forces(X, piece.boundaryTets);
     for (let i = 0; i < piece.count; i++) if (piece.fixed[i]) for (let k = 0; k < 3; k++) piece.reaction[i * 3 + k] += this.f[i * 3 + k] * h;
   }
 }

@@ -64,6 +64,8 @@ export class Piece implements SimParticles {
   /** Tetrahedra and edges with at least one free particle: the only ones a solver needs to touch. */
   activeTets = new Uint32Array(0);
   activeEdges = new Uint32Array(0);
+  /** Active tetrahedra with an attached particle: the only ones that pull on the bones. */
+  boundaryTets = new Uint32Array(0);
   /** Bumped whenever a particle is attached or detached. */
   version = 0;
   sleeping = false;
@@ -187,10 +189,13 @@ export class Piece implements SimParticles {
     if (this.synced === this.version) return false;
     this.synced = this.version;
     const T = this.mesh.tets, E = this.mesh.edges, F = this.fixed;
-    const tets: number[] = [], edges: number[] = [];
+    const tets: number[] = [], edges: number[] = [], boundary: number[] = [];
     for (let t = 0; t < T.length / 4; t++) {
-      if (!(F[T[t * 4]] && F[T[t * 4 + 1]] && F[T[t * 4 + 2]] && F[T[t * 4 + 3]])) tets.push(t);
+      const fixed = F[T[t * 4]] + F[T[t * 4 + 1]] + F[T[t * 4 + 2]] + F[T[t * 4 + 3]];
+      if (fixed < 4) tets.push(t);
+      if (fixed > 0 && fixed < 4) boundary.push(t);
     }
+    this.boundaryTets = Uint32Array.from(boundary);
     for (let e = 0; e < E.length / 2; e++) if (!(F[E[e * 2]] && F[E[e * 2 + 1]])) edges.push(e);
     this.activeTets = Uint32Array.from(tets);
     this.activeEdges = Uint32Array.from(edges);

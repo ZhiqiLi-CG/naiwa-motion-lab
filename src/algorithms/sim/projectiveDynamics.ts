@@ -63,11 +63,13 @@ class ProjectiveDynamics implements PieceSolver {
 
   private updateWeights() {
     const { mu, lambda } = lame(this.E, this.poisson), ts = this.piece.tetStiffness, V = this.el.volume;
+    // Only a changed weight needs a new factorisation (the page also sends the sliders while the belly is pumped).
     for (let t = 0; t < V.length; t++) {
-      this.wShape[t] = 2 * mu * V[t] * ts[t];
-      this.wVolume[t] = lambda * V[t] * ts[t];
+      const ws = 2 * mu * V[t] * ts[t], wv = lambda * V[t] * ts[t];
+      if (ws !== this.wShape[t] || wv !== this.wVolume[t]) this.dirty = true;
+      this.wShape[t] = ws;
+      this.wVolume[t] = wv;
     }
-    this.dirty = true;
   }
 
   attachmentsChanged() {
@@ -176,7 +178,7 @@ class ProjectiveDynamics implements PieceSolver {
     for (const i of free) for (let k = 0; k < 3; k++) V[i * 3 + k] = (X[i * 3 + k] - old[i * 3 + k]) / h;
     // The elastic force on each attached particle, −Σ w (F − T) ∇N, over the step (T from the last local step).
     const F = m3();
-    for (const t of piece.activeTets) {
+    for (const t of piece.boundaryTets) {
       deformation(T, grad, X, t, F);
       const w = this.wShape[t] + this.wVolume[t];
       for (let a = 0; a < 4; a++) {

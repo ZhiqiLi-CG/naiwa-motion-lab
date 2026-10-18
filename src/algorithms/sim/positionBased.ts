@@ -139,15 +139,14 @@ export class PositionBased implements PieceSolver {
       const i0 = T[t * 4], i1 = T[t * 4 + 1], i2 = T[t * 4 + 2], i3 = T[t * 4 + 3];
       const C = tetVolume(p, i0, i1, i2, i3) - V0[t] * factor;
       volumeGradient(p, i0, i1, i2, i3, grad);
-      const ids = [i0, i1, i2, i3];
       let W = 0;
-      for (let k = 0; k < 4; k++) W += w[ids[k]] * (grad[k * 3] ** 2 + grad[k * 3 + 1] ** 2 + grad[k * 3 + 2] ** 2);
+      for (let k = 0; k < 4; k++) W += w[T[t * 4 + k]] * (grad[k * 3] ** 2 + grad[k * 3 + 1] ** 2 + grad[k * 3 + 2] ** 2);
       if (W < 1e-20) continue;
       const dl = this.o.xpbd
         ? -C / (W + this.tetK[t] / (hs * hs))
         : (-C / W) * (1 - Math.pow(1 - this.tetK[t], 1 / iterations));
       for (let k = 0; k < 4; k++) {
-        const i = ids[k];
+        const i = T[t * 4 + k];
         if (w[i] === 0) addReaction(R, i, (dl / hs) * grad[k * 3], (dl / hs) * grad[k * 3 + 1], (dl / hs) * grad[k * 3 + 2]);
         else for (let c = 0; c < 3; c++) p[i * 3 + c] += w[i] * dl * grad[k * 3 + c];
       }
