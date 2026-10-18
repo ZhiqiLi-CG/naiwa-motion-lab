@@ -707,6 +707,32 @@
     return { speed: time ? dist / time : 0, standing: time / 4 / (ms / 1000) };
   };
 
+  /** The frog's surface speed over one stretch of the playing video, video time a → b (waits for the video to reach
+   *  a, then 100 ms snapshots until it passes b): the same content at any playback speed, so speeds compare. */
+  e2e.surfaceOverVideo = async (a, b, timeoutMs = 30000) => {
+    const v = [...e2e.routed].reverse().find((x) => x.isConnected && x.currentSrc) ?? e2e.playingVideo();
+    if (!v) return null;
+    const t0 = performance.now();
+    while (!(v.currentTime >= a && v.currentTime < a + 0.15)) {
+      if (performance.now() - t0 > timeoutMs) return null;
+      await new Promise((r) => raf(r));
+    }
+    const start = performance.now(), vt0 = v.currentTime;
+    let path = 0, n = 0, last = start;
+    e2e.snap("ov0");
+    while (v.currentTime < b && v.currentTime >= vt0 - 0.01) {
+      await new Promise((r) => raf(r));
+      if (performance.now() - last < 100) continue;
+      last = performance.now();
+      e2e.snap(`ov${(n + 1) % 2}`);
+      path += e2e.delta(`ov${n % 2}`, `ov${(n + 1) % 2}`);
+      n++;
+      if (performance.now() - start > timeoutMs) return null;
+    }
+    const wall = (last - start) / 1000;
+    return { speed: path / wall, path, wall, vt0, vt1: v.currentTime };
+  };
+
   /** The newest recorded video blob, as base64 (the Blob is kept, so a revoked URL does not matter). */
   e2e.lastVideoBlob = async () => {
     const rec = window.__naiwa?.store?.get().lastRecording;

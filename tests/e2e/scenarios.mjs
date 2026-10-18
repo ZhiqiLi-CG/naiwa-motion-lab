@@ -358,6 +358,11 @@ const surfaceSpeed = (page, ms) => page.evaluate((m) => window.__e2e.surfaceSpee
 async function playbackChecks(T, group, page, log, video) {
   log.step = "playback: 1×";
   const run = await surfaceSpeed(page, 2000);
+  // With a video the frog's speed is compared over one and the same stretch of it at both speeds (the same content:
+  // two windows of wall time would hold different moves).
+  const stretch = video && (await page.evaluate(() => { const m = window.__e2e.music(); return m && [0.28 * m.duration, 0.48 * m.duration]; }));
+  const over = (timeoutMs) => page.evaluate((a, b, t) => window.__e2e.surfaceOverVideo(a, b, t), stretch[0], stretch[1], timeoutMs);
+  const run1 = stretch ? await over(30000) : null;
   const perFrame = (run.speed * 2) / Math.max(1, run.frames);
   log.step = "playback: pause";
   const how = await transport(page, "pause");
@@ -389,15 +394,21 @@ async function playbackChecks(T, group, page, log, video) {
   const howSpeed = await transport(page, "speed", 0.25);
   await sleep(600);
   const vs0 = video ? await page.evaluate(() => window.__e2e.music()) : null;
-  const slow = await surfaceSpeed(page, 2000);
+  const slowWall = await surfaceSpeed(page, 2000);
   const vs1 = video ? await page.evaluate(() => window.__e2e.music()) : null;
+  // the same stretch of video at 0.25× (waiting for it may take a loop of the clip at a quarter speed)
+  const slowStretch = stretch && run1 ? await over(4 * 1000 * (vs0.duration + 2)) : null;
   const pb2 = (await appState(page)).playback;
-  const r = slow.speed / run.speed;
+  const [slow, base] = slowStretch ? [slowStretch, run1] : [slowWall, run];
+  const r = slow.speed / base.speed;
+  // over the same stretch the ratio is the time scale itself; between two wall-time windows only roughly
+  const [lo, hi] = slowStretch ? [0.15, 0.35] : [0.12, 0.45];
   const advanced = video ? (vs1.t >= vs0.t ? vs1.t - vs0.t : vs1.t + vs0.duration - vs0.t) : null; // it may loop meanwhile
   const videoRate = video ? advanced / 2 : null;
   const videoOk = !video || (vs1.rate > 0.2 && vs1.rate < 0.3 && videoRate > 0.15 && videoRate < 0.35);
-  T.check(group, "slow motion slows the frog" + (video ? " and the video" : " and the motion"), !pb2.paused && pb2.timeScale === 0.25 && r >= 0.12 && r <= 0.45 && videoOk ? "PASS" : "FAIL",
-    `via ${howResume}, ${howSpeed}: timeScale ${pb2.timeScale}; surface ${(slow.speed * 1000).toFixed(0)} mm/s vs ${(run.speed * 1000).toFixed(0)} mm/s at 1× (×${r.toFixed(2)}, want 0.12–0.45)` +
+  T.check(group, "slow motion slows the frog" + (video ? " and the video" : " and the motion"), !pb2.paused && pb2.timeScale === 0.25 && r >= lo && r <= hi && videoOk ? "PASS" : "FAIL",
+    `via ${howResume}, ${howSpeed}: timeScale ${pb2.timeScale}; surface ${(slow.speed * 1000).toFixed(0)} mm/s vs ${(base.speed * 1000).toFixed(0)} mm/s at 1× (×${r.toFixed(2)}, want ${lo}–${hi})` +
+      (slowStretch ? ` over the same video stretch ${stretch[0].toFixed(2)}–${stretch[1].toFixed(2)} s (${run1.wall.toFixed(1)} s at 1×, ${slowStretch.wall.toFixed(1)} s at 0.25×)` : video ? " between two wall-time windows (the video stretch could not be measured)" : "") +
       (video ? `; video playbackRate ${vs1.rate}, advanced ${advanced.toFixed(2)} s in 2 s` : ""));
   await transport(page, "speed", 1);
 }
