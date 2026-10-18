@@ -45,7 +45,7 @@ export async function loadEngine(workdir) {
 export function sanitise(raw, DEFAULTS, frames) {
   const out = {};
   const ranges = {
-    minCameraMotion: [0, 0.2], panFov: [0, 120], boneTolerance: [0.1, 1], spike: [2, 10], accel: [1, 300], noise: [0.001, 0.1],
+    minCameraMotion: [0, 0.2], panFov: [0, 120], boneTolerance: [0.1, 1], spike: [2, 10], accel: [5, 300], noise: [0.001, 0.1],
     window: [0.05, 1.5], order: [0, 6], contactHeight: [0.02, 0.5], contactSpeed: [0.05, 2], pin: [0, 1], loop: [0, 2],
   };
   for (const [k, v] of Object.entries(raw?.params ?? raw ?? {})) {
@@ -106,7 +106,7 @@ ${JSON.stringify(first.report, null, 1)}
 \`\`\`
 
 Numbers (lower is better), the track as it came → after the algorithm, and the score (lower is better; see score() in
-lab/jobs/motion-coherence/engine.ts — coherence relative to the input, penalties for moving more than 5 cm away from
+lab/jobs/motion-coherence/engine.ts — coherence relative to the input, penalties for moving more than 3 cm away from
 the person or making the frog copy them worse):
 
 | | before | after |

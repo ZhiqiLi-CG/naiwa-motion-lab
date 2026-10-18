@@ -64,7 +64,7 @@ async function numbers(t: Track, landmark: ReturnType<typeof compare>["after"], 
 
 /**
  * One score, lower is better: the coherence numbers relative to the input's (so each counts about the same), plus a
- * penalty for drifting from the person (more than 5 cm) or for the frog copying them worse than before.
+ * penalty for drifting from the person (more than 3 cm) or for the frog copying them worse than before.
  */
 export function score(n: Numbers, input: Numbers): number {
   const keys = ["jerk m/s³", "travel jerk m/s³", "foot slide cm/s", "speed at cuts m/s", "bone length variation %", "frog jerk m/s³", "frog foot slide cm/s"];
@@ -72,7 +72,7 @@ export function score(n: Numbers, input: Numbers): number {
   let s = 0;
   for (const k of keys) s += n[k] / Math.max(floor[k] ?? 1e-3, input[k]);
   s /= keys.length;
-  s += Math.max(0, n["distance from the person cm"] - 5) / 5;
+  s += Math.max(0, n["distance from the person cm"] - 3) / 3;
   s += Math.max(0, n["frog direction error °"] - input["frog direction error °"]) / 10;
   return s;
 }
