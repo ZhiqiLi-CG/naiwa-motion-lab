@@ -7,6 +7,9 @@ import type { RetargetPipeline } from "./core";
 import { hipOf, loadLandmarker, onFrames, pickPerson, PreviewView, stamp, toFrame } from "./mediapipe";
 import { blendPose, idlePose, type BodyPose } from "./pose";
 import { recordingOf, TrackPlayer, type Track } from "./track";
+import { accumulate, type CameraStep } from "./cameraMotion";
+import { VideoCamera } from "./cameraFrames";
+import { AUTO, coherence } from "../algorithms/motion/coherence";
 
 /** A status with its text in both languages (shown in the current one, re-shown when the language changes). */
 export type Status = Omit<MotionStatus, "message"> & { text?: Text };
@@ -215,6 +218,11 @@ export async function startCamera(mirror: boolean, preview: HTMLElement, open: O
   };
 }
 
+/** How uploads are analysed. dev/coherence.html turns the camera handling (the estimate and the AUTO coherence
+ *  steps) off, or asks for the last analysis' camera steps and its frames without the camera handling (`keepRaw`),
+ *  to compare. */
+export const videoAnalysis: { camera: boolean; keepRaw?: boolean; steps?: CameraStep[]; raw?: LandmarkFrame[] } = { camera: true };
+
 export interface VideoSource extends MirrorableSource {
   track(): DanceTrack | null;
 }
@@ -222,6 +230,12 @@ export interface VideoSource extends MirrorableSource {
 /**
  * Uploaded video: analysed first, as fast as the device allows (played muted and sped up while the detector keeps
  * up), smoothed with frames before and after, then played with its sound and the frog in sync with video time.
+ *
+ * While it is analysed, the camera's motion is estimated from the background of the same frames (cameraFrames.ts):
+ * pans, zooms and shot cuts. Before the retargeter's smoothing, the camera is taken out of the person's picture
+ * landmarks and each shot is re-anchored onto the one before (the AUTO steps of src/algorithms/motion/coherence), so
+ * the camera no longer reads as the person travelling, hopping or turning. The track keeps the estimate (camera,
+ * cuts) and is marked cameraUndone.
  */
 export async function startVideo(
   file: File | string,
@@ -265,11 +279,13 @@ export async function startVideo(
   if (cancelled()) return fail(CANCELLED);
   const video = view.video;
   const aspect = video.videoWidth / Math.max(1, video.videoHeight);
-  const length = Number.isFinite(video.duration) ? Math.min(video.duration, MAX_VIDEO_SECONDS) : MAX_VIDEO_SECONDS;
+  // A recorded stream (MediaRecorder WebM) may not know its duration until it has played: then the analysis ends it.
+  let length = Number.isFinite(video.duration) ? Math.min(video.duration, MAX_VIDEO_SECONDS) : MAX_VIDEO_SECONDS;
 
   // Analyse: one detection per presented frame, the playback rate adapted so ~15–22 samples land per video second.
   await detector.setOptions({ numPoses: 3 });
-  const samples: { t: number; frame: LandmarkFrame }[] = [];
+  const samples: { t: number; frame: LandmarkFrame; step: CameraStep | null }[] = [];
+  let camera: VideoCamera | null = videoAnalysis.camera ? new VideoCamera(video) : null;
   let prevHip: [number, number] | null = null;
   let rate = 2;
   let lastProgress = -1;
@@ -298,7 +314,15 @@ export async function startVideo(
       detectMs += performance.now() - d0;
       const frame = toFrame(res, pickPerson(res, aspect, prevHip));
       prevHip = hipOf(frame, aspect) ?? prevHip;
-      samples.push({ t: mediaTime, frame });
+      let step: CameraStep | null = null;
+      try {
+        step = camera?.push(video, res.landmarks.map((l) => l.map((p) => [p.x, p.y, p.z, p.visibility ?? 1]))) ?? null;
+      } catch (e) {
+        // A picture that cannot be read back (another origin): no camera estimate for this video.
+        console.warn("motion: no camera estimate", e);
+        camera = null;
+      }
+      samples.push({ t: mediaTime, frame, step });
       view.draw(frame.image.length ? frame.image : null);
       if (lastMedia >= 0) {
         const gap = mediaTime - lastMedia;
@@ -326,23 +350,46 @@ export async function startVideo(
   video.pause();
   await detector.setOptions({ numPoses: 1 });
   const wall = (performance.now() - started) / 1000;
-  console.info(`motion: analysed ${samples.length} frames of ${length.toFixed(1)} s in ${wall.toFixed(1)} s (${(detectMs / Math.max(1, samples.length)).toFixed(1)} ms per detection, final rate ${rate.toFixed(2)}×)`);
+  if (!Number.isFinite(video.duration) || video.duration < length) length = Math.min(length, (samples[samples.length - 1]?.t ?? 0) + 1 / 30);
+  const per = (ms: number) => (ms / Math.max(1, camera?.frames ?? 1)).toFixed(2);
+  const cam = camera ? ` · camera ${camera.w}×${camera.h}: ${per(camera.ms)} ms per frame (${per(camera.grabMs)} reading the frame, ${per(camera.estimateMs)} estimating)` : "";
+  console.info(`motion: analysed ${samples.length} frames of ${length.toFixed(1)} s in ${wall.toFixed(1)} s (${(detectMs / Math.max(1, samples.length)).toFixed(1)} ms per detection, final rate ${rate.toFixed(2)}×${cam})`);
+  // Shot-relative camera per sample, and which shot each sample is in.
+  const estimate = camera && samples.length && samples.every((s) => s.step) ? accumulate(samples.map((s) => s.step!)) : null;
+  videoAnalysis.steps = samples.map((s) => s.step!).filter(Boolean);
+  const shotOf: number[] = [];
+  if (estimate) samples.forEach((_, i) => shotOf.push((i ? shotOf[i - 1] : 0) + (estimate.cuts.includes(i) ? 1 : 0)));
 
   // Resample to 30 fps (gaps longer than half a second stay empty), then smooth with past and future frames.
   const fps = 30;
   const n = Math.max(2, Math.floor(length * fps));
   const frames: PersonFrame[] = [];
-  let j = 0;
+  const cameraTrack: { shift: [number, number]; scale: number }[] = [];
+  const cuts: number[] = [];
+  let j = 0, prevSample = 0;
   for (let k = 0; k < n; k++) {
     const t = k / fps;
     while (j + 1 < samples.length && samples[j + 1].t <= t) j++;
     const a = samples[j], b = samples[j + 1];
     const near = !b || Math.abs(a.t - t) <= Math.abs(b.t - t) ? a : b;
     frames.push({ ...(near && Math.abs(near.t - t) < 0.25 ? near.frame : { world: [], image: [] }), aspect });
+    if (estimate) {
+      // Frame and camera from the same sample, so they belong together.
+      const i = near === a ? j : j + 1;
+      cameraTrack.push(estimate.camera[i]);
+      if (k > 0 && shotOf[i] !== shotOf[prevSample]) cuts.push(k);
+      prevSample = i;
+    }
   }
   const seen = frames.filter((f) => f.world.length >= 33).length;
   if (seen < Math.max(3, n * 0.2)) return fail({ zh: "视频里没有找到人，换一个人物全身入镜的视频试试", en: "No one found in this video. Try one with a person in full view." });
   // The pipeline exists once the rig is bound (the character may still be loading while the video is analysed).
+  // The camera taken out, shots anchored onto each other, clear left/right flips undone (before the smoothing).
+  const analysed: Track = { id: "", name: "", fps, duration: n / fps, aspect, source: { title, url: "", start: 0, end: n / fps }, frames };
+  if (estimate) Object.assign(analysed, { camera: cameraTrack, cuts });
+  const coherent = videoAnalysis.camera ? coherence(analysed, AUTO) : { track: analysed, report: null };
+  const r = coherent.report;
+  if (r) console.info(`motion: coherence ${r.ms.toFixed(0)} ms: ${r.shots} shot(s), ${r.movingShots} with a moving camera, cuts at ${JSON.stringify(r.cuts)}, ${r.flips} flips undone`);
   const filter = await new Promise<RetargetPipeline>((resolve) => {
     const r = open();
     const poll = () => {
@@ -359,8 +406,10 @@ export async function startVideo(
     duration: n / fps,
     aspect,
     source: { title, url: typeof file === "string" ? file : "", start: 0, end: n / fps },
-    frames: filter.recorded(frames, fps).map(({ world, image }): LandmarkFrame => ({ world, image })),
+    frames: filter.recorded(coherent.track.frames.map((f) => ({ ...f, aspect })), fps).map(({ world, image }): LandmarkFrame => ({ world, image })),
   };
+  if (videoAnalysis.keepRaw) videoAnalysis.raw = filter.recorded(frames, fps).map(({ world, image }): LandmarkFrame => ({ world, image }));
+  if (estimate) Object.assign(track, { camera: cameraTrack, cuts, cameraUndone: coherent.track.cameraUndone });
 
   // Play with sound, the frog following video time (seeking and looping stay in sync).
   const retarget = open(recordingOf(track));

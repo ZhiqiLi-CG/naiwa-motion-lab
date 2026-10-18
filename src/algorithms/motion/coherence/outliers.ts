@@ -12,43 +12,71 @@
  */
 import { N, PAIRS, present, shots, type Frame } from "./frames";
 
-const ARMS = PAIRS.filter(([l]) => l >= 11 && l <= 22);
-const LEGS = PAIRS.filter(([l]) => l >= 23);
+/** Elbows down and knees down: the shoulders and hips stay, so the heading never flips with them. */
+const ARMS = PAIRS.filter(([l]) => l >= 13 && l <= 22);
+const LEGS = PAIRS.filter(([l]) => l >= 25);
 const swapPairs = (f: Frame, pairs: readonly [number, number][]) => {
   for (const [l, r] of pairs)
     for (const k of ["world", "image"] as const) [f[k][l], f[k][r]] = [f[k][r], f[k][l]];
 };
 
-/** Undo left/right swaps of the legs and arms (in place). Returns how many group swaps were undone. */
-export function fixFlips(frames: Frame[], cuts: number[], aspect: number): number {
+/**
+ * Undo left/right swaps of the legs and arms (in place). Per limb group and shot, each frame is labelled as detected
+ * or swapped so that the whole sequence jumps least (Viterbi over the two states): the cost of a frame following the
+ * one before is the distance between them (picture and world), and a swapped frame costs `prior` on its own, so only
+ * a swap that removes a jump on either side is undone, and a long stretch of consistently swapped labels (a person
+ * seen from behind) is left as it is. Returns the number of swapped stretches undone.
+ */
+export function fixFlips(frames: Frame[], cuts: number[], aspect: number, prior = 0.01): number {
   let fixed = 0;
-  for (const [a, b] of shots(frames.length, cuts)) {
-    for (let k = a + 1; k < b; k++) {
-      const f = frames[k], p1 = frames[k - 1], p2 = k - 2 >= a ? frames[k - 2] : null;
-      if (!present(f) || !present(p1)) continue;
-      const predict = (kind: "world" | "image", i: number, c: number) => {
-        const x1 = p1[kind][i][c];
-        return p2 && present(p2) ? 2 * x1 - p2[kind][i][c] : x1;
-      };
-      for (const group of [LEGS, ARMS]) {
-        const cost = (swapped: boolean) => {
-          let s = 0;
-          for (const [l, r] of group)
-            for (const [i, j] of [[l, r], [r, l]]) {
-              const src = swapped ? j : i;
-              // Picture (isotropic, scaled to about metres) and world positions both count.
-              const dx = (f.image[src][0] - predict("image", i, 0)) * aspect, dy = f.image[src][1] - predict("image", i, 1);
-              s += (dx * dx + dy * dy) * 4;
-              for (let c = 0; c < 3; c++) s += (f.world[src][c] - predict("world", i, c)) ** 2;
-            }
-          return s;
-        };
-        const keep = cost(false), swap = cost(true);
-        // Only clear cases: the swap fits several times better and the labelled pose is far off.
-        if (swap < 0.35 * keep && keep > 0.02 * group.length) {
-          swapPairs(f, group);
-          fixed++;
+  for (const group of [LEGS, ARMS]) {
+    const ids = group.flatMap(([l, r]) => [l, r]);
+    const partner = new Map(group.flatMap(([l, r]) => [[l, r], [r, l]] as [number, number][]));
+    /** Distance of frame k (state sk) from frame j (state sj). */
+    const dist = (k: number, sk: number, j: number, sj: number) => {
+      const f = frames[k], g = frames[j];
+      let s = 0;
+      for (const i of ids) {
+        const a = sk ? partner.get(i)! : i, b = sj ? partner.get(i)! : i;
+        const dx = (f.image[a][0] - g.image[b][0]) * aspect, dy = f.image[a][1] - g.image[b][1];
+        s += (dx * dx + dy * dy) * 4;
+        for (let c = 0; c < 3; c++) s += (f.world[a][c] - g.world[b][c]) ** 2;
+      }
+      return s;
+    };
+    const unary = prior * group.length;
+    for (const [a, b] of shots(frames.length, cuts)) {
+      // Chains of consecutive frames with a person.
+      for (let k0 = a; k0 < b; ) {
+        if (!present(frames[k0])) {
+          k0++;
+          continue;
         }
+        let k1 = k0;
+        while (k1 + 1 < b && present(frames[k1 + 1])) k1++;
+        const len = k1 - k0 + 1;
+        const cost = [new Float64Array(len), new Float64Array(len)], from = [new Uint8Array(len), new Uint8Array(len)];
+        cost[0][0] = 0;
+        cost[1][0] = unary;
+        for (let i = 1; i < len; i++) {
+          const k = k0 + i;
+          for (const s of [0, 1]) {
+            const c0 = cost[0][i - 1] + dist(k, s, k - 1, 0), c1 = cost[1][i - 1] + dist(k, s, k - 1, 1);
+            cost[s][i] = Math.min(c0, c1) + (s ? unary : 0);
+            from[s][i] = c1 < c0 ? 1 : 0;
+          }
+        }
+        let s = cost[1][len - 1] < cost[0][len - 1] ? 1 : 0;
+        const state = new Uint8Array(len);
+        for (let i = len - 1; i >= 0; i--) {
+          state[i] = s;
+          s = from[s][i];
+        }
+        for (let i = 0; i < len; i++) {
+          if (state[i]) swapPairs(frames[k0 + i], group);
+          if (state[i] && (i === 0 || !state[i - 1])) fixed++;
+        }
+        k0 = k1 + 1;
       }
     }
   }

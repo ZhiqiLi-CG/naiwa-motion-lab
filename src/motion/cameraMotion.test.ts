@@ -40,9 +40,16 @@ function render(w: number, h: number, bg: (u: number, v: number) => number, c: C
 
 const W = 160, H = 90;
 
-function run(frames: number, cam: (k: number) => Cam, cutAt = -1) {
+/** Horizontal slats, and (`edges`) a few vertical edges: a wall corner, a door frame. */
+function slats(edges: boolean): (u: number, v: number) => number {
+  // Edges about a pixel wide (as a camera blurs them), not stair-stepped.
+  const edge = (x: number) => 1 / (1 + Math.exp(-x * 60));
+  return (u, v) => 128 + 60 * Math.sin(v * 60) + (edges ? 70 * edge(Math.sin(u * 7) - 0.6) + 50 * edge(Math.sin(u * 3 + 1) - 0.8) - 40 : 0);
+}
+
+function run(frames: number, cam: (k: number) => Cam, cutAt = -1, background?: (u: number, v: number) => number) {
   const est = new CameraEstimator();
-  const bgA = texture(3), bgB = texture(11), fg = texture(7);
+  const bgA = background ?? texture(3), bgB = texture(11), fg = texture(7);
   const steps: CameraStep[] = [];
   let ms = 0;
   for (let k = 0; k < frames; k++) {
@@ -85,6 +92,21 @@ describe("camera estimator", () => {
     expect(steps.filter((s) => s.ok).length).toBe(N);
     expect(err).toBeLessThan(0.01);
     expect(errS).toBeLessThan(0.01);
+  });
+
+  it("follows a pan over slats with a few vertical edges, and takes plain slats as still sideways", () => {
+    const cam = (k: number) => ({ s: 1 + 0.004 * k, tx: -0.006 * k, ty: 0.002 * k });
+    for (const edges of [true, false]) {
+      const { steps } = run(25, cam, -1, slats(edges));
+      const { camera } = accumulate(steps);
+      const last = camera[24], c = cam(24);
+      console.log(`slats${edges ? " with edges" : ""}: shift ${last.shift.map((x) => x.toFixed(3))} (true ${c.tx.toFixed(3)}, ${c.ty.toFixed(3)}), zoom ${last.scale.toFixed(3)} (true ${c.s.toFixed(3)})`);
+      expect(Math.abs(last.shift[1] - c.ty)).toBeLessThan(0.01);
+      expect(Math.abs(last.scale - c.s)).toBeLessThan(0.01);
+      if (edges) expect(Math.abs(last.shift[0] - c.tx)).toBeLessThan(0.015);
+      // No texture across: no invented pan either way beyond the truth.
+      else expect(Math.abs(last.shift[0])).toBeLessThan(Math.abs(c.tx) + 0.01);
+    }
   });
 
   it("finds a cut to another scene and restarts the shot there", () => {

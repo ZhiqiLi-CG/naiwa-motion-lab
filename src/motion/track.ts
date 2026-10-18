@@ -7,8 +7,12 @@ import type { Goal, LandmarkFrame, Landmarks, Recording } from "./api";
 import { FEET } from "./blocks/personDirections";
 import type { RetargetPipeline } from "./core";
 
-/** A track with the frame aspect (width / height) its image landmarks were measured in. */
-export type Track = DanceTrack & { aspect?: number };
+/**
+ * A track with the frame aspect (width / height) its image landmarks were measured in. `cameraUndone`: the camera's
+ * motion (DanceTrack.camera, kept for reference) has already been taken out of the image landmarks
+ * (src/algorithms/motion/coherence), so it must not be taken out again.
+ */
+export type Track = DanceTrack & { aspect?: number; cameraUndone?: boolean };
 
 /** The feet's floor line: where the lowest visible foot usually is (a high percentile, so hops do not count). */
 export function trackFloor(frames: LandmarkFrame[]): number | undefined {

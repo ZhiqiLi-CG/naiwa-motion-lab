@@ -173,7 +173,7 @@ describe("motion coherence under a moving camera", () => {
     expect(bad[60].has(15)).toBe(true);
     expect(bad[61].has(27)).toBe(true);
     replaceOutliers(frames, bad, []);
-    expect(fixed).toBeGreaterThanOrEqual(swapped.length);
+    expect(fixed).toBe(2); // two stretches: 40–42 and 77
     for (const k of swapped) expect(Math.abs(frames[k].image[25][0] - truth.frames[k].image[25][0])).toBeLessThan(0.01);
     expect(Math.abs(frames[60].world[15][0] - truth.frames[60].world[15][0])).toBeLessThan(0.08);
     expect(Math.abs(frames[61].image[27][1] - truth.frames[61].image[27][1])).toBeLessThan(0.03);

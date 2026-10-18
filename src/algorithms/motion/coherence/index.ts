@@ -48,7 +48,8 @@ export interface CoherenceParams {
   panFov: number;
   /** Re-anchor shots at cuts (position, size, heading). */
   cuts: boolean;
-  /** Also find cuts from jumps of the person (tracks without camera information). */
+  /** Also find cuts from jumps of the person, for a track without a camera estimate (with one, the estimate has
+   *  already looked at the pictures, which says more than the person's landmarks). */
   detectCuts: boolean;
   /** Mark landmarks outside the picture as barely visible. */
   offPicture: boolean;
@@ -135,7 +136,8 @@ function holdStill(frames: Frame[], seg: Segment, fps: number, aspect: number): 
   });
 }
 
-/** Make a track coherent. Returns the new track (camera undone, so it carries no camera any more) and what was done. */
+/** Make a track coherent. Returns the new track (its camera, if any, undone and marked so: Track.cameraUndone), what
+ *  was done, and the reference for fidelity (the person with the camera undone and the cuts anchored). */
 export function coherence(track: Track, params: Partial<CoherenceParams> = {}): { track: Track; report: CoherenceReport; reference: Frame[] } {
   const t0 = performance.now();
   const p: CoherenceParams = { ...DEFAULTS, ...params };
@@ -147,9 +149,9 @@ export function coherence(track: Track, params: Partial<CoherenceParams> = {}): 
   const offPicture = p.offPicture ? markOffPicture(frames) : 0;
   let cuts = [...(track.cuts ?? []), ...segs.filter((s) => s.fix === "cut").map((s) => s.from)].filter((c) => c > 0 && c < n);
   cuts = [...new Set(cuts)].sort((a, b) => a - b);
-  const { moving } = p.camera ? compensateCamera(frames, track, cuts, p.minCameraMotion, p.panFov) : { moving: [] as boolean[] };
+  const { moving } = p.camera && !track.cameraUndone ? compensateCamera(frames, track, cuts, p.minCameraMotion, p.panFov) : { moving: [] as boolean[] };
   let foundCuts: number[] = [];
-  if (p.detectCuts) {
+  if (p.detectCuts && !track.camera) {
     // A cut within two frames of a known one is the same cut.
     foundCuts = landmarkCuts(frames, aspect).filter((c) => !cuts.some((k) => Math.abs(k - c) <= 2));
     cuts = [...cuts, ...foundCuts].sort((a, b) => a - b);
@@ -173,9 +175,9 @@ export function coherence(track: Track, params: Partial<CoherenceParams> = {}): 
   const looped = p.loop > 0 ? seamlessLoop(frames, fps, p.loop) : false;
 
   const seen = Math.max(1, frames.filter(present).length);
-  const out: Track = { ...track, frames, cuts: cuts.length ? cuts : undefined, camera: undefined };
-  delete out.camera;
+  const out: Track = { ...track, frames, cuts: cuts.length ? cuts : undefined };
   if (!cuts.length) delete out.cuts;
+  if (track.camera && p.camera) out.cameraUndone = true;
   return {
     track: out,
     reference,

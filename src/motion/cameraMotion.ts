@@ -3,17 +3,24 @@
  * people masked out, and shot cuts. Pure numbers (runs in Node for the tests); cameraFrames.ts feeds it the analysed
  * video's frames in the browser.
  *
- * Each frame comes in as a small grayscale picture (about 160 px on its long side). A three-level pyramid of
- * high-passed pictures (the local mean removed, so exposure changes do not count) is matched coarse to fine:
- * a grid of 8 × 8 blocks of the previous frame, skipping blocks on a person (their boxes, padded) and blocks without
- * texture in both directions, each searched for in the new frame around where the current model puts it (the
- * coarsest level around the previous frame's motion), with a parabola through the best cost for sub-pixel steps.
- * The block displacements d at block centres x (from the picture centre) are fitted with d = a·x + t (zoom 1 + a,
- * shift t): RANSAC over single blocks (pure shifts) and pairs, then iteratively reweighted least squares (Tukey), so
- * other moving things and mismatched blocks drop out.
+ * Each frame comes in as a small grayscale picture (about 160 px on its long side) and becomes a three-level pyramid
+ * of band-passed pictures (a light blur minus a wide one, so exposure changes do not count). The people's boxes
+ * (padded) are left out. Two frames are aligned coarse to fine:
  *
- * A cut: the brightness histogram changes a lot (Bhattacharyya distance), or changes somewhat while hardly any block
- * matches. A frame whose fit is unreliable (too few inliers) counts as a still camera.
+ * - on the coarsest level (about 40 px), every whole-pixel shift around the previous frame's motion and around
+ *   standing still is scored by the mean absolute difference of the background; the best, refined by a parabola;
+ * - then on every level, Lucas–Kanade: Gauss–Newton on the model x' = (1 + a)·x + t (x from the picture's centre),
+ *   over all background pixels, robustly reweighted (Tukey, scale from the median residual), so other moving things
+ *   drop out. A direction the background has no texture along (stripes, a plain wall) is not trusted: the camera is
+ *   taken as still along it.
+ *
+ * Pooling every background pixel is what makes stripes work: a block of horizontal slats says nothing about a pan,
+ * but the slats' ends, the floor and the furniture together do.
+ *
+ * A cut: the brightness histogram changes a lot (Bhattacharyya distance), or the aligned frames still differ about
+ * as much as unrelated pictures do (median residual against the median band-passed value). A frame whose fit is
+ * unreliable (too little background, too little agreement) carries on the last trusted motion for a few frames,
+ * fading (cameras move smoothly), then counts as a still camera.
  *
  * Convention (also of DanceTrack.camera): a background point at picture position p (fractions of width and height)
  * in the earlier frame is at p' = s·(p − ½) + ½ + t in the later one.
@@ -29,7 +36,8 @@ export interface Box {
 
 /** The motion from the previous frame to this one. */
 export interface CameraStep {
-  /** Shift (picture fractions) and zoom; identity on the first frame, at a cut and when the fit is unreliable. */
+  /** Shift (picture fractions) and zoom; identity on the first frame and at a cut; when the fit is unreliable, the
+   *  last trusted motion fading out over a few frames. */
   dx: number;
   dy: number;
   scale: number;
@@ -37,30 +45,37 @@ export interface CameraStep {
   cut: boolean;
   /** Whether the fit was trusted. */
   ok: boolean;
-  /** Blocks matched and blocks that agree with the fit (finest level). */
+  /** Background pixels used and those that agree with the fit (finest level, every other pixel). */
   blocks: number;
   inliers: number;
   /** Histogram distance from the previous frame (0 same … 1 disjoint). */
   histogram: number;
-  /** Median matching cost of the blocks (0 identical … about 0.5 and more for unrelated pictures). */
+  /** Median aligned difference against the median band-passed value (well under 1 aligned, about 1 and more
+   *  for unrelated pictures). */
   residual: number;
 }
 
 export interface CameraOptions {
-  /** Block side (px at every level). */
-  block: number;
-  /** Coarsest-level search radius (px) around the predicted motion. */
+  /** Coarsest-level search radius (px) around the predicted motion and around still. */
   search: number;
-  /** Fewest inliers for a trusted fit. */
-  minInliers: number;
-  /** Histogram distance that alone is a cut, and the one that is a cut when few blocks match. */
+  /** Smallest share of the picture that must be usable background. */
+  minBackground: number;
+  /** Smallest share of the background that must agree with the fit. */
+  minAgreement: number;
+  /** Histogram distance that alone is a cut, and the one that is a cut when the fit fails. */
   cutHistogram: number;
   cutHistogramWeak: number;
-  /** Median matching cost that is a cut. */
+  /** Aligned residual that is a cut, and the largest one a trusted fit may have. */
   cutResidual: number;
+  maxResidual: number;
+  /** Largest uncertainty of the shift (px of the finest level, σ_residual / √information along the weakest
+   *  direction) for that direction to be trusted. */
+  maxUncertainty: number;
 }
 
-export const CAMERA_DEFAULTS: CameraOptions = { block: 8, search: 5, minInliers: 6, cutHistogram: 0.45, cutHistogramWeak: 0.2, cutResidual: 0.45 };
+export const CAMERA_DEFAULTS: CameraOptions = {
+  search: 4, minBackground: 0.06, minAgreement: 0.45, cutHistogram: 0.45, cutHistogramWeak: 0.2, cutResidual: 0.9, maxResidual: 0.7, maxUncertainty: 0.05,
+};
 
 /** The long side of the pictures to feed (px). */
 export const CAMERA_SIZE = 160;
@@ -71,9 +86,8 @@ const BINS = 16;
 interface Level {
   w: number;
   h: number;
-  /** High-passed picture. */
+  /** Band-passed picture and its gradient (central differences). */
   img: Float32Array;
-  /** Texture per pixel: |∂x| and |∂y| of the high-passed picture. */
   gx: Float32Array;
   gy: Float32Array;
 }
@@ -95,34 +109,39 @@ function halve(src: Float32Array, w: number, h: number): { img: Float32Array; w:
   return { img: out, w: W, h: H };
 }
 
-/** Box mean of radius r (separable, edges clamped). */
+/** Box mean of radius r (separable running sums, edges clamped). */
 function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
   const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
-  for (let y = 0; y < h; y++)
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let s = 0;
+    for (let k = -r; k <= r; k++) s += src[row + Math.min(w - 1, Math.max(0, k))];
     for (let x = 0; x < w; x++) {
-      let s = 0;
-      for (let k = -r; k <= r; k++) s += src[y * w + Math.min(w - 1, Math.max(0, x + k))];
-      tmp[y * w + x] = s / (2 * r + 1);
+      tmp[row + x] = s / n;
+      s += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
     }
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      let s = 0;
-      for (let k = -r; k <= r; k++) s += tmp[Math.min(h - 1, Math.max(0, y + k)) * w + x];
-      out[y * w + x] = s / (2 * r + 1);
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let k = -r; k <= r; k++) s += tmp[Math.min(h - 1, Math.max(0, k)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = s / n;
+      s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
     }
+  }
   return out;
 }
 
 function level(src: Float32Array, w: number, h: number): Level {
-  // A light blur against noise, minus a wide one: band-pass, exposure-independent.
   const fine = boxBlur(src, w, h, 1), wide = boxBlur(src, w, h, 4);
   const img = new Float32Array(w * h), gx = new Float32Array(w * h), gy = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) img[i] = fine[i] - wide[i];
   for (let y = 1; y < h - 1; y++)
     for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
-      gx[i] = Math.abs(img[i + 1] - img[i - 1]) / 2;
-      gy[i] = Math.abs(img[i + w] - img[i - w]) / 2;
+      gx[i] = (img[i + 1] - img[i - 1]) / 2;
+      gy[i] = (img[i + w] - img[i - w]) / 2;
     }
   return { w, h, img, gx, gy };
 }
@@ -130,7 +149,7 @@ function level(src: Float32Array, w: number, h: number): Level {
 function picture(gray: Float32Array | Uint8Array | Uint8ClampedArray, w: number, h: number, masks: Box[]): Picture {
   const hist = new Float64Array(BINS);
   const base = Float32Array.from(gray);
-  for (let i = 0; i < w * h; i++) hist[Math.min(BINS - 1, Math.floor((base[i] / 256) * BINS))]++;
+  for (let i = 0; i < w * h; i++) hist[Math.min(BINS - 1, Math.max(0, Math.floor((base[i] / 256) * BINS)))]++;
   for (let b = 0; b < BINS; b++) hist[b] /= w * h;
   const levels: Level[] = [];
   let cur: { img: Float32Array; w: number; h: number } = { img: base, w, h };
@@ -148,133 +167,155 @@ function histDistance(a: Float64Array, b: Float64Array): number {
   return Math.sqrt(Math.max(0, 1 - s));
 }
 
-/** Model d = a·x + t (x from the picture centre, px of the level). */
+/** Model x' = (1 + a)·x + t, x from the picture centre, px of a level. */
 interface Model {
   a: number;
   tx: number;
   ty: number;
 }
 
-interface Match {
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  /** The best cost against the blocks' own texture (about 0.1–0.3 matched, near 1 for unrelated pictures). */
-  cost: number;
-}
-
-/** Weighted least-squares fit of the model to matches. */
-function fit(m: Match[], w: number[]): Model | null {
-  let sw = 0, mx = 0, my = 0, mdx = 0, mdy = 0;
-  m.forEach((p, i) => ((sw += w[i]), (mx += w[i] * p.x), (my += w[i] * p.y), (mdx += w[i] * p.dx), (mdy += w[i] * p.dy)));
-  if (sw <= 0) return null;
-  (mx /= sw), (my /= sw), (mdx /= sw), (mdy /= sw);
-  let num = 0, den = 0;
-  m.forEach((p, i) => {
-    const x = p.x - mx, y = p.y - my;
-    num += w[i] * (x * (p.dx - mdx) + y * (p.dy - mdy));
-    den += w[i] * (x * x + y * y);
-  });
-  const a = den > 1e-6 ? Math.max(-0.2, Math.min(0.2, num / den)) : 0;
-  return { a, tx: mdx - a * mx, ty: mdy - a * my };
-}
-
-const residual = (p: Match, f: Model) => Math.hypot(f.a * p.x + f.tx - p.dx, f.a * p.y + f.ty - p.dy);
-
-/** RANSAC (single blocks as shifts, pairs as shift + zoom), then Tukey IRLS. Inlier threshold thr (px). */
-function robustFit(m: Match[], thr: number): { model: Model; inliers: number } | null {
-  if (m.length < 2) return null;
-  const hyps: Model[] = m.map((p) => ({ a: 0, tx: p.dx, ty: p.dy }));
-  // Deterministic pairs spread over the set.
-  const pairs = Math.min(60, (m.length * (m.length - 1)) / 2);
-  for (let k = 0; k < pairs; k++) {
-    const i = (k * 7919) % m.length, j = (i + 1 + ((k * 104729) % (m.length - 1))) % m.length;
-    const f = fit([m[i], m[j]], [1, 1]);
-    if (f) hyps.push(f);
-  }
-  let best: Model | null = null, bestCount = -1, bestErr = Infinity;
-  for (const h of hyps) {
-    let count = 0, err = 0;
-    for (const p of m) {
-      const r = residual(p, h);
-      if (r < thr) (count++, (err += r));
+/** Usable background pixels of a level: outside every box, two pixels in from the border. */
+function background(L: Level, boxes: Box[]): Uint8Array {
+  const { w, h } = L, out = new Uint8Array(w * h);
+  for (let y = 2; y < h - 2; y++)
+    for (let x = 2; x < w - 2; x++) {
+      const u = (x + 0.5) / w, v = (y + 0.5) / h;
+      let inside = false;
+      for (const b of boxes) if (u >= b.x0 && u <= b.x1 && v >= b.y0 && v <= b.y1) inside = true;
+      out[y * w + x] = inside ? 0 : 1;
     }
-    if (count > bestCount || (count === bestCount && err < bestErr)) (best = h), (bestCount = count), (bestErr = err);
-  }
-  if (!best) return null;
-  let model = fit(m, m.map((p) => (residual(p, best!) < thr ? 1 : 0))) ?? best;
-  const c = 2.5 * thr;
-  for (let it = 0; it < 3; it++) {
-    const w = m.map((p) => {
-      const u = residual(p, model) / c;
-      return u < 1 ? (1 - u * u) ** 2 : 0;
-    });
-    model = fit(m, w) ?? model;
-  }
-  return { model, inliers: m.filter((p) => residual(p, model) < thr).length };
+  return out;
 }
 
-/** Whether pixel (x, y) of a level lies in any box. */
-function masked(boxes: Box[], x: number, y: number, w: number, h: number): boolean {
-  const u = x / w, v = y / h;
-  for (const b of boxes) if (u >= b.x0 && u <= b.x1 && v >= b.y0 && v <= b.y1) return true;
-  return false;
+function bilinear(a: Float32Array, w: number, x: number, y: number): number {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, i = y0 * w + x0;
+  return (a[i] * (1 - fx) + a[i + 1] * fx) * (1 - fy) + (a[i + w] * (1 - fx) + a[i + w + 1] * fx) * fy;
 }
 
-/** Matches of the previous frame's blocks in the current one around the model's prediction. */
-function matchLevel(P: Level, C: Level, boxes: Box[], pred: Model, radius: number, B: number, step: number): Match[] {
+/** Whole-pixel shifts around the given points scored on the background; the best with a sub-pixel parabola. */
+function coarseShift(P: Level, C: Level, bg: Uint8Array, around: [number, number][], R: number): [number, number] {
+  const { w, h } = P;
+  const score = new Map<string, number>();
+  const at = (dx: number, dy: number) => {
+    const key = `${dx},${dy}`;
+    let s = score.get(key);
+    if (s !== undefined) return s;
+    let sum = 0, n = 0;
+    for (let y = 2; y < h - 2; y++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= h) continue;
+      for (let x = 2; x < w - 2; x++) {
+        const xx = x + dx;
+        if (xx < 0 || xx >= w || !bg[y * w + x]) continue;
+        sum += Math.abs(P.img[y * w + x] - C.img[yy * w + xx]);
+        n++;
+      }
+    }
+    s = n > 20 ? sum / n : Infinity;
+    score.set(key, s);
+    return s;
+  };
+  let best: [number, number] = [0, 0], bestS = Infinity;
+  for (const [cx, cy] of around)
+    for (let dy = Math.round(cy) - R; dy <= Math.round(cy) + R; dy++)
+      for (let dx = Math.round(cx) - R; dx <= Math.round(cx) + R; dx++) {
+        const s = at(dx, dy);
+        if (s < bestS) (bestS = s), (best = [dx, dy]);
+      }
+  const sub = (a: number, b: number, c: number) => {
+    const d = a - 2 * b + c;
+    return Number.isFinite(d) && d > 1e-9 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / d)) : 0;
+  };
+  const [bx, by] = best;
+  return [bx + sub(at(bx - 1, by), bestS, at(bx + 1, by)), by + sub(at(bx, by - 1), bestS, at(bx, by + 1))];
+}
+
+interface Refined {
+  model: Model;
+  /** Background pixels used, and those agreeing (Tukey weight over ½). */
+  used: number;
+  agree: number;
+  /** Median |residual| over median |band-passed value|. */
+  residual: number;
+  /** The shift's uncertainty along its weakest direction (px), and that direction (unit). */
+  weak: number;
+  weakDir: [number, number];
+}
+
+/** Solve a 3 × 3 system (Cramer's rule); zeros if singular. */
+function solve3(A: number[][], b: number[]): number[] {
+  const det = (M: number[][]) =>
+    M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+  const D = det(A);
+  if (Math.abs(D) < 1e-12) return [0, 0, 0];
+  return [0, 1, 2].map((k) => det(A.map((row, i) => row.map((v, j) => (j === k ? b[i] : v)))) / D);
+}
+
+/** Lucas–Kanade (Gauss–Newton, Tukey-reweighted) from `m` on one level, every `step`-th pixel. */
+function refine(P: Level, C: Level, bg: Uint8Array, m: Model, iterations: number, step: number): Refined {
   const { w, h } = P, cx = w / 2, cy = h / 2;
-  const out: Match[] = [];
-  const minTex = 1.2;
-  for (let by = 1; by + B < h - 1; by += step)
-    for (let bx = 1; bx + B < w - 1; bx += step) {
-      const mx = bx + B / 2, my = by + B / 2;
-      // Skip blocks touching a person (corners and centre).
-      if (masked(boxes, bx, by, w, h) || masked(boxes, bx + B, by, w, h) || masked(boxes, bx, by + B, w, h) || masked(boxes, bx + B, by + B, w, h) || masked(boxes, mx, my, w, h)) continue;
-      let tx = 0, ty = 0, energy = 0;
-      for (let y = by; y < by + B; y++) for (let x = bx; x < bx + B; x++) (tx += P.gx[y * w + x]), (ty += P.gy[y * w + x]), (energy += Math.abs(P.img[y * w + x]));
-      if (Math.min(tx, ty) / (B * B) < minTex) continue;
-      const px = pred.a * (mx - cx) + pred.tx, py = pred.a * (my - cy) + pred.ty;
-      const ix = Math.round(px), iy = Math.round(py);
-      const R = radius, side = 2 * R + 1;
-      const cost = new Float64Array(side * side).fill(Infinity);
-      let best = Infinity, bi = -1;
-      for (let sy = -R; sy <= R; sy++)
-        for (let sx = -R; sx <= R; sx++) {
-          const ox = bx + ix + sx, oy = by + iy + sy;
-          if (ox < 0 || oy < 0 || ox + B > w || oy + B > h) continue;
-          let s = 0;
-          for (let y = 0; y < B; y++) {
-            const pr = (by + y) * w + bx, cr = (oy + y) * w + ox;
-            for (let x = 0; x < B; x++) s += Math.abs(P.img[pr + x] - C.img[cr + x]);
-          }
-          const k = (sy + R) * side + (sx + R);
-          cost[k] = s;
-          if (s < best) (best = s), (bi = k);
-        }
-      if (bi < 0) continue;
-      const kx = bi % side, ky = Math.floor(bi / side);
-      // Sub-pixel: a parabola through the best cost and its neighbours, per axis.
-      const sub = (a: number, b: number, c: number) => {
-        if (!Number.isFinite(a) || !Number.isFinite(c)) return 0;
-        const d = a - 2 * b + c;
-        return d > 1e-9 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / d)) : 0;
-      };
-      const fx = kx > 0 && kx < side - 1 ? sub(cost[bi - 1], best, cost[bi + 1]) : 0;
-      const fy = ky > 0 && ky < side - 1 ? sub(cost[bi - side], best, cost[bi + side]) : 0;
-      // A best match on the search border is likely beyond it: drop.
-      if (kx === 0 || ky === 0 || kx === side - 1 || ky === side - 1) continue;
-      out.push({ x: mx - cx, y: my - cy, dx: ix + kx - R + fx, dy: iy + ky - R + fy, cost: best / Math.max(1e-6, 2 * energy) });
+  const cap = Math.ceil(w / step) * Math.ceil(h / step);
+  const R = new Float32Array(cap), J0 = new Float32Array(cap), J1 = new Float32Array(cap), J2 = new Float32Array(cap), V = new Float32Array(cap);
+  let model = { ...m };
+  let out: Refined = { model, used: 0, agree: 0, residual: Infinity, weak: 0, weakDir: [1, 0] };
+  for (let it = 0; it < iterations; it++) {
+    let n = 0;
+    for (let y = 2; y < h - 2; y += step)
+      for (let x = 2; x < w - 2; x += step) {
+        if (!bg[y * w + x]) continue;
+        const xr = x - cx, yr = y - cy;
+        const u = (1 + model.a) * xr + cx + model.tx, v = (1 + model.a) * yr + cy + model.ty;
+        if (u < 1 || v < 1 || u > w - 2 || v > h - 2) continue;
+        const gxv = bilinear(C.gx, w, u, v), gyv = bilinear(C.gy, w, u, v);
+        R[n] = bilinear(C.img, w, u, v) - P.img[y * w + x];
+        J0[n] = gxv * xr + gyv * yr;
+        J1[n] = gxv;
+        J2[n] = gyv;
+        V[n] = Math.abs(P.img[y * w + x]);
+        n++;
+      }
+    if (n < 30) return { ...out, used: n };
+    // Robust scale from the median residual (a subsample is enough).
+    const stride = Math.max(1, Math.floor(n / 400));
+    const abs: number[] = [], val: number[] = [];
+    for (let i = 0; i < n; i += stride) abs.push(Math.abs(R[i])), val.push(V[i]);
+    abs.sort((p, q) => p - q);
+    val.sort((p, q) => p - q);
+    const med = abs[abs.length >> 1];
+    const sigma = Math.max(0.5, 1.4826 * med), c = 4.685 * sigma;
+    let h00 = 0, h01 = 0, h02 = 0, h11 = 0, h12 = 0, h22 = 0, g0 = 0, g1 = 0, g2 = 0, agree = 0;
+    for (let i = 0; i < n; i++) {
+      const u = R[i] / c;
+      if (u >= 1 || u <= -1) continue;
+      const wt = (1 - u * u) ** 2;
+      if (wt > 0.5) agree++;
+      const a = J0[i], b = J1[i], d = J2[i], r = R[i];
+      (h00 += wt * a * a), (h01 += wt * a * b), (h02 += wt * a * d), (h11 += wt * b * b), (h12 += wt * b * d), (h22 += wt * d * d);
+      (g0 += wt * a * r), (g1 += wt * b * r), (g2 += wt * d * r);
     }
+    // The weakest translation direction: the smallest eigenvalue of [[h11, h12], [h12, h22]] and its vector.
+    const tr = h11 + h22, det = h11 * h22 - h12 * h12, disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+    const lmin = tr / 2 - disc;
+    let wd: [number, number] = Math.abs(h12) > 1e-9 ? [lmin - h22, h12] : h11 < h22 ? [1, 0] : [0, 1];
+    const wl = Math.hypot(wd[0], wd[1]) || 1;
+    wd = [wd[0] / wl, wd[1] / wl];
+    // A little Levenberg damping: a direction without any texture stays where it was.
+    const lam = 1e-6 * (h00 / Math.max(1, cx * cx) + h11 + h22) + 1e-6;
+    const d = solve3([[h00 + lam * cx * cx, h01, h02], [h01, h11 + lam, h12], [h02, h12, h22 + lam]], [g0, g1, g2]);
+    model = { a: Math.max(-0.2, Math.min(0.2, model.a - d[0])), tx: model.tx - d[1], ty: model.ty - d[2] };
+    out = { model, used: n, agree, residual: med / Math.max(1e-6, val[val.length >> 1]), weak: sigma / Math.sqrt(Math.max(1e-9, lmin)), weakDir: wd };
+    if (Math.abs(d[1]) + Math.abs(d[2]) < 0.01 && Math.abs(d[0]) < 1e-4) break;
+  }
   return out;
 }
 
 /** Estimates the camera's motion frame to frame. */
 export class CameraEstimator {
   private prev: Picture | null = null;
-  /** The previous step in px of the finest level (prediction for the next search). */
+  /** The previous step in px of the finest level (prediction for the next one). */
   private velocity: Model = { a: 0, tx: 0, ty: 0 };
+  /** Untrusted steps in a row (each carries on the last trusted motion, fading). */
+  private coast = 0;
   private readonly o: CameraOptions;
 
   constructor(options: Partial<CameraOptions> = {}) {
@@ -294,7 +335,8 @@ export class CameraEstimator {
     const cur = picture(gray, w, h, masks);
     const prev = this.prev;
     this.prev = cur;
-    const still = (cut: boolean, histogram: number, blocks = 0, inliers = 0, residual = 0): CameraStep => ({ dx: 0, dy: 0, scale: 1, cut, ok: false, blocks, inliers, histogram, residual });
+    const still = (cut: boolean, histogram: number, used = 0, agree = 0, residual = 0): CameraStep =>
+      ({ dx: 0, dy: 0, scale: 1, cut, ok: false, blocks: used, inliers: agree, histogram, residual });
     if (!prev || prev.levels[0].w !== w || prev.levels[0].h !== h) {
       this.velocity = { a: 0, tx: 0, ty: 0 };
       return { ...still(false, 0), ok: true };
@@ -305,48 +347,44 @@ export class CameraEstimator {
       return still(true, histogram);
     }
     const boxes = [...prev.masks, ...cur.masks];
-    const B = this.o.block;
-    // Coarse to fine; the model in px of the current level.
-    const top = LEVELS - 1;
-    const f = 2 ** top;
-    let model: Model = { a: this.velocity.a, tx: this.velocity.tx / f, ty: this.velocity.ty / f };
-    let matches: Match[] = [];
-    let inliers = 0;
-    let trusted = true;
+    const top = LEVELS - 1, f = 2 ** top;
+    const Pt = prev.levels[top], Ct = cur.levels[top];
+    const bgTop = background(Pt, boxes);
+    const v = this.velocity;
+    const [sx, sy] = coarseShift(Pt, Ct, bgTop, [[v.tx / f, v.ty / f], [0, 0]], this.o.search);
+    let model: Model = { a: v.a, tx: sx, ty: sy };
+    let fine: Refined | null = null;
     for (let l = top; l >= 0; l--) {
       const P = prev.levels[l], C = cur.levels[l];
-      const step = l === 0 ? 10 : l === 1 ? 7 : 5;
-      matches = matchLevel(P, C, boxes, model, l === top ? this.o.search : 2, B, step);
-      let r = robustFit(matches, l === 0 ? 0.75 : 0.6);
-      if (l === top && (!r || r.inliers < 3)) {
-        // The prediction may be off (a sudden stop or start): search again around still.
-        matches = matchLevel(P, C, boxes, { a: 0, tx: 0, ty: 0 }, this.o.search, B, step);
-        r = robustFit(matches, 0.6);
-        if (!r || r.inliers < 3) {
-          trusted = false;
-          break;
-        }
-      }
-      // A finer level that finds too little keeps the coarser fit.
-      if (r && r.inliers >= 3) (model = r.model), (inliers = r.inliers);
-      else if (l === 0) inliers = 0;
+      fine = refine(P, C, l === top ? bgTop : background(P, boxes), model, l === 0 ? 6 : 5, l === 0 ? 2 : 1);
+      model = fine.model;
       if (l > 0) model = { a: model.a, tx: model.tx * 2, ty: model.ty * 2 };
     }
-    if (inliers < this.o.minInliers) trusted = false;
-    const lowAgreement = matches.length > 0 ? inliers / matches.length : 0;
-    const costs = matches.map((m) => m.cost).sort((a, b) => a - b);
-    const residual = costs.length ? costs[costs.length >> 1] : 0;
-    if ((costs.length >= 4 && residual > this.o.cutResidual) || (histogram > this.o.cutHistogramWeak && (!trusted || lowAgreement < 0.35))) {
+    const r = fine!;
+    const total = Math.ceil((w - 4) / 2) * Math.ceil((h - 4) / 2);
+    const enough = r.used >= this.o.minBackground * total;
+    const agreement = r.used ? r.agree / r.used : 0;
+    const trusted = enough && agreement >= this.o.minAgreement && r.residual <= this.o.maxResidual;
+    if ((enough && r.residual > this.o.cutResidual) || (histogram > this.o.cutHistogramWeak && !trusted)) {
       this.velocity = { a: 0, tx: 0, ty: 0 };
-      return still(true, histogram, matches.length, inliers, residual);
+      return still(true, histogram, r.used, r.agree, r.residual);
     }
     if (!trusted) {
-      this.velocity = { a: 0, tx: 0, ty: 0 };
-      return still(false, histogram, matches.length, inliers, residual);
+      // Too little background (a dancer filling the picture): cameras move smoothly, so carry on the last trusted
+      // motion for a few frames, fading, then stand still.
+      const k = ++this.coast <= 6 ? 0.75 : 0;
+      const p = (this.velocity = { a: this.velocity.a * k, tx: this.velocity.tx * k, ty: this.velocity.ty * k });
+      return { ...still(false, histogram, r.used, r.agree, r.residual), dx: p.tx / w, dy: p.ty / h, scale: 1 + p.a };
+    }
+    this.coast = 0;
+    // Along a direction without texture the camera is taken as still.
+    if (r.weak > this.o.maxUncertainty) {
+      const [ex, ey] = r.weakDir, along = model.tx * ex + model.ty * ey;
+      model = { ...model, tx: model.tx - along * ex, ty: model.ty - along * ey };
     }
     this.velocity = model;
-    // d = a·x + t about the centre ⇒ p' − ½ = (1 + a)(p − ½) + t / size.
-    return { dx: model.tx / w, dy: model.ty / h, scale: 1 + model.a, cut: false, ok: true, blocks: matches.length, inliers, histogram, residual };
+    // x' = (1 + a)·x + t about the centre ⇒ p' − ½ = (1 + a)(p − ½) + t / size.
+    return { dx: model.tx / w, dy: model.ty / h, scale: 1 + model.a, cut: false, ok: true, blocks: r.used, inliers: r.agree, histogram, residual: r.residual };
   }
 }
 
