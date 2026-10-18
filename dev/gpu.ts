@@ -230,7 +230,7 @@ requestAnimationFrame(frame);
 
 Object.assign(window, {
   __gpu: {
-    sim, setPose,
+    sim, setPose, THREE,
     /** Poke along a ray from (x, y, z) in direction (dx, dy, dz). */
     poke(x: number, y: number, z: number, dx = 0, dy = 0, dz = -1, s = 1) {
       const ray = new THREE.Ray(new THREE.Vector3(x, y, z), new THREE.Vector3(dx, dy, dz).normalize());

@@ -16,7 +16,7 @@
 import type RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import type { PhysicsParams, SimParameter } from "../../contracts";
-import type { BlockDefinition, FleshBlock, ParticleView, Scene, Settings, SimPart } from "../api";
+import type { BlockDefinition, FleshBlock, ParticleView, Scene, Settings, SimBone, SimPart } from "../api";
 import { backendLabel, chooseBackend, deviceProbe, unavailableReason, type BackendKind } from "./device";
 import type { MpmBackend } from "./mpm/backend";
 import { CarriedMass } from "./mpm/carriedMass";
@@ -26,6 +26,10 @@ import { GpuBackend } from "./mpm/gpuBackend";
 import type { FrameOutput } from "./mpm/layout";
 import { lame, regionFactors, stiffnessScale, substepsFor, viscosityScale, type MaterialSettings } from "./mpm/material";
 import { MpmModel, type PartModel } from "./mpm/model";
+import { nearestBone } from "../parts";
+
+/** A free particle farther than this (m) from where its bones would carry it has been torn off: it is reset. */
+const ASTRAY = 0.3;
 
 /** One part's particles as the other blocks see them. */
 class PartView implements ParticleView {
@@ -52,9 +56,12 @@ class PartView implements ParticleView {
       this.version = this.flesh.version;
       const P = out.positions, f = this.pm.first;
       for (let i = 0; i < this.count; i++) {
-        this.xyz[i * 3] = P[(f + i) * 4];
-        this.xyz[i * 3 + 1] = P[(f + i) * 4 + 1];
-        this.xyz[i * 3 + 2] = P[(f + i) * 4 + 2];
+        const o = (f + i) * 4;
+        // A particle gone non-finite keeps its last place until the fail-safe has reset it.
+        if (!(Number.isFinite(P[o]) && Number.isFinite(P[o + 1]) && Number.isFinite(P[o + 2]))) continue;
+        this.xyz[i * 3] = P[o];
+        this.xyz[i * 3 + 1] = P[o + 1];
+        this.xyz[i * 3 + 2] = P[o + 2];
       }
     }
     return this.xyz;
@@ -100,7 +107,7 @@ export class MpmFlesh implements FleshBlock {
   version = 0;
   /** Page-thread time of the last step (ms: collecting, of which waiting for the workers; building and submitting),
    *  and the device's time for its frame. */
-  timing = { collectMs: 0, submitMs: 0, waitMs: 0, deviceMs: 0, substeps: 0 };
+  timing = { collectMs: 0, submitMs: 0, waitMs: 0, deviceMs: 0, substeps: 0, resets: 0 };
   private views = new Map<SimPart, PartView>();
   private carried = new CarriedMass();
   private material: MaterialSettings;
@@ -138,11 +145,19 @@ export class MpmFlesh implements FleshBlock {
     const out = this.output;
     if (!out) return part.positions;
     let s = this.surfaces.get(part);
-    if (!s) this.surfaces.set(part, (s = { xyz: new Float32Array(part.positions.length), version: -1 }));
+    if (!s) this.surfaces.set(part, (s = { xyz: part.positions.slice(), version: -1 }));
     if (s.version !== this.version) {
       s.version = this.version;
       const first = (this.particles(part) as PartView).pm.vertexFirst, S = out.surface;
-      for (let v = 0; v < s.xyz.length / 3; v++) for (let k = 0; k < 3; k++) s.xyz[v * 3 + k] = S[(first + v) * 4 + k];
+      // Never a non-finite vertex for the renderer: such a vertex keeps its last place (the fail-safe resets its
+      // particles within a step or two).
+      for (let v = 0; v < s.xyz.length / 3; v++) {
+        const o = (first + v) * 4;
+        if (!(Number.isFinite(S[o]) && Number.isFinite(S[o + 1]) && Number.isFinite(S[o + 2]))) continue;
+        s.xyz[v * 3] = S[o];
+        s.xyz[v * 3 + 1] = S[o + 1];
+        s.xyz[v * 3 + 2] = S[o + 2];
+      }
     }
     return s.xyz;
   }
@@ -203,8 +218,48 @@ export class MpmFlesh implements FleshBlock {
       this.frame.apply(out, scene);
       if (out.deviceMs !== null) this.timing.deviceMs = out.deviceMs;
       this.maxSpeed = fastest(out.velocities);
+      this.timing.resets += this.rescue(scene, out);
     }
     this.timing.collectMs = performance.now() - t0;
+  }
+
+  /**
+   * The fail-safe: a free particle that went non-finite or far from where its bones would carry it (torn off by a
+   * fling the lattice could not follow) starts over there, at the target's velocity, deformed only by its bone's
+   * turn. Returns how many. Nothing non-finite then reaches the bones, the renderer or the next step.
+   */
+  private rescue(scene: Scene, out: FrameOutput): number {
+    const P = out.positions;
+    let count = 0;
+    for (const pm of this.model.parts) {
+      const T = scene.target.targets(pm.part), TV = scene.target.targetVelocities(pm.part);
+      let carriers: SimBone[] | null = null;
+      for (let i = 0; i < pm.count; i++) {
+        const g = pm.first + i, o = g * 4;
+        if (this.attached.has(g)) continue;
+        const dx = P[o] - T[i * 3], dy = P[o + 1] - T[i * 3 + 1], dz = P[o + 2] - T[i * 3 + 2];
+        if (dx * dx + dy * dy + dz * dz < ASTRAY * ASTRAY) continue; // false for NaN: it is rescued too
+        carriers ??= this.carriers(pm);
+        const bone = carriers[i], m = bone.pose(new THREE.Matrix4()).multiply(bone.restInverse).elements;
+        // F = the bone's turn since rest (the rotation part of pose · rest⁻¹), in padded columns.
+        const F = [m[0], m[1], m[2], 0, m[4], m[5], m[6], 0, m[8], m[9], m[10], 0];
+        this.frame.resetParticle(g, [T[i * 3], T[i * 3 + 1], T[i * 3 + 2]], [TV[i * 3], TV[i * 3 + 1], TV[i * 3 + 2]], F);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** The bone carrying each of a part's particles: the nearest at rest (as the bone-carried target). */
+  private carrierCache = new Map<PartModel, SimBone[]>();
+  private carriers(pm: PartModel): SimBone[] {
+    let c = this.carrierCache.get(pm);
+    if (!c) {
+      const p = new THREE.Vector3();
+      c = Array.from({ length: pm.count }, (_, i) => nearestBone(pm.part, p.fromArray(pm.rest, i * 3)).bone);
+      this.carrierCache.set(pm, c);
+    }
+    return c;
   }
 
   /** After the bones stepped: the flesh's frame over the same step, from where they were to where they are. */
@@ -299,7 +354,10 @@ function materialOf(s: Readonly<Settings>): MaterialSettings {
 
 function fastest(V: Float32Array): number {
   let m = 0;
-  for (let i = 0; i < V.length; i += 4) m = Math.max(m, V[i] * V[i] + V[i + 1] * V[i + 1] + V[i + 2] * V[i + 2]);
+  for (let i = 0; i < V.length; i += 4) {
+    const s = V[i] * V[i] + V[i + 1] * V[i + 1] + V[i + 2] * V[i + 2];
+    if (s > m) m = s; // NaN never wins
+  }
   return Math.sqrt(m);
 }
 

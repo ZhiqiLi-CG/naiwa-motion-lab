@@ -9,7 +9,7 @@
  */
 import { FLESH_REGIONS, type PhysicsParams } from "../../../contracts";
 import { REGION_SOFTNESS } from "../../parts";
-import { MAX_SUBSTEPS } from "./layout";
+import { MAX_SPEED, MAX_SUBSTEPS } from "./layout";
 
 export interface MaterialSettings {
   /** Young's modulus (Pa). */
@@ -48,10 +48,11 @@ export function regionFactors(p: PhysicsParams): Float32Array {
 export function substepsFor(m: MaterialSettings, dx: number, frameDt: number, waveFactor: number, etaFactor: number, maxSpeed: number): number {
   const { mu, lambda } = lame(m.youngModulus * waveFactor, m.poissonRatio);
   const wave = Math.sqrt((lambda + 2 * mu) / m.density);
-  const cfl = 0.45 * dx / (wave + maxSpeed);
+  const cfl = 0.45 * dx / (wave + Math.min(Number.isFinite(maxSpeed) ? maxSpeed : 0, MAX_SPEED));
   const diffusion = (0.2 * m.density * dx * dx) / Math.max(1e-6, m.viscosity * etaFactor);
   const n = Math.ceil(frameDt / Math.min(cfl, diffusion));
-  return Math.min(MAX_SUBSTEPS, Math.max(m.minSubsteps, n));
+  // A non-finite count (a bad setting, a speed read from a frame gone wrong) falls back to the most.
+  return Number.isFinite(n) ? Math.min(MAX_SUBSTEPS, Math.max(m.minSubsteps, n)) : MAX_SUBSTEPS;
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));

@@ -57,7 +57,10 @@ class SoftLimbs implements CouplingBlock {
         const { bone, distance } = nearestBone(part, p.fromArray(view.rest, i * 3));
         const share = part.limb ? limb : body * (CARRIED[bone.name] ?? 1) * (1 - SOFT_LOOSENS * softness[i]);
         const t = thick.get(bone) ?? 0, soft = view.rest[i * 3 + 1] <= sole && step < 0.5 * t;
-        if (distance < share * t && !soft) view.attach(i, bone.body);
+        // A limb's free layer must be a continuum, two lattice steps thick at least: a single loose layer is torn
+        // off when the limb whips round (a dance's forearm turns at 15 rad/s). Thinner, the limb rides whole.
+        const core = part.limb && t * (1 - share) < 2 * step ? Infinity : share * t;
+        if (distance < core && !soft) view.attach(i, bone.body);
         else free.push(i);
       }
       this.free.set(part, free);

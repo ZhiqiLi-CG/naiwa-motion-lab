@@ -13,7 +13,7 @@
  * Units: masses in particle masses (the backends convert impulses to kg·m/s), lengths in metres, stress in Pa.
  */
 import { EMBED_K } from "./embedding";
-import { B, E, EDIT, G, K, KIND_SPHERE, NODE_IN, NODE_OUT, P, S, ACC } from "./layout";
+import { B, E, EDIT, G, K, KIND_SPHERE, MAX_SPEED, NODE_IN, NODE_OUT, P, S, ACC } from "./layout";
 
 export interface CpuArrays {
   pf: Float32Array;
@@ -70,6 +70,12 @@ export function applyEdits(a: CpuArrays, count: number) {
       pi[o + P.INFO + 1] = -1;
       pi[o + P.INFO + 2] = 0;
       for (let k = 0; k < 12; k++) pf[o + P.C + k] = 0;
+    }
+    if (flags & EDIT.RESET) {
+      for (let k = 0; k < 12; k++) {
+        pf[o + P.F + k] = edits[eo + E.F + k];
+        pf[o + P.C + k] = 0;
+      }
     }
     if (flags & EDIT.SET_POS) for (let k = 0; k < 3; k++) pf[o + P.X + k] = edits[eo + E.POS + k];
     if (flags & EDIT.SET_VEL) for (let k = 0; k < 3; k++) pf[o + P.V + k] = edits[eo + E.VEL + k];
@@ -384,6 +390,12 @@ export function g2p(a: CpuArrays, s: number, order: Int32Array, from: number, to
     // early): the floor, other parts' flesh capsules, balls. A particle is a sphere of half its spacing, dx/4.
     contacts(a, s, o, g, dx / 4, nShapes, acc);
     vx = pf[o + P.V]; vy = pf[o + P.V + 1]; vz = pf[o + P.V + 2];
+    const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
+    if (speed > MAX_SPEED) {
+      const k = MAX_SPEED / speed;
+      vx *= k; vy *= k; vz *= k;
+      pf[o + P.V] = vx; pf[o + P.V + 1] = vy; pf[o + P.V + 2] = vz;
+    }
     // Kept inside the grid's interior (the stencil must fit): only a part stretched past its grid's margin is held.
     const lo0 = 1.5 * dx, hi0 = (n - 1.5) * dx;
     pf[o] = grids[go] + clamp(pf[o] + dt * vx - grids[go], lo0, hi0);

@@ -67,9 +67,12 @@ export const S_ALIGN = 256;
 export const MAX_SUBSTEPS = 48;
 
 /** An edit from the blocks (ParticleView), coalesced per particle: index, flags, body slot | (splats << 16) |
- *  position | velocity (set, or added). */
-export const E = { STRIDE: 12, INDEX: 0, FLAGS: 1, BODY: 2, POS: 4, VEL: 8 } as const;
-export const EDIT = { DETACH: 1, SET_POS: 2, SET_VEL: 4, ADD_VEL: 8, ATTACH: 16 } as const;
+ *  position | velocity (set, or added) | F (a reset: mat3 as WGSL lays it out). */
+export const E = { STRIDE: 24, INDEX: 0, FLAGS: 1, BODY: 2, POS: 4, VEL: 8, F: 12 } as const;
+/** RESET: the particle starts over (F as given, C = 0); the solver's fail-safe for a particle gone astray. */
+export const EDIT = { DETACH: 1, SET_POS: 2, SET_VEL: 4, ADD_VEL: 8, ATTACH: 16, RESET: 32 } as const;
+/** No flesh moves faster than this (m/s): a bound on what a solver step can be asked to do. */
+export const MAX_SPEED = 30;
 
 /** The accumulators read back each frame (ints on the GPU, fixed point): per body impulse and moment about the
  *  origin; per collider the same and a contact count; per grid the floor contacts. */

@@ -6,7 +6,7 @@ import { parseModel } from "../../character/asset";
 import { createCharacter } from "../../character/character";
 import { createFrogSim, initPhysics, listSimulators, type LabFrogSim } from "..";
 import { createTestRigSpec } from "../testRig";
-import { forceBackend, probeDevices, registerGpuSimulators } from ".";
+import { forceBackend, MpmFlesh, probeDevices, registerGpuSimulators } from ".";
 
 /** The app's default material (jelly). */
 const PARAMS: PhysicsParams = { softness: 0.85, bounciness: 0.65, gravity: 1, bellySize: 1, stubbornness: 0.7 };
@@ -98,6 +98,55 @@ beforeAll(async () => {
 }, 60000);
 
 describe("gpu-mpm (CPU backend, one thread)", () => {
+  it("survives pokes, a grab and throw, balls, driven/free switches and reset; resets a particle gone astray", async () => {
+    const spec = createTestRigSpec();
+    const sim = await frog(spec, "free");
+    const flesh = sim.scene.flesh as MpmFlesh;
+    const finite = () => {
+      const all = [sim.readBody(), ...[...(() => { const m = new Map<string, Float32Array>(); sim.readLimbs(m); return m.values(); })()]];
+      return all.every((a) => a.every(Number.isFinite));
+    };
+    const run = (n: number) => { for (let k = 0; k < n; k++) sim.step(1 / 60); };
+    run(20);
+    // Corrupt two free particles: one non-finite, one flung a metre away.
+    const view = flesh.particles(sim.scene.parts[0]);
+    const free = [...Array(view.count).keys()].filter((i) => !view.attachedTo(i));
+    view.setPosition(free[0], NaN, NaN, NaN);
+    view.setPosition(free[1], 1.5, 2, 0);
+    run(4);
+    expect(flesh.timing.resets).toBeGreaterThanOrEqual(2);
+    expect(finite()).toBe(true);
+    const P = view.positions();
+    expect(Math.hypot(P[free[1] * 3] - 1.5, P[free[1] * 3 + 1] - 2, P[free[1] * 3 + 2])).toBeGreaterThan(0.5);
+    // Poke, grab and throw, balls.
+    const ray = new THREE.Ray(new THREE.Vector3(0, 0.5, 1.5), new THREE.Vector3(0, 0, -1));
+    const hit = sim.raycast(ray)!;
+    sim.poke(hit, 1, ray.direction);
+    run(10);
+    const g = sim.grab(sim.raycast(ray)!);
+    for (let k = 0; k < 10; k++) {
+      g.move(new THREE.Vector3(0, 0.6, 0.3 + 0.01 * k));
+      run(1);
+    }
+    g.release(new THREE.Vector3(0, 2, 3));
+    run(10);
+    sim.throwBall(new THREE.Vector3(0, 0.5, 1.2), new THREE.Vector3(0, 0, -9), 0.08);
+    run(20);
+    // Driven and back, twice, then reset.
+    sim.setMode("driven");
+    sim.transition();
+    sim.setTargets(bent(spec, { spine: 30, chest: 20, upperarm_L: 80, forearm_L: 90 }));
+    run(20);
+    sim.setMode("free");
+    run(20);
+    sim.reset();
+    run(10);
+    expect(finite()).toBe(true);
+    const s = sim.stats();
+    expect(Number.isFinite(s.energy) && Number.isFinite(s.deviation)).toBe(true);
+    sim.dispose();
+  }, 120000);
+
   it("is registered with its parameters and backend", () => {
     const info = listSimulators().find((s) => s.id === "gpu-mpm");
     expect(info?.unavailable).toBeNull();

@@ -27,6 +27,8 @@ interface Edit {
   pos: [number, number, number];
   vel: [number, number, number];
   body: number;
+  /** A reset's F (mat3 in WGSL's padded column layout). */
+  F?: number[];
 }
 
 /** What a contact shape's impulse goes to. */
@@ -70,6 +72,14 @@ export class FrameBuilder {
     const e = this.edit(i);
     if (!(e.flags & EDIT.SET_VEL)) e.flags |= EDIT.ADD_VEL;
     e.vel = [e.vel[0] + x, e.vel[1] + y, e.vel[2] + z];
+  }
+  /** Start particle i over at a position and velocity with deformation F (12 words, padded columns). */
+  resetParticle(i: number, pos: [number, number, number], vel: [number, number, number], F: number[]) {
+    const e = this.edit(i);
+    e.flags = (e.flags | EDIT.RESET | EDIT.SET_POS | EDIT.SET_VEL) & ~EDIT.ADD_VEL;
+    e.pos = pos;
+    e.vel = vel;
+    e.F = F;
   }
   attach(i: number, body: RAPIER.RigidBody, splats: boolean) {
     const e = this.edit(i);
@@ -154,6 +164,7 @@ export class FrameBuilder {
       ei.set([i, e.flags, e.body], o);
       ef.set(e.pos, o + E.POS);
       ef.set(e.vel, o + E.VEL);
+      if (e.F) ef.set(e.F, o + E.F);
     }
     const edits = this.edits.size;
     this.edits.clear();
@@ -250,6 +261,8 @@ const spin = new THREE.Quaternion(), axis = new THREE.Vector3();
 function push(body: RAPIER.RigidBody, acc: Float64Array, k: number) {
   const jx = acc[k * 6], jy = acc[k * 6 + 1], jz = acc[k * 6 + 2];
   if (jx === 0 && jy === 0 && jz === 0) return;
+  // Never hand Rapier a non-finite impulse: one would poison the bones and everything that follows them.
+  for (let c = 0; c < 6; c++) if (!Number.isFinite(acc[k * 6 + c])) return;
   const c = body.worldCom();
   body.applyImpulse({ x: jx, y: jy, z: jz }, true);
   body.applyTorqueImpulse({

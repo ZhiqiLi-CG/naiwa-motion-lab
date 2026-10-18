@@ -5,7 +5,7 @@
  * grid buffer, so a substep is two passes, not three.
  */
 import { EMBED_K } from "./embedding";
-import { ACC, ACC_SCALE, EDIT, GRID_SCALE, KIND_SPHERE, MAX_BODIES, MAX_COLLIDERS, MAX_GRIDS } from "./layout";
+import { ACC, ACC_SCALE, EDIT, GRID_SCALE, KIND_SPHERE, MAX_BODIES, MAX_COLLIDERS, MAX_GRIDS, MAX_SPEED } from "./layout";
 
 export const WORKGROUP = 128;
 
@@ -48,7 +48,7 @@ struct Particle {
   x: vec4f, v: vec4f, C: mat3x3f, F: mat3x3f, FL: mat3x3f, local: vec4f, react: vec4f,
   info: vec4i, // grid, body, splats, region
 }
-struct Edit { index: i32, flags: i32, body: i32, pad: i32, pos: vec4f, vel: vec4f }
+struct Edit { index: i32, flags: i32, body: i32, pad: i32, pos: vec4f, vel: vec4f, F: mat3x3f }
 
 @group(0) @binding(${BIND.step}) var<uniform> step: Step;
 @group(0) @binding(${BIND.grids}) var<uniform> grids: array<Grid, ${MAX_GRIDS}>;
@@ -109,6 +109,10 @@ fn applyEdits(@builtin(global_invocation_id) id: vec3u) {
   if ((e.flags & ${EDIT.DETACH}) != 0 && p.info.y >= 0) {
     p.info.y = -1;
     p.info.z = 0;
+    p.C = mat3x3f();
+  }
+  if ((e.flags & ${EDIT.RESET}) != 0) {
+    p.F = e.F;
     p.C = mat3x3f();
   }
   if ((e.flags & ${EDIT.SET_POS}) != 0) { p.x = vec4f(e.pos.xyz, p.x.w); }
@@ -328,6 +332,8 @@ fn g2p2g(@builtin(global_invocation_id) id: vec3u) {
   let C = B * (4.0 / (dx * dx));
   let F = (I3 + C * step.dt) * particles[i].F;
   v = contacts(x, v, u32(info.x), dx / 4.0);
+  let speed = length(v);
+  if (speed > ${f(MAX_SPEED)}) { v = v * (${f(MAX_SPEED)} / speed); }
   let lo = g.origin.xyz + 1.5 * dx;
   let hi = g.origin.xyz + (f32(g.dims.x) - 1.5) * dx;
   let xn = clamp(x + step.dt * v, lo, hi);
