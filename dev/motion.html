@@ -11,7 +11,9 @@
       #view { position: fixed; inset: 0 0 44px 0; width: 100%; height: calc(100% - 44px); display: block; }
       #bar { position: fixed; left: 0; right: 0; bottom: 0; height: 44px; display: flex; gap: 6px; align-items: center; padding: 0 8px; background: #22252c; overflow-x: auto; }
       #bar button, #bar label { background: #343844; color: inherit; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
-      #status { position: fixed; left: 8px; top: 8px; padding: 4px 8px; border-radius: 6px; background: #000a; }
+      #status, #metrics { position: fixed; left: 8px; top: 8px; padding: 4px 8px; border-radius: 6px; background: #000a; }
+      #metrics { top: 36px; }
+      #metrics:empty { display: none; }
       #preview { position: fixed; right: 12px; bottom: 56px; width: 240px; height: 320px; border-radius: 12px; overflow: hidden; background: #000; }
       #preview:empty { display: none; }
     </style>
@@ -19,6 +21,7 @@
   <body>
     <canvas id="view"></canvas>
     <div id="status">idle</div>
+    <div id="metrics"></div>
     <div id="preview"></div>
     <div id="bar">
       <span id="dances" style="display: flex; gap: 6px"></span>

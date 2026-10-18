@@ -1,15 +1,33 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
+import type { LandmarkFrame, PersonFrame, Recording } from "./api";
+import { DEFAULT_RETARGETER, registerBuiltins } from "./blocks";
+import { createRetargetPipeline } from "./core";
 import { PROCEDURAL_DANCES } from "./dances";
+import { limbPenetration } from "./metrics";
 import { OneEuro } from "./oneEuro";
 import { idlePose, mirrorPose, SIDES, type BodyPose } from "./pose";
-import { Retargeter, type LandmarkFrame } from "./retarget";
-import { bindRig, jointPositions, limbPenetration, solve } from "./rig";
+import { bindRig, jointPositions } from "./rig";
 import { buildTestFrog } from "./testFrog";
-import { frameAt, smoothFrames } from "./track";
+import { frameAt } from "./track";
 
+registerBuiltins();
 const frog = buildTestFrog();
 const b = bindRig(frog.rig);
+const pipeline = (recording: Recording | null = null) => createRetargetPipeline(b, { id: DEFAULT_RETARGETER, settings: {} }, recording);
+const { scene } = pipeline();
+const solve = (_b: unknown, goal: BodyPose) => pipeline().pose(goal, 0);
+/** The old Retargeter's signature over the pipeline's goal stage. */
+class Retargeter {
+  private p;
+  constructor(recording: Recording = {}) {
+    this.p = pipeline(recording);
+  }
+  pose(frame: LandmarkFrame, aspect: number, dt: number, mirror: boolean) {
+    return this.p.goal({ ...frame, aspect }, dt, mirror);
+  }
+}
+const smoothFrames = (frames: LandmarkFrame[], fps: number): PersonFrame[] => pipeline().recorded(frames.map((f) => ({ ...f, aspect: 1 })), fps);
 const angle = (a: THREE.Quaternion, c: THREE.Quaternion) => 2 * Math.acos(Math.min(1, Math.abs(a.dot(c))));
 
 describe("rig binding", () => {
@@ -37,7 +55,7 @@ describe("procedural dances", () => {
       for (let t = 0; t < d.duration; t += 0.05) {
         const pose = d.pose(t);
         const f = solve(b, pose);
-        worst = Math.max(worst, limbPenetration(b, f));
+        worst = Math.max(worst, limbPenetration(b, scene.constraints, scene.solver.solve(pose)));
         const P = jointPositions(b, { ...f, rootYaw: 0 });
         const lowest = Math.min(P.get("foot_L")!.y, P.get("foot_R")!.y);
         expect(lowest).toBeCloseTo(b.restFootY + pose.lift, 4);

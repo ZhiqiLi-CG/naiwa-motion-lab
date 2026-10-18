@@ -1,27 +1,25 @@
 /**
- * A person's MediaPipe pose (33 world + 33 image landmarks) → BodyPose for the frog. One code path for the webcam,
- * uploaded videos and dance tracks, so a recorded dancer and a live one look the same on the frog.
+ * Goal block: the person's limb and torso directions, copied onto the frog's stubby body (its limbs are far shorter
+ * than a person's, so positions would not fit; directions do).
  *
- * Directions, not positions: the person's limb and torso directions are copied onto the frog's stubby body (rig.ts
- * keeps them out of its belly). Image landmarks give hops and squats (feet leaving / nearing their floor line).
+ * Heading from the hip and shoulder lines (unwrapped, so turning round keeps going); the chest's frame from the
+ * shoulders and the hip → shoulder line, most of a forward bend given to the hips (a round body tips rather than
+ * folding its belly); the head from the ears and nose; arm directions in the chest's frame, leg directions in the
+ * frog's yaw-free frame, each blended to rest by how visible its landmarks are. Hands near the belly become a belly
+ * hold, hands above the head an overhead reach. The picture landmarks give hops and squats (the feet leaving or
+ * nearing their floor line) and side steps (the hips moving across the picture). Big gestures become faces.
  */
 import * as THREE from "three";
-import type { Expression, ExpressionWeights } from "../contracts";
-import { bentLeg, idlePose, mirrorPose, restArm, rot, sideSign, SIDES, straightLeg, type BodyPose, type Side } from "./pose";
-
-/** 33 × [x, y, z, visibility]; empty when nobody was found in the frame. */
-export type Landmarks = number[][];
-export interface LandmarkFrame {
-  world: Landmarks;
-  image: Landmarks;
-}
+import type { Expression, ExpressionWeights } from "../../contracts";
+import type { BlockDefinition, GoalBlock, PersonFrame, Recording, Scene, Settings } from "../api";
+import { bentLeg, idlePose, restArm, rot, sideSign, SIDES, straightLeg, type BodyPose, type Side } from "../pose";
 
 /** MediaPipe pose landmark indices. */
 export const LM = {
   nose: 0, earL: 7, earR: 8, shoulderL: 11, shoulderR: 12, elbowL: 13, elbowR: 14, wristL: 15, wristR: 16,
   hipL: 23, hipR: 24, kneeL: 25, kneeR: 26, ankleL: 27, ankleR: 28,
 } as const;
-const FEET = [27, 28, 29, 30, 31, 32];
+export const FEET = [27, 28, 29, 30, 31, 32];
 const ARM = { L: [11, 13, 15], R: [12, 14, 16] } as const;
 const LEG = { L: [23, 25, 27], R: [24, 26, 28] } as const;
 
@@ -31,46 +29,44 @@ const ramp = (x: number, a: number, b: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Person-to-frog scale of motion: the person moving by one torso length (~0.5 m) → this many frog meters. */
-const HOP_GAIN = 0.5;
-const TRAVEL_GAIN = 0.3;
+/** The farthest the frog steps sideways from home (m). */
 const MAX_TRAVEL = 0.8;
 /** The nose sits a little below the ear line in a level head; undo that so a level head is level. */
 const HEAD_LEVEL = -0.19;
 
-export interface RetargetOptions {
-  /** Fixed floor line (image y of the feet when standing), known for recorded tracks; live it is tracked. */
-  floor?: number;
-  /** Fixed home of the hips (image x × aspect), known for recorded tracks; live it follows slowly. */
-  home?: number;
-}
-
-export class Retargeter {
+class PersonDirections implements GoalBlock {
   private yaw: number | null = null;
   private floor: number | null;
   private hipBase: number | null = null;
   private home: number | null;
-  private readonly fixedFloor: boolean;
-  private readonly fixedHome: boolean;
   private readonly expr: Record<Expression, number> = { laugh: 0, tongue: 0, blink: 0, surprise: 0 };
 
-  constructor(opts: RetargetOptions = {}) {
-    this.floor = opts.floor ?? null;
-    this.fixedFloor = opts.floor !== undefined;
-    this.home = opts.home ?? null;
-    this.fixedHome = opts.home !== undefined;
+  constructor(private scene: Scene, private s: Readonly<Settings>) {
+    this.floor = scene.recording?.floor ?? null;
+    this.home = scene.recording?.home ?? null;
   }
 
-  /** The frog pose for one frame (dt seconds after the previous), or null when no usable person is in it. */
-  pose(frame: LandmarkFrame, aspect: number, dt: number, mirror: boolean): BodyPose | null {
-    const { world, image } = frame;
+  setSettings(s: Readonly<Settings>) {
+    this.s = s;
+  }
+
+  reset() {
+    const rec: Recording | null = this.scene.recording;
+    this.yaw = this.hipBase = null;
+    this.floor = rec?.floor ?? null;
+    this.home = rec?.home ?? null;
+    for (const k of Object.keys(this.expr) as Expression[]) this.expr[k] = 0;
+  }
+
+  goal(frame: PersonFrame, dt: number): BodyPose | null {
+    const { world, image, aspect } = frame;
     if (world.length < 33 || image.length < 33) return null;
     if (Math.min(world[11][3], world[12][3]) < 0.3) return null;
+    const limits = this.scene.constraints;
     // MediaPipe world: x right, y down, z away from the camera; the frog: x its left (= image right), y up, z to us.
     const W = world.map((p) => new THREE.Vector3(p[0], -p[1], -p[2]));
     const vis = (i: number) => world[i][3];
 
-    // Heading from the hip and shoulder lines (unwrapped so turning round keeps going).
     const across = W[LM.hipL].clone().sub(W[LM.hipR]).add(W[LM.shoulderL].clone().sub(W[LM.shoulderR]));
     let yaw = Math.atan2(-across.z, across.x);
     if (this.yaw !== null) yaw = this.yaw + Math.atan2(Math.sin(yaw - this.yaw), Math.cos(yaw - this.yaw));
@@ -81,7 +77,7 @@ export class Retargeter {
     const p = idlePose();
     p.yaw = yaw;
 
-    // Torso: the chest frame from the shoulders and the hip→shoulder line.
+    // Torso.
     const hipMid = Q[LM.hipL].clone().add(Q[LM.hipR]).multiplyScalar(0.5);
     const shMid = Q[LM.shoulderL].clone().add(Q[LM.shoulderR]).multiplyScalar(0.5);
     const torsoLen = Math.max(1e-3, shMid.distanceTo(hipMid));
@@ -89,25 +85,23 @@ export class Retargeter {
     const up = shMid.clone().sub(hipMid).normalize();
     const C = frameFrom(Q[LM.shoulderL].clone().sub(Q[LM.shoulderR]), up);
     const bend = Math.atan2(up.z, up.y);
-    limitAngle(C, 1.1);
+    limitAngle(C, limits.limit("chest"));
     const pelvis = Q[LM.hipL].clone().sub(Q[LM.hipR]).normalize();
-    // A round body tips at the hips rather than folding its belly: the hips take most of the bend.
     const H = rot(bend * 0.6, -0.8 * Math.asin(clamp(pelvis.y, -0.5, 0.5)), 0.6 * Math.atan2(-pelvis.z, pelvis.x));
     const S = H.clone().slerp(C, 0.5);
     p.hips = H;
     p.spine = H.clone().invert().multiply(S);
     p.chest = S.clone().invert().multiply(C);
 
-    // Head from the ears and nose, relative to the chest, a little calmer than the person's.
+    // Head relative to the chest, a little calmer than the person's.
     const earMid = Q[LM.earL].clone().add(Q[LM.earR]).multiplyScalar(0.5);
     const across2 = Q[LM.earL].clone().sub(Q[LM.earR]);
     const face = Q[LM.nose].clone().sub(earMid);
     const G = frameFrom(across2, face.clone().cross(across2).normalize()).multiply(rot(HEAD_LEVEL));
-    const head = C.clone().invert().multiply(G);
-    p.head = new THREE.Quaternion().slerp(head, 0.8);
-    limitAngle(p.head, 0.7);
+    p.head = new THREE.Quaternion().slerp(C.clone().invert().multiply(G), 0.8);
+    limitAngle(p.head, limits.limit("head"));
 
-    // Arms in the chest frame; hands near the belly become a belly hold.
+    // Arms in the chest frame.
     const toChest = C.clone().invert();
     // Top of the person's head (the ears are about 13 cm below it).
     const headTop = earMid.y + 0.13;
@@ -161,7 +155,7 @@ export class Retargeter {
     let hop = 0;
     if (feet.length >= 2 && legsSeen > 0.5) {
       const y = Math.max(...feet);
-      if (!this.fixedFloor) this.floor = this.floor === null ? y : Math.max(y, this.floor - 0.25 * torsoImg * dt);
+      if (this.scene.recording?.floor === undefined) this.floor = this.floor === null ? y : Math.max(y, this.floor - 0.25 * torsoImg * dt);
       hop = Math.max(0, ((this.floor ?? y) - y) / torsoImg - 0.04);
     } else {
       const hipY = (image[LM.hipL][1] + image[LM.hipR][1]) / 2;
@@ -171,16 +165,15 @@ export class Retargeter {
       const squat = Math.max(0, -d - 0.06);
       if (squat > 0) for (const s of SIDES) p.leg[s] = bentLeg(s, Math.min(1.1, squat * 2.5), 0.4);
     }
-    p.lift = Math.min(0.35, hop * HOP_GAIN);
+    p.lift = Math.min(0.35, hop * (this.s.hopGain as number));
 
-    // Side steps: the hips moving across the picture (image right = the person's left = the frog's left).
+    // Side steps (image right = the person's left = the frog's left).
     const hipX = ((image[LM.hipL][0] + image[LM.hipR][0]) / 2) * aspect;
-    if (!this.fixedHome) this.home = this.home === null ? hipX : this.home + (hipX - this.home) * (1 - Math.exp(-dt / 3));
-    p.shift = clamp((((hipX - (this.home ?? hipX)) / torsoImg) * TRAVEL_GAIN), -MAX_TRAVEL, MAX_TRAVEL);
+    if (this.scene.recording?.home === undefined) this.home = this.home === null ? hipX : this.home + (hipX - this.home) * (1 - Math.exp(-dt / 3));
+    p.shift = clamp(((hipX - (this.home ?? hipX)) / torsoImg) * (this.s.travelGain as number), -MAX_TRAVEL, MAX_TRAVEL);
 
-    // Big gestures → faces: hands on the belly (more so bent over) laugh, both hands up by the head (peace signs) stick the
-    // tongue out,
-    // hands on the cheeks or way up are a surprise.
+    // Faces: hands on the belly (more so bent over) laugh, both hands up by the head (peace signs) stick the tongue
+    // out, hands on the cheeks or way up are a surprise.
     const onBelly = Math.min(holds.L, holds.R);
     const nose = Q[LM.nose];
     const cheeks = Math.min(...SIDES.map((s) => 1 - ramp(Q[ARM[s][2]].distanceTo(nose) / torsoLen, 0.25, 0.4)));
@@ -195,7 +188,7 @@ export class Retargeter {
       this.expr[k] += (goal - this.expr[k]) * (1 - Math.exp(-dt / tau));
       p.expressions[k] = this.expr[k];
     }
-    return mirror ? mirrorPose(p) : p;
+    return p;
   }
 }
 
@@ -212,3 +205,26 @@ function limitAngle(q: THREE.Quaternion, max: number): void {
   const angle = 2 * Math.acos(clamp(Math.abs(q.w), -1, 1));
   if (angle > max) q.copy(new THREE.Quaternion().slerp(q, max / angle));
 }
+
+export const personDirections: BlockDefinition<"goal"> = {
+  id: "person-directions",
+  slot: "goal",
+  name: { zh: "肢体方向", en: "Limb directions" },
+  summary: {
+    zh: "把人的躯干朝向和四肢方向拷贝给奶蛙（它的四肢比人短得多，拷贝方向而不是位置）；手放肚子上变成捧肚子，举过头顶就伸到头顶；脚离地变成跳，髋部横移变成侧步；大动作变成表情。",
+    en: "Copies the person's torso orientation and limb directions onto the frog (its limbs are far shorter, so directions, not positions); hands on the belly become a belly hold, hands overhead reach above its head; feet leaving the floor hop, hips moving across step sideways; big gestures become faces.",
+  },
+  parameters: [
+    {
+      key: "hopGain", kind: "number", default: 0.5, min: 0, max: 1.5, step: 0.05, unit: "m",
+      label: { zh: "跳跃幅度", en: "Hop gain" },
+      help: { zh: "人离地一个躯干长度时奶蛙离地的高度", en: "The frog's hop height when the person rises by one torso length" },
+    },
+    {
+      key: "travelGain", kind: "number", default: 0.3, min: 0, max: 1, step: 0.05, unit: "m",
+      label: { zh: "侧步幅度", en: "Side-step gain" },
+      help: { zh: "人横移一个躯干长度时奶蛙移动的距离", en: "How far the frog steps when the person moves one torso length sideways" },
+    },
+  ],
+  create: (scene, settings) => new PersonDirections(scene, settings),
+};

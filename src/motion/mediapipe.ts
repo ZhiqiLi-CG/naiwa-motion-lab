@@ -3,7 +3,7 @@
  * camera or video with the tracked skeleton drawn over it.
  */
 import { FilesetResolver, PoseLandmarker, type PoseLandmarkerResult } from "@mediapipe/tasks-vision";
-import type { LandmarkFrame } from "./retarget";
+import type { LandmarkFrame } from "./api";
 
 let landmarker: Promise<PoseLandmarker> | null = null;
 

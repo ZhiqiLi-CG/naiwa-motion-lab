@@ -3,21 +3,27 @@
  * straight from the PoseFrames (no simulation), seen from the front and the side, with its skeleton drawn on top.
  *
  * URL: ?dance=<id> &t=<seconds> (freeze) &camera=1 &video=<url> &mirror=0 &rig=test &xray=1 &scale=<time scale>
+ *      &retargeter=<id> &set.<parameter>=<value> (the retargeter's settings); the metrics show under the status.
  * Keys: space pause, . single step, 1 / 2 / 3 time scale 1 / 0.5 / 0.25.
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CHARACTER_URL, CORE_BONES, EXPRESSIONS, FINGER_BONES, type BoneName, type MotionSource, type MotionStatus, type PoseFrame, type RigInfo } from "../contracts";
 import type { Track } from "./track";
+import { createRetargetPipeline } from "./core";
 import { PROCEDURAL_DANCES } from "./dances";
-import { createMotion } from "./index";
+import { createMotion, DEFAULT_RETARGETER, metricReadouts } from "./index";
 import { MeshAudit } from "./meshAudit";
-import { limbPenetration, solve } from "./rig";
-import { TrackPlayer } from "./track";
+import { limbPenetration } from "./metrics";
+import { tr } from "../i18n";
+import { recordingOf, TrackPlayer } from "./track";
 import { buildTestFrog } from "./testFrog";
 
 const params = new URLSearchParams(location.search);
 const motion = createMotion();
+const settings: Record<string, number | string | boolean> = {};
+for (const [k, v] of params) if (k.startsWith("set.")) settings[k.slice(4)] = v === "true" ? true : v === "false" ? false : Number.isNaN(Number(v)) ? v : Number(v);
+motion.setRetargeter({ id: params.get("retargeter") ?? DEFAULT_RETARGETER, settings });
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 
 const renderer = new THREE.WebGLRenderer({ canvas: $("#view"), antialias: true });
@@ -157,9 +163,11 @@ async function meshAudit(id: string, step = 1 / 30) {
   let poseAt: (t: number, dt: number) => PoseFrame | null;
   let duration: number;
   if (id === "video") {
-    const player = new TrackPlayer((dev.source as { track(): Track }).track());
-    duration = player.track.duration;
-    poseAt = (t, dt) => ((p) => (p ? solve(b, p) : null))(player.pose(t, dt, false));
+    const track = (dev.source as { track(): Track }).track();
+    const pipe = createRetargetPipeline(b, motion.retargeter(), recordingOf(track));
+    const player = new TrackPlayer(track, () => pipe);
+    duration = track.duration;
+    poseAt = (t, dt) => ((g) => (g ? pipe.pose(g, dt) : null))(player.goal(t, dt, false));
   } else {
     const src = motion.startDance(id);
     duration = motion.dances().find((d) => d.id === id)!.duration;
@@ -204,10 +212,11 @@ function showInside() {
 /** Worst limb penetration (m) and when, per procedural dance, on the loaded rig. */
 function audit() {
   const b = motion.binding()!;
+  const { scene } = createRetargetPipeline(b, motion.retargeter());
   return PROCEDURAL_DANCES.map((d) => {
     let worst = 0, at = 0;
     for (let t = 0; t < d.duration; t += 0.04) {
-      const pen = limbPenetration(b, solve(b, d.pose(t)));
+      const pen = limbPenetration(b, scene.constraints, scene.solver.solve(d.pose(t)));
       if (pen > worst) (worst = pen), (at = t);
     }
     return { id: d.id, worst: +worst.toFixed(3), at: +at.toFixed(2) };
@@ -220,6 +229,11 @@ motion.onStatus((s) => {
   dev.statuses.push(s);
   statusEl.textContent = `${s.state}${s.message ? " · " + s.message : ""}${s.fps ? ` · ${s.fps.toFixed(0)} fps` : ""}`;
 });
+const metricsEl = $("#metrics");
+setInterval(() => {
+  const m = motion.metrics();
+  metricsEl.textContent = m ? `${motion.retargeter().id} · ${metricReadouts(m).map((r) => `${tr(r.label)} ${r.value}`).join(" · ")}` : "";
+}, 500);
 
 function use(src: MotionSource) {
   dev.source?.dispose();

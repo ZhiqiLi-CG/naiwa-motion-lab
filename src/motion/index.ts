@@ -1,16 +1,24 @@
 /**
  * Motion module: built-in dances, dances captured from real videos, "我的舞蹈" saved in this browser, the webcam and
- * uploaded videos → PoseFrames for the bound frog rig. All of them go through one BodyPose → rig solver (rig.ts), and
- * everything that comes from a person goes through one Retargeter (retarget.ts).
+ * uploaded videos → PoseFrames for the bound frog rig. Everything goes through the retargeting pipeline (core.ts) of
+ * the chosen retargeter (api.ts): people through all of it, procedural dances (written as goals) from the solver on.
  */
-import type { DanceIndexEntry, DanceInfo, DanceTrack, MotionModule, MotionSource, MotionStatus, RigInfo } from "../contracts";
-import { onLang, tr } from "../i18n";
+import type {
+  DanceIndexEntry, DanceInfo, DanceTrack, MotionModule, MotionSource, MotionStatus, RetargeterInfo, RetargeterOptions, RigInfo,
+} from "../contracts";
+import { onLang, tr, type Text } from "../i18n";
+import type { Recording, RetargetMetrics } from "./api";
+import { DEFAULT_RETARGETER, registerBuiltins } from "./blocks";
+import { createRetargetPipeline, type RetargetPipeline } from "./core";
 import { PROCEDURAL_DANCES } from "./dances";
+import { hasRetargeter, listRetargeters, onRetargetersChanged } from "./registry";
 import { bindRig, type Binding } from "./rig";
 import { loadSaved, putSaved, removeSaved } from "./saved";
-import { proceduralSource, startCamera, startVideo, trackSource, type MirrorableSource, type Status, type VideoSource } from "./sources";
+import { proceduralSource, startCamera, startVideo, trackSource, type MirrorableSource, type OpenRetarget, type Status, type VideoSource } from "./sources";
 import { fetchTrack, type Track } from "./track";
 
+export * from "./api";
+export { DEFAULT_RETARGETER } from "./blocks";
 export type { MirrorableSource, VideoSource } from "./sources";
 export { MAX_VIDEO_SECONDS } from "./sources";
 
@@ -19,6 +27,26 @@ export interface NaiwaMotion extends MotionModule {
   startVideo(file: File | string, opts: { mirror: boolean; preview: HTMLElement }): Promise<VideoSource>;
   /** The current binding (null before bind), for debugging views. */
   binding(): Binding | null;
+  /** Every registered retargeter (built in and the user's), with its declared parameters. */
+  retargeters(): RetargeterInfo[];
+  onRetargetersChanged(cb: (list: RetargeterInfo[]) => void): () => void;
+  /** Use this retargeter and settings from now on, also for running sources (settings apply live where the blocks
+   *  can take them, else the pipeline is rebuilt). An unknown id keeps the default. */
+  setRetargeter(options: RetargeterOptions): void;
+  /** The retargeter in use. */
+  retargeter(): RetargeterOptions;
+  /** Quality of the running source over the last two seconds (null before it showed a frame). */
+  metrics(): RetargetMetrics | null;
+}
+
+/** Metrics as labelled readouts for the lab (the UI's PluginMetric). */
+export function metricReadouts(m: RetargetMetrics): { label: Text; value: string }[] {
+  return [
+    { label: { zh: "方向偏差", en: "Direction error" }, value: `${m.fidelity.toFixed(1)}°` },
+    { label: { zh: "加加速度", en: "Jerk" }, value: `${m.jerk.toFixed(0)} m/s³` },
+    { label: { zh: "四肢入体", en: "Limb penetration" }, value: `${(m.penetration * 1000).toFixed(1)} mm` },
+    { label: { zh: "脚滑", en: "Foot slide" }, value: `${(m.footSlide * 100).toFixed(1)} cm/s` },
+  ];
 }
 
 interface Entry {
@@ -28,8 +56,48 @@ interface Entry {
 }
 
 export function createMotion(): NaiwaMotion {
+  registerBuiltins();
   let binding: Binding | null = null;
   const getBinding = () => binding;
+
+  // The retargeter: each source holds a getter that rebuilds its pipeline when the rig, the retargeter or one of its
+  // blocks changes (a new registration), and hands new settings to it live when its blocks can take them.
+  let options: RetargeterOptions = { id: DEFAULT_RETARGETER, settings: {} };
+  let structure = 0;
+  let settingsRev = 0;
+  let latest: RetargetPipeline | null = null;
+  onRetargetersChanged(() => {
+    if (!hasRetargeter(options.id)) {
+      console.warn(`motion: retargeter "${options.id}" is gone, back to ${DEFAULT_RETARGETER}`);
+      options = { id: DEFAULT_RETARGETER, settings: {} };
+    }
+    structure++;
+  });
+  // A retargeter that fails to build (a user's block throwing) falls back to the default.
+  const build = (rig: Binding, recording: Recording | null): RetargetPipeline => {
+    try {
+      return createRetargetPipeline(rig, options, recording);
+    } catch (e) {
+      if (options.id === DEFAULT_RETARGETER) throw e;
+      console.warn(`motion: retargeter "${options.id}" failed to build, back to ${DEFAULT_RETARGETER}`, e);
+      options = { id: DEFAULT_RETARGETER, settings: {} };
+      structure++;
+      return createRetargetPipeline(rig, options, recording);
+    }
+  };
+  const open: OpenRetarget = (recording) => {
+    let built: { p: RetargetPipeline; rig: Binding; structure: number; settings: number } | null = null;
+    return () => {
+      if (!binding) return null;
+      if (built && built.rig === binding && built.structure === structure && built.settings !== settingsRev && built.p.setSettings(options.settings)) {
+        built.settings = settingsRev;
+      }
+      if (!built || built.rig !== binding || built.structure !== structure || built.settings !== settingsRev) {
+        built = { p: build(binding, recording ?? null), rig: binding, structure, settings: settingsRev };
+      }
+      return (latest = built.p);
+    };
+  };
   const statusListeners = new Set<(s: MotionStatus) => void>();
   const listListeners = new Set<(d: DanceInfo[]) => void>();
   // The last status is kept with both languages so a language switch re-shows it translated.
@@ -103,18 +171,18 @@ export function createMotion(): NaiwaMotion {
     binding: getBinding,
     async startCamera({ mirror, preview }) {
       const gen = begin();
-      return own(gen, await startCamera(mirror, preview, getBinding, emit));
+      return own(gen, await startCamera(mirror, preview, open, emit));
     },
     async startVideo(file, { mirror, preview }) {
       const gen = begin();
-      return own(gen, await startVideo(file, mirror, preview, getBinding, emit, () => gen !== generation));
+      return own(gen, await startVideo(file, mirror, preview, open, emit, () => gen !== generation));
     },
     startDance(id: string) {
       const e = entries.find((d) => d.info.id === id);
       if (!e) console.warn(`motion: unknown dance "${id}", playing ${entries[0].info.id}`);
       const entry = e ?? entries[0];
-      if (!entry.track) return proceduralSource(PROCEDURAL_DANCES.find((d) => d.id === entry.info.id)!, getBinding);
-      return trackSource(entry.track(), entry.info.duration, getBinding, emit);
+      if (!entry.track) return proceduralSource(PROCEDURAL_DANCES.find((d) => d.id === entry.info.id)!, open);
+      return trackSource(entry.track(), entry.info.duration, open, emit);
     },
     dances: list,
     async saveDance(track: DanceTrack, name: string) {
@@ -141,5 +209,18 @@ export function createMotion(): NaiwaMotion {
       statusListeners.add(cb);
       return () => statusListeners.delete(cb);
     },
+    retargeters: listRetargeters,
+    onRetargetersChanged: (cb) => onRetargetersChanged(() => cb(listRetargeters())),
+    setRetargeter(next) {
+      if (!hasRetargeter(next.id)) {
+        console.warn(`motion: unknown retargeter "${next.id}", using ${DEFAULT_RETARGETER}`);
+        next = { id: DEFAULT_RETARGETER, settings: next.settings };
+      }
+      if (next.id !== options.id) structure++;
+      else settingsRev++;
+      options = { id: next.id, settings: { ...next.settings } };
+    },
+    retargeter: () => options,
+    metrics: () => latest?.metrics() ?? null,
   };
 }

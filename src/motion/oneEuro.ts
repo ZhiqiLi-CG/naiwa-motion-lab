@@ -5,8 +5,8 @@ export class OneEuro {
   private t = 0;
 
   constructor(
-    private readonly minCutoff: number,
-    private readonly beta: number,
+    public minCutoff: number,
+    public beta: number,
     private readonly dCutoff = 1,
   ) {}
 

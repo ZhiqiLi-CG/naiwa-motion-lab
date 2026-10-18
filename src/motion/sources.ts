@@ -2,17 +2,19 @@
 import type { DanceTrack, MotionKind, MotionSource, MotionStatus, PoseFrame } from "../contracts";
 import { tr, type Text } from "../i18n";
 import type { ProceduralDance } from "./dances";
+import type { LandmarkFrame, PersonFrame, Recording } from "./api";
+import type { RetargetPipeline } from "./core";
 import { hipOf, loadLandmarker, onFrames, pickPerson, PreviewView, stamp, toFrame } from "./mediapipe";
-import { OneEuro } from "./oneEuro";
 import { blendPose, idlePose, type BodyPose } from "./pose";
-import { Retargeter, type LandmarkFrame } from "./retarget";
-import { solve, type Binding } from "./rig";
-import { smoothFrames, TrackPlayer, type Track } from "./track";
+import { recordingOf, TrackPlayer, type Track } from "./track";
 
 /** A status with its text in both languages (shown in the current one, re-shown when the language changes). */
 export type Status = Omit<MotionStatus, "message"> & { text?: Text };
 export type Emit = (s: Status) => void;
-export type GetBinding = () => Binding | null;
+/** The pipeline a source runs through (null before the rig is bound); rebuilt when the retargeter changes. */
+export type Retarget = () => RetargetPipeline | null;
+/** A pipeline for a new source; recorded sources say what they know of the whole take. */
+export type OpenRetarget = (recording?: Recording) => Retarget;
 
 const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const FADE_IN_MS = 400;
@@ -34,33 +36,37 @@ class LoopSource implements MotionSource {
     readonly kind: MotionKind,
     private readonly duration: number,
     private readonly poseAt: (t: number, dt: number) => BodyPose | null,
-    private readonly binding: GetBinding,
+    private readonly retarget: Retarget,
   ) {}
   update(_nowMs: number, dt: number): PoseFrame | null {
     const step = Math.min(Math.max(dt, 0), MAX_STEP);
     this.time += step;
-    const b = this.binding();
     const pose = this.poseAt(this.time % this.duration, step);
-    if (!b || !pose) return null;
-    return solve(b, blendPose(idlePose(), pose, smooth((this.time * 1000) / FADE_IN_MS)));
+    const r = this.retarget();
+    if (!r || !pose) return null;
+    return r.pose(blendPose(idlePose(), pose, smooth((this.time * 1000) / FADE_IN_MS)), step);
   }
   dispose(): void {}
 }
 
-export const proceduralSource = (d: ProceduralDance, binding: GetBinding): MotionSource =>
-  new LoopSource("dance", d.duration, (t) => d.pose(t), binding);
+export const proceduralSource = (d: ProceduralDance, open: OpenRetarget): MotionSource =>
+  new LoopSource("dance", d.duration, (t) => d.pose(t), open());
 
 /** A dance track; its clock starts at the first update even if the track is still loading. */
-export function trackSource(track: Promise<Track>, duration: number, binding: GetBinding, emit: Emit): MotionSource {
+export function trackSource(track: Promise<Track>, duration: number, open: OpenRetarget, emit: Emit): MotionSource {
   let player: TrackPlayer | null = null;
+  let retarget: Retarget = () => null;
   track.then(
-    (t) => (player = new TrackPlayer(t)),
+    (t) => {
+      retarget = open(recordingOf(t));
+      player = new TrackPlayer(t, retarget);
+    },
     (e) => {
       console.warn(e);
       emit({ state: "error", text: { zh: "这支舞加载失败了，请检查网络后再试", en: "Couldn't load this dance. Check your connection and try again." } });
     },
   );
-  return new LoopSource("dance", duration, (t, dt) => player?.pose(t, dt, false) ?? null, binding);
+  return new LoopSource("dance", duration, (t, dt) => player?.goal(t, dt, false) ?? null, () => retarget());
 }
 
 /**
@@ -124,7 +130,7 @@ function failWith(emit: Emit, text: Text): never {
   throw new Error(tr(text));
 }
 
-export async function startCamera(mirror: boolean, preview: HTMLElement, binding: GetBinding, emit: Emit): Promise<MirrorableSource> {
+export async function startCamera(mirror: boolean, preview: HTMLElement, open: OpenRetarget, emit: Emit): Promise<MirrorableSource> {
   if (!navigator.mediaDevices?.getUserMedia) {
     failWith(emit, { zh: "这个页面用不了摄像头（需要 https 网址）", en: "The camera needs a secure (https) page." });
   }
@@ -153,10 +159,8 @@ export async function startCamera(mirror: boolean, preview: HTMLElement, binding
   await detector.setOptions({ numPoses: 1 });
   emit({ state: "ready", text: { zh: "摄像头准备好了，退后一点让全身入镜", en: "Camera ready. Step back so your whole body is in view." } });
 
-  const retarget = new Retargeter();
+  const retarget = open();
   const presence = new Presence();
-  const worldFilter = new OneEuro(1.5, 3);
-  const imageFilter = new OneEuro(1.5, 4);
   let lastT = 0;
   let count = 0;
   let windowStart = performance.now();
@@ -176,17 +180,12 @@ export async function startCamera(mirror: boolean, preview: HTMLElement, binding
       windowStart = now;
       if (!presence.lost) emit({ state: "tracking", text: WITH_YOU, fps });
     }
-    if (!frame.world.length) return;
+    const r = retarget();
+    if (!frame.world.length || !r) return;
     const t = now / 1000;
-    const w = frame.world.flatMap((p) => p.slice(0, 3));
-    const im = frame.image.flatMap((p) => p.slice(0, 3));
-    worldFilter.filter(w, t);
-    imageFilter.filter(im, t);
-    const back = (flat: number[], src: number[][]) => src.map((p, i) => [flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2], p[3]]);
-    const filtered: LandmarkFrame = { world: back(w, frame.world), image: back(im, frame.image) };
     const dt = lastT ? Math.min(0.2, t - lastT) : 1 / 30;
     lastT = t;
-    presence.feed(retarget.pose(filtered, aspect, dt, mirror), now);
+    presence.feed(r.live({ ...frame, aspect }, t, dt, mirror), now);
   });
 
   return {
@@ -196,14 +195,14 @@ export async function startCamera(mirror: boolean, preview: HTMLElement, binding
       mirror = on;
       view.setMirror(on);
     },
-    update(nowMs) {
+    update(nowMs, dt) {
       const pose = presence.output(nowMs);
       if (presence.lost !== wasLost) {
         wasLost = presence.lost;
         emit(wasLost ? { state: "lost", text: { zh: "找不到你啦，退后一点让全身入镜", en: "Can't see you. Step back so your whole body is in view." } } : { state: "tracking", text: WITH_YOU, fps: fps || undefined });
       }
-      const b = binding();
-      return pose && b ? solve(b, pose) : null;
+      const r = retarget();
+      return pose && r ? r.pose(pose, dt) : null;
     },
     dispose() {
       if (disposed) return;
@@ -228,7 +227,7 @@ export async function startVideo(
   file: File | string,
   mirror: boolean,
   preview: HTMLElement,
-  binding: GetBinding,
+  open: OpenRetarget,
   emit: Emit,
   cancelled: () => boolean,
 ): Promise<VideoSource> {
@@ -332,17 +331,27 @@ export async function startVideo(
   // Resample to 30 fps (gaps longer than half a second stay empty), then smooth with past and future frames.
   const fps = 30;
   const n = Math.max(2, Math.floor(length * fps));
-  const frames: LandmarkFrame[] = [];
+  const frames: PersonFrame[] = [];
   let j = 0;
   for (let k = 0; k < n; k++) {
     const t = k / fps;
     while (j + 1 < samples.length && samples[j + 1].t <= t) j++;
     const a = samples[j], b = samples[j + 1];
     const near = !b || Math.abs(a.t - t) <= Math.abs(b.t - t) ? a : b;
-    frames.push(near && Math.abs(near.t - t) < 0.25 ? near.frame : { world: [], image: [] });
+    frames.push({ ...(near && Math.abs(near.t - t) < 0.25 ? near.frame : { world: [], image: [] }), aspect });
   }
   const seen = frames.filter((f) => f.world.length >= 33).length;
   if (seen < Math.max(3, n * 0.2)) return fail({ zh: "视频里没有找到人，换一个人物全身入镜的视频试试", en: "No one found in this video. Try one with a person in full view." });
+  // The pipeline exists once the rig is bound (the character may still be loading while the video is analysed).
+  const filter = await new Promise<RetargetPipeline>((resolve) => {
+    const r = open();
+    const poll = () => {
+      const p = r();
+      if (p) resolve(p);
+      else setTimeout(poll, 100);
+    };
+    poll();
+  });
   const track: Track = {
     id: `video-${Date.now().toString(36)}`,
     name: title.replace(/\.[^.]+$/, "").slice(0, 16) || tr({ zh: "我的舞蹈", en: "My dance" }),
@@ -350,11 +359,12 @@ export async function startVideo(
     duration: n / fps,
     aspect,
     source: { title, url: typeof file === "string" ? file : "", start: 0, end: n / fps },
-    frames: smoothFrames(frames, fps),
+    frames: filter.recorded(frames, fps).map(({ world, image }): LandmarkFrame => ({ world, image })),
   };
 
   // Play with sound, the frog following video time (seeking and looping stay in sync).
-  const player = new TrackPlayer(track);
+  const retarget = open(recordingOf(track));
+  const player = new TrackPlayer(track, retarget);
   const presence = new Presence();
   video.loop = length >= video.duration - 0.05;
   video.playbackRate = 1;
@@ -419,7 +429,7 @@ export async function startVideo(
         lastT = t;
         const f = track.frames[Math.min(track.frames.length - 1, Math.round(t * fps))];
         view.draw(f.image.length ? f.image : null);
-        presence.feed(player.pose(t, (clock - fedAt) / 1000, mirror), clock);
+        presence.feed(player.goal(t, (clock - fedAt) / 1000, mirror), clock);
         fedAt = clock;
       }
       const pose = presence.output(clock);
@@ -427,8 +437,8 @@ export async function startVideo(
         wasLost = presence.lost;
         emit(wasLost ? { state: "lost", text: { zh: "这一段视频里没看到人", en: "No one in this part of the video" } } : { state: "tracking", text: along });
       }
-      const b = binding();
-      return pose && b ? solve(b, pose) : null;
+      const r = retarget();
+      return pose && r ? r.pose(pose, step) : null;
     },
     dispose() {
       if (disposed) return;
