@@ -37,7 +37,7 @@ async function simulate(lo: [number, number, number], hi: [number, number, numbe
   const model = new MpmModel([p], 0.04, 200);
   const backend = await CpuBackend.create(model, 0);
   backend.setState(model.initialState());
-  const frame = new FrameBuilder([p]);
+  const frame = new FrameBuilder([p], model.particleMass);
   if (opts.velocity) for (let i = 0; i < model.particles; i++) frame.setVelocity(i, ...opts.velocity);
   const { mu, lambda } = lame(opts.E ?? 4000, 0.3);
   let out = null;

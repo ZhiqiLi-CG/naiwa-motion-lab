@@ -13,6 +13,25 @@ import { nearestBone, particleAttributes } from "../parts";
 /** Share of the thickness around each bone that rides on it (Body: as the built-in block; limbs: the core). */
 const CARRIED: Record<string, number> = { head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55 };
 const SOFT_LOOSENS = 0.35;
+/** Particle layers of a limb's sole that stay free. */
+const SOLE = 2.5;
+
+function lowest(P: Float32Array): number {
+  let y = Infinity;
+  for (let i = 1; i < P.length; i += 3) y = Math.min(y, P[i]);
+  return y;
+}
+
+/** The particles' spacing: the smallest distance between two (the lattice step). */
+function spacing(P: Float32Array): number {
+  let best = Infinity;
+  for (let i = 0; i < Math.min(64, P.length / 3); i++) {
+    for (let j = 0; j < P.length / 3; j++) {
+      if (j !== i) best = Math.min(best, Math.hypot(P[i * 3] - P[j * 3], P[i * 3 + 1] - P[j * 3 + 1], P[i * 3 + 2] - P[j * 3 + 2]));
+    }
+  }
+  return best;
+}
 
 /** How thick the flesh is around each bone of a part: the median distance of its surface vertices to the bone. */
 function thickness(part: SimPart): Map<SimBone, number> {
@@ -34,11 +53,13 @@ class SoftLimbs implements CouplingBlock {
     for (const part of scene.parts) {
       const view = scene.flesh.particles(part), thick = thickness(part);
       const { softness } = particleAttributes(part, view.rest);
+      // A limb's sole: its lowest layers of flesh stay free at any resolution, so the feet stand on soft pads.
+      const sole = part.limb ? lowest(view.rest) + SOLE * spacing(view.rest) : -Infinity;
       const free: number[] = [];
       for (let i = 0; i < view.count; i++) {
         const { bone, distance } = nearestBone(part, p.fromArray(view.rest, i * 3));
         const share = part.limb ? limb : body * (CARRIED[bone.name] ?? 1) * (1 - SOFT_LOOSENS * softness[i]);
-        if (distance < share * (thick.get(bone) ?? 0)) view.attach(i, bone.body);
+        if (distance < share * (thick.get(bone) ?? 0) && view.rest[i * 3 + 1] > sole) view.attach(i, bone.body);
         else free.push(i);
       }
       this.free.set(part, free);
@@ -77,3 +98,4 @@ export const softLimbs: BlockDefinition<"coupling"> = {
   ],
   create: (scene, settings) => new SoftLimbs(scene, settings),
 };
+

@@ -14,7 +14,7 @@ import { mpmMetrics } from "./metrics";
 import { mpmFlesh } from "./mpmFlesh";
 import { softLimbs } from "./softLimbs";
 
-export { probeDevices, deviceProbe, forceBackend, chooseBackend, backendLabel, type DeviceProbe, type BackendKind } from "./device";
+export { probeDevices, deviceProbe, forceBackend, setWorkerCount, chooseBackend, backendLabel, type DeviceProbe, type BackendKind } from "./device";
 export { MpmFlesh, mpmFlesh } from "./mpmFlesh";
 export { mpmMetrics } from "./metrics";
 export { softLimbs } from "./softLimbs";

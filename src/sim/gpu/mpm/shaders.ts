@@ -1,12 +1,13 @@
 /**
- * The MLS-MPM kernels in WGSL, line for line the CPU kernels of kernels.ts (read those for the explanations). The
- * differences are the GPU's: scattering adds into the grid with integer atomics in fixed point (WGSL has no float
- * atomics), and the grid step clears the scattered sums it has read, ready for the next substep.
+ * The MLS-MPM kernels in WGSL, the CPU kernels of kernels.ts (read those for the explanations). The differences are
+ * the GPU's: scattering adds into the grid with integer atomics in fixed point (WGSL has no float atomics), the grid
+ * step clears the sums it has read, and each substep's gather ends with the scatter for the next (G2P2G) into a second
+ * grid buffer, so a substep is two passes, not three.
  */
 import { EMBED_K } from "./embedding";
 import { ACC, ACC_SCALE, EDIT, GRID_SCALE, KIND_SPHERE, MAX_BODIES, MAX_COLLIDERS, MAX_GRIDS } from "./layout";
 
-export const WORKGROUP = 64;
+export const WORKGROUP = 128;
 
 /** Bindings: group 0 uniforms, group 1 storage. */
 export const BIND = {
@@ -23,7 +24,7 @@ export const KERNELS = {
   addVelocity: { g0: [BIND.step], g1: [BIND.particles] },
   p2g: { g0: [BIND.step, BIND.grids, BIND.bodies], g1: [BIND.particles, BIND.gridIn] },
   gridUpdate: { g0: [BIND.step], g1: [BIND.gridIn, BIND.gridOut] },
-  g2p: { g0: [BIND.step, BIND.grids, BIND.bodies, BIND.colliders], g1: [BIND.particles, BIND.gridOut, BIND.acc] },
+  g2p2g: { g0: [BIND.step, BIND.grids, BIND.bodies, BIND.colliders], g1: [BIND.particles, BIND.gridIn, BIND.gridOut, BIND.acc] },
   reduceReactions: { g0: [BIND.step], g1: [BIND.particles, BIND.acc] },
   pack: { g0: [BIND.step], g1: [BIND.particles, BIND.out] },
   embedSurface: { g0: [BIND.step], g1: [BIND.particles, BIND.restWords, BIND.embedIndex, BIND.embedWeight, BIND.vertexRest, BIND.out] },
@@ -130,50 +131,59 @@ fn addVelocity(@builtin(global_invocation_id) id: vec3u) {
   particles[id.x].v = vec4f(particles[id.x].v.xyz + step.dv.xyz, 0.0);
 }
 
-@compute @workgroup_size(${WORKGROUP})
-fn p2g(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= step.counts.x) { return; }
-  // Fields one by one: copying the whole 224-byte particle would triple the memory traffic.
-  let info = particles[id.x].info;
-  if (info.x < 0) { return; }
-  let attached = info.y >= 0;
-  if (attached && info.z == 0) { return; }
-  let g = grids[info.x];
+// Scatter a free particle's mass and momentum (stress folded into its affine part, MLS-MPM) into the grid.
+fn scatterFree(g: Grid, x: vec3f, v: vec3f, C: mat3x3f, F: mat3x3f, region: i32) {
   let dx = g.origin.w;
-  var x: vec3f;
-  var v: vec3f;
-  var A = mat3x3f();
-  if (attached) {
-    let r = riding(particles[id.x].local.xyz, info.y, step.t0);
-    x = r.x;
-    v = r.v;
-  } else {
-    x = particles[id.x].x.xyz;
-    v = particles[id.x].v.xyz;
-    let C = particles[id.x].C;
-    A = C + kirchhoff(particles[id.x].F, C, g, regionFactor(info.w)) * (-step.dt * 4.0 / (dx * dx) * g.mat.z);
-  }
+  let A = C + kirchhoff(F, C, g, regionFactor(region)) * (-step.dt * 4.0 / (dx * dx) * g.mat.z);
   var s = stencil(x, g);
   for (var a = 0; a < 3; a++) {
     for (var b = 0; b < 3; b++) {
       for (var c = 0; c < 3; c++) {
         let w = s.w[a].x * s.w[b].y * s.w[c].z;
         let o = nodeOf(g, s.base + vec3i(a, b, c)) * 8;
-        if (attached) {
-          addFixed(o + 4, w, GRID_SCALE);
-          addFixed(o + 5, w * v.x, GRID_SCALE);
-          addFixed(o + 6, w * v.y, GRID_SCALE);
-          addFixed(o + 7, w * v.z, GRID_SCALE);
-        } else {
-          let mv = w * (v + A * ((vec3f(f32(a), f32(b), f32(c)) - s.f) * dx));
-          addFixed(o, w, GRID_SCALE);
-          addFixed(o + 1, mv.x, GRID_SCALE);
-          addFixed(o + 2, mv.y, GRID_SCALE);
-          addFixed(o + 3, mv.z, GRID_SCALE);
-        }
+        let mv = w * (v + A * ((vec3f(f32(a), f32(b), f32(c)) - s.f) * dx));
+        addFixed(o, w, GRID_SCALE);
+        addFixed(o + 1, mv.x, GRID_SCALE);
+        addFixed(o + 2, mv.y, GRID_SCALE);
+        addFixed(o + 3, mv.z, GRID_SCALE);
       }
     }
   }
+}
+
+// Scatter an attached particle's mass and its body's velocity there, apart from the free flesh's.
+fn scatterRiding(g: Grid, x: vec3f, v: vec3f) {
+  var s = stencil(x, g);
+  for (var a = 0; a < 3; a++) {
+    for (var b = 0; b < 3; b++) {
+      for (var c = 0; c < 3; c++) {
+        let w = s.w[a].x * s.w[b].y * s.w[c].z;
+        let o = nodeOf(g, s.base + vec3i(a, b, c)) * 8;
+        addFixed(o + 4, w, GRID_SCALE);
+        addFixed(o + 5, w * v.x, GRID_SCALE);
+        addFixed(o + 6, w * v.y, GRID_SCALE);
+        addFixed(o + 7, w * v.z, GRID_SCALE);
+      }
+    }
+  }
+}
+
+// The frame's first scatter (later ones come at the end of each substep's gather, g2p2g).
+@compute @workgroup_size(${WORKGROUP})
+fn p2g(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= step.counts.x) { return; }
+  // Fields one by one: copying the whole 224-byte particle would triple the memory traffic.
+  let info = particles[id.x].info;
+  if (info.x < 0) { return; }
+  let g = grids[info.x];
+  if (info.y >= 0) {
+    if (info.z != 0) {
+      let r = riding(particles[id.x].local.xyz, info.y, step.t0);
+      scatterRiding(g, r.x, r.v);
+    }
+    return;
+  }
+  scatterFree(g, particles[id.x].x.xyz, particles[id.x].v.xyz, particles[id.x].C, particles[id.x].F, info.w);
 }
 
 fn collide(v: vec3f, vc: vec3f, n: vec3f, mu: f32) -> vec3f {
@@ -203,8 +213,11 @@ fn gridUpdate(@builtin(global_invocation_id) id: vec3u) {
     }
   }
   if (!(m > 1e-6)) {
-    gridOut[node * 2] = vec4f(0.0);
-    gridOut[node * 2 + 1] = vec4f(0.0);
+    // Read this substep only if attached particles scattered here (they gather the bone impulse, none here).
+    if (ma0 != 0) {
+      gridOut[node * 2] = vec4f(0.0);
+      gridOut[node * 2 + 1] = vec4f(0.0);
+    }
     return;
   }
   var v = vec3f(sums[1], sums[2], sums[3]) / m + step.gravity.xyz * step.dt;
@@ -240,8 +253,10 @@ fn contacts(x0: vec3f, v0: vec3f, gi: u32, radius: f32) -> vec3f {
       if (ee > 1e-12) { u = clamp(dot(x - a, e) / ee, 0.0, 1.0); }
     }
     let d3 = x - mix(a, b, u);
-    let d = length(d3);
-    if (d >= k.a0.w + radius || d < 1e-9) { continue; }
+    let reach = k.a0.w + radius;
+    let dd = dot(d3, d3);
+    if (dd >= reach * reach || dd < 1e-18) { continue; }
+    let d = sqrt(dd);
     let cv = mix(k.a1.xyz - k.a0.xyz, k.b1.xyz - k.b0.xyz, u) / step.frameDt;
     let nrm = d3 / d;
     if (dot(v - cv, nrm) >= 0.0) { continue; }
@@ -257,8 +272,10 @@ fn contacts(x0: vec3f, v0: vec3f, gi: u32, radius: f32) -> vec3f {
   return v;
 }
 
+// Gather this substep's grid into the particles, move them, and scatter them into the next substep's grid (the
+// other grid buffer, bound as gridIn): one pass over the particles a substep instead of two.
 @compute @workgroup_size(${WORKGROUP})
-fn g2p(@builtin(global_invocation_id) id: vec3u) {
+fn g2p2g(@builtin(global_invocation_id) id: vec3u) {
   if (id.x >= step.counts.x) { return; }
   let i = id.x;
   let info = particles[i].info;
@@ -285,6 +302,8 @@ fn g2p(@builtin(global_invocation_id) id: vec3u) {
     if (step.t1 >= 1.0) {
       let m1 = bodies[info.y].m1;
       particles[i].F = mat3x3f(m1[0].xyz, m1[1].xyz, m1[2].xyz) * FL;
+    } else if (info.x >= 0 && info.z != 0) {
+      scatterRiding(grids[info.x], ride.x, ride.v);
     }
     return;
   }
@@ -311,10 +330,12 @@ fn g2p(@builtin(global_invocation_id) id: vec3u) {
   v = contacts(x, v, u32(info.x), dx / 4.0);
   let lo = g.origin.xyz + 1.5 * dx;
   let hi = g.origin.xyz + (f32(g.dims.x) - 1.5) * dx;
+  let xn = clamp(x + step.dt * v, lo, hi);
   particles[i].C = C;
   particles[i].F = F;
-  particles[i].x = vec4f(clamp(x + step.dt * v, lo, hi), determinant(F));
+  particles[i].x = vec4f(xn, determinant(F));
   particles[i].v = vec4f(v, 0.0);
+  if (step.t1 < 1.0) { scatterFree(g, xn, v, C, F, info.w); }
 }
 
 @compute @workgroup_size(${WORKGROUP})

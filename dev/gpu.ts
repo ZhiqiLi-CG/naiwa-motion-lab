@@ -4,6 +4,7 @@
  *   ?backend=webgpu|cpu|inline|auto   force a backend (default auto: the probe's choice)
  *   ?sim=gpu-mpm|cpu-constraints      the simulator (default gpu-mpm)
  *   ?pose=free|bend|dance             free standing, a driven 50° forward bend, a driven hop with hands on the belly
+ *   ?workers=N                        CPU workers (default: the cores less two, at most 12)
  *   ?show=particles,bones,xray        overlays; any block setting by its key (gridCell=2.5&youngModulus=3…)
  * Click pokes, drag grabs and throws. window.__gpu has poke(), stats() and the sim for scripted screenshots.
  */
@@ -11,7 +12,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { BoneName, PhysicsParams, RigSpec } from "../src/contracts";
 import { createFrogSim, initPhysics, listSimulators, type LabFrogSim, type Settings } from "../src/sim";
-import { backendLabel, forceBackend, MpmFlesh, probeDevices, registerGpuSimulators, type BackendKind } from "../src/sim/gpu";
+import { backendLabel, forceBackend, MpmFlesh, probeDevices, registerGpuSimulators, setWorkerCount, type BackendKind } from "../src/sim/gpu";
 import { tr } from "../src/i18n";
 
 const url = new URLSearchParams(location.search);
@@ -41,6 +42,7 @@ const params: PhysicsParams = { softness: 0.85, bounciness: 0.65, gravity: 1, be
 await initPhysics();
 await probeDevices();
 forceBackend(forced[url.get("backend") ?? "auto"] ?? null);
+if (url.has("workers")) setWorkerCount(Number(url.get("workers")));
 registerGpuSimulators();
 const { loadCharacter } = await import("../src/character");
 const spec: RigSpec = (await loadCharacter("/models/naiwa.glb")).spec;

@@ -110,7 +110,7 @@ export class MpmFlesh implements FleshBlock {
 
   constructor(private scene: Scene, settings: Readonly<Settings>, model: MpmModel, readonly backend: MpmBackend) {
     this.model = model;
-    this.frame = new FrameBuilder(scene.parts);
+    this.frame = new FrameBuilder(scene.parts, model.particleMass);
     this.material = materialOf(settings);
     this.params = scene.params;
     for (const pm of this.model.parts) this.views.set(pm.part, new PartView(this, pm));
@@ -327,7 +327,7 @@ function parameters(): SimParameter[] {
       help: { zh: "Kelvin–Voigt 黏性阻尼（“弹”滑块再乘上去）。", en: "Kelvin–Voigt viscous damping (the bounciness slider scales it)." },
     },
     {
-      key: "gridCell", kind: "number", default: gpu ? 2.5 : 3.5, min: 1.5, max: 6, step: 0.5, unit: "cm", rebuild: true,
+      key: "gridCell", kind: "number", default: gpu ? 4 : 5, min: 2, max: 6, step: 0.5, unit: "cm", rebuild: true,
       label: { zh: "网格分辨率（单元边长）", en: "Grid resolution (cell size)" },
       help: { zh: "每个单元 2×2×2 个粒子；越小越细，也越慢。", en: "2×2×2 particles per cell; smaller is finer and slower." },
     },

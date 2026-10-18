@@ -138,26 +138,24 @@ export function p2g(a: CpuArrays, s: number, order: Int32Array, from: number, to
     }
     const gx = (x - grids[go]) * inv, gy = (y - grids[go + 1]) * inv, gz = (z - grids[go + 2]) * inv;
     const bx = weights(gx, wx, n), by = weights(gy, wy, n), bz = weights(gz, wz, n);
+    // The stencil's corners bound the nodes it touches.
+    lo = Math.min(lo, off + (bx * n + by) * n + bz);
+    hi = Math.max(hi, off + ((bx + 2) * n + by + 2) * n + bz + 2);
+    // Attached particles scatter into the node's second half; their affine part is zero. The affine sum
+    // A (x_node − x_p) is built axis by axis, so the innermost loop does little.
+    const k0 = attached ? 4 : 0, dz0 = (bz - gz) * dx;
     for (let i = 0; i < 3; i++) {
-      const dxp = (bx + i - gx) * dx;
+      const dxp = (bx + i - gx) * dx, tx = vx + a00 * dxp, ty = vy + a10 * dxp, tz = vz + a20 * dxp;
       for (let j = 0; j < 3; j++) {
         const dyp = (by + j - gy) * dx, wij = wx[i] * wy[j];
-        const row = off + ((bx + i) * n + by + j) * n + bz;
-        for (let l = 0; l < 3; l++) {
-          const dzp = (bz + l - gz) * dx, w = wij * wz[l], node = row + l, ni = node * NODE_IN;
-          if (node < lo) lo = node;
-          if (node > hi) hi = node;
-          if (attached) {
-            gin[ni + 4] += w;
-            gin[ni + 5] += w * vx;
-            gin[ni + 6] += w * vy;
-            gin[ni + 7] += w * vz;
-          } else {
-            gin[ni] += w;
-            gin[ni + 1] += w * (vx + a00 * dxp + a01 * dyp + a02 * dzp);
-            gin[ni + 2] += w * (vy + a10 * dxp + a11 * dyp + a12 * dzp);
-            gin[ni + 3] += w * (vz + a20 * dxp + a21 * dyp + a22 * dzp);
-          }
+        const ux = tx + a01 * dyp, uy = ty + a11 * dyp, uz = tz + a21 * dyp;
+        let ni = (off + ((bx + i) * n + by + j) * n + bz) * NODE_IN + k0;
+        for (let l = 0; l < 3; l++, ni += NODE_IN) {
+          const dzp = dz0 + l * dx, w = wij * wz[l];
+          gin[ni] += w;
+          gin[ni + 1] += w * (ux + a02 * dzp);
+          gin[ni + 2] += w * (uy + a12 * dzp);
+          gin[ni + 3] += w * (uz + a22 * dzp);
         }
       }
     }
@@ -207,7 +205,8 @@ export function gridUpdate(a: CpuArrays, s: number, from: number, to: number, gi
     const out = node * NODE_OUT, ni = (node - base) * NODE_IN;
     const m = gin[ni];
     if (!(m > 1e-9)) {
-      for (let k = 0; k < NODE_OUT; k++) gridOut[out + k] = 0;
+      // Read this substep only if attached particles scattered here (they gather the bone impulse, none here).
+      if (gin[ni + 4] > 0) for (let k = 0; k < NODE_OUT; k++) gridOut[out + k] = 0;
       continue;
     }
     while (g + 1 < nGrids && node >= gridsI[(g + 1) * G.STRIDE + G.OFFSET]) g++;
@@ -235,17 +234,44 @@ function collide(vx: number, vy: number, vz: number, cx: number, cy: number, cz:
   const vn = rx * nx + ry * ny + rz * nz;
   if (vn >= 0) return false;
   rx -= vn * nx; ry -= vn * ny; rz -= vn * nz;
-  const t = Math.hypot(rx, ry, rz);
+  const t = Math.sqrt(rx * rx + ry * ry + rz * rz);
   const keep = t <= -mu * vn ? 0 : 1 + (mu * vn) / t;
   hit[0] = cx + rx * keep; hit[1] = cy + ry * keep; hit[2] = cz + rz * keep;
   return true;
 }
 
+/** The contact shapes at a substep's end, once per substep (not per particle): ends, radius, kind, grid mask,
+ *  velocity at both ends, and a bounding sphere for a quick reject. */
+const SHAPE = 20;
+let shapes = new Float64Array(0);
+function prepareShapes(a: CpuArrays, s: number): number {
+  const { steps, stepsI, colliders: k } = a;
+  const so = s * S.WORDS, t1 = steps[so + S.T1], frameDt = steps[so + S.FRAME_DT], n = stepsI[so + S.COUNTS + 2];
+  if (shapes.length < n * SHAPE) shapes = new Float64Array(n * SHAPE);
+  for (let c = 0; c < n; c++) {
+    const co = c * K.STRIDE, o = c * SHAPE;
+    for (let j = 0; j < 3; j++) {
+      shapes[o + j] = k[co + j] + (k[co + K.A1 + j] - k[co + j]) * t1;
+      shapes[o + 3 + j] = k[co + K.B0 + j] + (k[co + K.B1 + j] - k[co + K.B0 + j]) * t1;
+      shapes[o + 10 + j] = (k[co + K.A1 + j] - k[co + j]) / frameDt;
+      shapes[o + 13 + j] = (k[co + K.B1 + j] - k[co + K.B0 + j]) / frameDt;
+      shapes[o + 16 + j] = (shapes[o + j] + shapes[o + 3 + j]) / 2;
+    }
+    shapes[o + 6] = k[co + K.R];
+    shapes[o + 7] = k[co + K.KIND];
+    shapes[o + 8] = k[co + K.MASK];
+    shapes[o + 9] = k[co + K.FRICTION];
+    const half = Math.sqrt((shapes[o + 3] - shapes[o]) ** 2 + (shapes[o + 4] - shapes[o + 1]) ** 2 + (shapes[o + 5] - shapes[o + 2]) ** 2) / 2;
+    shapes[o + 19] = half + k[co + K.R];
+  }
+  return n;
+}
+
 /** The contacts of free particle o (velocity at P.V, position at the substep's start) over this substep: velocity
  *  into a surface removed, friction along it, the impulse (particle masses · m/s) to what it touched. */
-function contacts(a: CpuArrays, s: number, o: number, g: number, radius: number, acc: Float64Array) {
-  const { pf, steps, stepsI, colliders } = a;
-  const so = s * S.WORDS, dt = steps[so + S.DT], t1 = steps[so + S.T1], frameDt = steps[so + S.FRAME_DT];
+function contacts(a: CpuArrays, s: number, o: number, g: number, radius: number, nShapes: number, acc: Float64Array) {
+  const { pf, steps } = a;
+  const so = s * S.WORDS, dt = steps[so + S.DT];
   let vx = pf[o + P.V], vy = pf[o + P.V + 1], vz = pf[o + P.V + 2];
   // Where it would end the substep: the test point.
   const x = pf[o] + dt * vx, y = pf[o + 1] + dt * vy, z = pf[o + 2] + dt * vz;
@@ -254,27 +280,24 @@ function contacts(a: CpuArrays, s: number, o: number, g: number, radius: number,
     vx = hit[0]; vy = hit[1]; vz = hit[2];
     acc[ACC.FLOOR + g] += 1;
   }
-  const n = stepsI[so + S.COUNTS + 2];
-  for (let c = 0; c < n; c++) {
-    const co = c * K.STRIDE;
-    if (!((colliders[co + K.MASK] >> g) & 1)) continue;
-    const ax = colliders[co] + (colliders[co + K.A1] - colliders[co]) * t1, ay = colliders[co + 1] + (colliders[co + K.A1 + 1] - colliders[co + 1]) * t1;
-    const az = colliders[co + 2] + (colliders[co + K.A1 + 2] - colliders[co + 2]) * t1;
-    const bx = colliders[co + K.B0] + (colliders[co + K.B1] - colliders[co + K.B0]) * t1, by = colliders[co + K.B0 + 1] + (colliders[co + K.B1 + 1] - colliders[co + K.B0 + 1]) * t1;
-    const bz = colliders[co + K.B0 + 2] + (colliders[co + K.B1 + 2] - colliders[co + K.B0 + 2]) * t1;
+  for (let c = 0; c < nShapes; c++) {
+    const q = c * SHAPE, bound = shapes[q + 19] + radius;
+    const cx = x - shapes[q + 16], cy = y - shapes[q + 17], cz = z - shapes[q + 18];
+    if (cx * cx + cy * cy + cz * cz >= bound * bound || !((shapes[q + 8] >> g) & 1)) continue;
+    const ax = shapes[q], ay = shapes[q + 1], az = shapes[q + 2], ex = shapes[q + 3] - ax, ey = shapes[q + 4] - ay, ez = shapes[q + 5] - az;
     let u = 0;
-    if (colliders[co + K.KIND] !== KIND_SPHERE) {
-      const ex = bx - ax, ey = by - ay, ez = bz - az, ee = ex * ex + ey * ey + ez * ez;
+    if (shapes[q + 7] !== KIND_SPHERE) {
+      const ee = ex * ex + ey * ey + ez * ez;
       u = ee > 1e-12 ? Math.min(1, Math.max(0, ((x - ax) * ex + (y - ay) * ey + (z - az) * ez) / ee)) : 0;
     }
-    const px = x - (ax + (bx - ax) * u), py = y - (ay + (by - ay) * u), pz = z - (az + (bz - az) * u);
-    const d = Math.hypot(px, py, pz);
-    if (d >= colliders[co + K.R] + radius || d < 1e-9) continue;
+    const px = x - ax - ex * u, py = y - ay - ey * u, pz = z - az - ez * u;
+    const reach = shapes[q + 6] + radius, dd = px * px + py * py + pz * pz;
+    if (dd >= reach * reach || dd < 1e-18) continue;
+    const d = Math.sqrt(dd);
     // The shape's velocity there: its ends move straight through the frame.
-    const cvx = ((colliders[co + K.A1] - colliders[co]) * (1 - u) + (colliders[co + K.B1] - colliders[co + K.B0]) * u) / frameDt;
-    const cvy = ((colliders[co + K.A1 + 1] - colliders[co + 1]) * (1 - u) + (colliders[co + K.B1 + 1] - colliders[co + K.B0 + 1]) * u) / frameDt;
-    const cvz = ((colliders[co + K.A1 + 2] - colliders[co + 2]) * (1 - u) + (colliders[co + K.B1 + 2] - colliders[co + K.B0 + 2]) * u) / frameDt;
-    if (!collide(vx, vy, vz, cvx, cvy, cvz, px / d, py / d, pz / d, colliders[co + K.FRICTION])) continue;
+    const cvx = shapes[q + 10] * (1 - u) + shapes[q + 13] * u, cvy = shapes[q + 11] * (1 - u) + shapes[q + 14] * u;
+    const cvz = shapes[q + 12] * (1 - u) + shapes[q + 15] * u;
+    if (!collide(vx, vy, vz, cvx, cvy, cvz, px / d, py / d, pz / d, shapes[q + 9])) continue;
     const ix = vx - hit[0], iy = vy - hit[1], iz = vz - hit[2], ao = ACC.COLLIDER + c * 8;
     acc[ao] += ix; acc[ao + 1] += iy; acc[ao + 2] += iz;
     acc[ao + 3] += y * iz - z * iy; acc[ao + 4] += z * ix - x * iz; acc[ao + 5] += x * iy - y * ix;
@@ -288,6 +311,7 @@ function contacts(a: CpuArrays, s: number, o: number, g: number, radius: number,
 export function g2p(a: CpuArrays, s: number, order: Int32Array, from: number, to: number, acc: Float64Array) {
   const { pf, pi, steps, grids, gridsI, gridOut, bodies } = a;
   const so = s * S.WORDS, dt = steps[so + S.DT], t0 = steps[so + S.T0], t1 = steps[so + S.T1], frameDt = steps[so + S.FRAME_DT];
+  const nShapes = prepareShapes(a, s);
   for (let k = from; k < to; k++) {
     const o = order[k] * P.STRIDE, g = pi[o + P.INFO], body = pi[o + P.INFO + 1];
     if (body >= 0) {
@@ -320,21 +344,27 @@ export function g2p(a: CpuArrays, s: number, order: Int32Array, from: number, to
     const go = g * G.STRIDE, dx = grids[go + G.DX], inv = 1 / dx, n = gridsI[go + G.NX], off = gridsI[go + G.OFFSET];
     const gx = (pf[o] - grids[go]) * inv, gy = (pf[o + 1] - grids[go + 1]) * inv, gz = (pf[o + 2] - grids[go + 2]) * inv;
     const bx = weights(gx, wx, n), by = weights(gy, wy, n), bz = weights(gz, wz, n);
+    // B = Σ w v (x_node − x_p)ᵀ, column by column: the x column sums over i of dx_i times what the j, l loops
+    // gathered, and likewise for y and z, so the innermost loop only adds.
     let vx = 0, vy = 0, vz = 0;
     let b00 = 0, b01 = 0, b02 = 0, b10 = 0, b11 = 0, b12 = 0, b20 = 0, b21 = 0, b22 = 0;
+    const dz0 = (bz - gz) * dx;
     for (let i = 0; i < 3; i++) {
       const dxp = (bx + i - gx) * dx;
+      let sx = 0, sy = 0, sz = 0;
       for (let j = 0; j < 3; j++) {
-        const dyp = (by + j - gy) * dx, wij = wx[i] * wy[j], row = off + ((bx + i) * n + by + j) * n + bz;
-        for (let l = 0; l < 3; l++) {
-          const dzp = (bz + l - gz) * dx, w = wij * wz[l], no = (row + l) * NODE_OUT;
-          const ux = w * gridOut[no], uy = w * gridOut[no + 1], uz = w * gridOut[no + 2];
-          vx += ux; vy += uy; vz += uz;
-          b00 += ux * dxp; b01 += ux * dyp; b02 += ux * dzp;
-          b10 += uy * dxp; b11 += uy * dyp; b12 += uy * dzp;
-          b20 += uz * dxp; b21 += uz * dyp; b22 += uz * dzp;
+        const dyp = (by + j - gy) * dx, wij = wx[i] * wy[j];
+        let no = (off + ((bx + i) * n + by + j) * n + bz) * NODE_OUT, rx = 0, ry = 0, rz = 0;
+        for (let l = 0; l < 3; l++, no += NODE_OUT) {
+          const w = wij * wz[l], ux = w * gridOut[no], uy = w * gridOut[no + 1], uz = w * gridOut[no + 2], dzp = dz0 + l * dx;
+          rx += ux; ry += uy; rz += uz;
+          b02 += ux * dzp; b12 += uy * dzp; b22 += uz * dzp;
         }
+        sx += rx; sy += ry; sz += rz;
+        b01 += rx * dyp; b11 += ry * dyp; b21 += rz * dyp;
       }
+      vx += sx; vy += sy; vz += sz;
+      b00 += sx * dxp; b10 += sy * dxp; b20 += sz * dxp;
     }
     pf[o + P.V] = vx; pf[o + P.V + 1] = vy; pf[o + P.V + 2] = vz;
     // C = B · 4/dx² (for quadratic B-splines), stored column-major.
@@ -352,7 +382,7 @@ export function g2p(a: CpuArrays, s: number, order: Int32Array, from: number, to
     }
     // Contacts, particle by particle (a node reaches a cell past the flesh, so contacts on the grid would touch
     // early): the floor, other parts' flesh capsules, balls. A particle is a sphere of half its spacing, dx/4.
-    contacts(a, s, o, g, dx / 4, acc);
+    contacts(a, s, o, g, dx / 4, nShapes, acc);
     vx = pf[o + P.V]; vy = pf[o + P.V + 1]; vz = pf[o + P.V + 2];
     // Kept inside the grid's interior (the stencil must fit): only a part stretched past its grid's margin is held.
     const lo0 = 1.5 * dx, hi0 = (n - 1.5) * dx;

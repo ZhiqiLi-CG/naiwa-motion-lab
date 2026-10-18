@@ -58,6 +58,11 @@ export function forceBackend(kind: BackendKind | null): void {
   forced = kind;
 }
 
+/** Use this many CPU workers (the dev page's ?workers=; benchmarks). */
+export function setWorkerCount(n: number): void {
+  if (probe) probe.cpu.workers = Math.max(1, Math.round(n));
+}
+
 /** The backend the GPU example uses here: the forced one if it can run, else the best that can. */
 export function chooseBackend(): BackendKind {
   const p = probe;

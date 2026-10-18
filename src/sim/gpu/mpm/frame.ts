@@ -18,6 +18,8 @@ interface Slot {
   end: Float32Array | null;
   /** Frames left before a released slot may be reused (results still in flight name it). */
   cooling: number;
+  /** The last impulse given it (to tell a steady load from a push). */
+  last: [number, number, number];
 }
 
 interface Edit {
@@ -30,6 +32,9 @@ interface Edit {
 /** What a contact shape's impulse goes to. */
 type Target = { bone: SimBone } | { ball: SimBall };
 
+/** A change in a body's impulse from one frame to the next that wakes it: in particle masses × m/s (about a
+ *  hundred particles' worth of a 1 cm/s nudge). */
+const WAKE = 1;
 /** Results can arrive a few frames late (the GPU's staging ring): slots stay reserved that long after release. */
 const COOLING = 6;
 const pose = new THREE.Matrix4(), v = new THREE.Vector3(), q = new THREE.Quaternion(), ONE = new THREE.Vector3(1, 1, 1);
@@ -42,7 +47,7 @@ export class FrameBuilder {
   private targets: Target[] = [];
   private ballContact = new Set<SimBall>();
 
-  constructor(private parts: readonly SimPart[]) {}
+  constructor(private parts: readonly SimPart[], private particleMass: number) {}
 
   /* Edits (coalesced per particle, applied in the order detach, position, velocity, attach) --------------------- */
 
@@ -97,7 +102,7 @@ export class FrameBuilder {
     if (s !== undefined) return s;
     const free = this.slots.findIndex((x) => x === null);
     if (free < 0) throw new Error(`sim/gpu: particles ride on more than ${MAX_BODIES} bodies`);
-    this.slots[free] = { body, count: 0, end: null, cooling: 0 };
+    this.slots[free] = { body, count: 0, end: null, cooling: 0, last: [0, 0, 0] };
     this.slotOf.set(body.handle, free);
     return free;
   }
@@ -195,7 +200,13 @@ export class FrameBuilder {
   apply(out: FrameOutput, scene: Scene) {
     this.slots.forEach((slot, k) => {
       if (!slot || slot.cooling > 0 || !slot.body.isDynamic()) return;
-      push(slot.body, out.bodyImpulse, k);
+      // A resting frog may sleep (as Rapier's own soft bodies let it): the steady weight of the flesh on a sleeping
+      // bone is held by the floor already. Only a change in the flesh's push (a poke, a landing) wakes it.
+      const J = out.bodyImpulse, j = [J[k * 6], J[k * 6 + 1], J[k * 6 + 2]] as [number, number, number];
+      const change = Math.hypot(j[0] - slot.last[0], j[1] - slot.last[1], j[2] - slot.last[2]);
+      slot.last = j;
+      if (slot.body.isSleeping() && change < WAKE * this.particleMass) return;
+      push(slot.body, J, k);
     });
     const touching = new Set<SimBall>();
     this.targets.forEach((t, c) => {

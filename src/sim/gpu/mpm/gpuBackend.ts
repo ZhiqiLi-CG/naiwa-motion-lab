@@ -16,7 +16,7 @@ import { ACC, ACC_SCALE, B, E, G, K, MAX_BODIES, MAX_COLLIDERS, MAX_GRIDS, MAX_S
 import { BIND, KERNELS, READ_ONLY, SHADER, WORKGROUP, type KernelName } from "./shaders";
 
 const MAX_EDITS = 1 << 16;
-const RING = 3;
+const RING = 4;
 /** Uniform slots after the substeps': the frame's (edits, throw) and the surface's. */
 const SLOT_FRAME = MAX_SUBSTEPS, SLOT_SURFACE = MAX_SUBSTEPS + 1;
 
@@ -29,8 +29,9 @@ interface Staging {
 export class GpuBackend implements MpmBackend {
   readonly kind = "webgpu" as const;
   private pipelines = new Map<KernelName, GpuComputePipeline>();
-  private groups = new Map<KernelName, [GpuBindGroup, GpuBindGroup]>();
-  private buf!: Record<"step" | "grids" | "bodies" | "colliders" | "particles" | "gridIn" | "gridOut" | "acc" | "edits" | "restWords" | "embedIndex" | "embedWeight" | "vertexRest" | "out" | "query", GpuBuffer>;
+  /** Per kernel: the uniforms' group, and its storage group with grid buffer A or B as gridIn. */
+  private groups = new Map<KernelName, [GpuBindGroup, GpuBindGroup, GpuBindGroup]>();
+  private buf!: Record<"step" | "grids" | "bodies" | "colliders" | "particles" | "gridIn" | "gridNext" | "gridOut" | "acc" | "edits" | "restWords" | "embedIndex" | "embedWeight" | "vertexRest" | "out" | "query", GpuBuffer>;
   private ring: Staging[] = [];
   private querySet: GpuQuerySet | null = null;
   /** Per-kernel timing (a pass per dispatch, every 30th frame; slower): set `profiling` to fill `profile` (ms/frame). */
@@ -91,7 +92,9 @@ export class GpuBackend implements MpmBackend {
       bodies: make(MAX_BODIES * B.STRIDE * 4, uniform, "bodies"),
       colliders: make(MAX_COLLIDERS * K.STRIDE * 4, uniform, "colliders"),
       particles: make(m.particles * P.STRIDE * 4, storage, "particles"),
-      gridIn: make(m.nodes * NODE_IN * 4, storage, "gridIn"),
+      // Two scatter grids: a substep's gather scatters into the other one for the next substep.
+      gridIn: make(m.nodes * NODE_IN * 4, storage, "gridA"),
+      gridNext: make(m.nodes * NODE_IN * 4, storage, "gridB"),
       gridOut: make(m.nodes * NODE_OUT * 4, storage, "gridOut"),
       acc: make(ACC.WORDS * 4, storage, "acc"),
       edits: make(MAX_EDITS * E.STRIDE * 4, storage, "edits"),
@@ -115,17 +118,15 @@ export class GpuBackend implements MpmBackend {
     const byBinding0: Record<number, { buffer: GpuBuffer; size?: number }> = {
       [BIND.step]: ref(this.buf.step, S.WORDS * 4), [BIND.grids]: ref(this.buf.grids), [BIND.bodies]: ref(this.buf.bodies), [BIND.colliders]: ref(this.buf.colliders),
     };
-    const byBinding1: Record<number, { buffer: GpuBuffer }> = {
-      [BIND.particles]: ref(this.buf.particles), [BIND.gridIn]: ref(this.buf.gridIn), [BIND.gridOut]: ref(this.buf.gridOut), [BIND.acc]: ref(this.buf.acc),
+    const byBinding1 = (grid: GpuBuffer): Record<number, { buffer: GpuBuffer }> => ({
+      [BIND.particles]: ref(this.buf.particles), [BIND.gridIn]: ref(grid), [BIND.gridOut]: ref(this.buf.gridOut), [BIND.acc]: ref(this.buf.acc),
       [BIND.edits]: ref(this.buf.edits), [BIND.restWords]: ref(this.buf.restWords), [BIND.embedIndex]: ref(this.buf.embedIndex),
       [BIND.embedWeight]: ref(this.buf.embedWeight), [BIND.vertexRest]: ref(this.buf.vertexRest), [BIND.out]: ref(this.buf.out),
-    };
+    });
     const uniforms = d.createBindGroup({ layout: g0, entries: Object.entries(byBinding0).map(([b, resource]) => ({ binding: Number(b), resource })) });
     for (const name of names) {
-      this.groups.set(name, [
-        uniforms,
-        d.createBindGroup({ layout: g1.get(name)!, entries: KERNELS[name].g1.map((binding) => ({ binding, resource: byBinding1[binding] })) }),
-      ]);
+      const group = (grid: GpuBuffer) => d.createBindGroup({ layout: g1.get(name)!, entries: KERNELS[name].g1.map((binding) => ({ binding, resource: byBinding1(grid)[binding] })) });
+      this.groups.set(name, [uniforms, group(this.buf.gridIn), group(this.buf.gridNext)]);
     }
     const err = await d.popErrorScope();
     if (err) throw new Error(`sim/gpu: ${err.message}`);
@@ -136,6 +137,7 @@ export class GpuBackend implements MpmBackend {
     this.ready = [];
     this.device.queue.writeBuffer(this.buf.particles, 0, state);
     this.device.queue.writeBuffer(this.buf.gridIn, 0, new Int32Array(this.model.nodes * NODE_IN));
+    this.device.queue.writeBuffer(this.buf.gridNext, 0, new Int32Array(this.model.nodes * NODE_IN));
     this.device.queue.writeBuffer(this.buf.acc, 0, new Int32Array(ACC.WORDS));
   }
 
@@ -158,7 +160,8 @@ export class GpuBackend implements MpmBackend {
     const enc = d.createCommandEncoder();
     const profile = this.profiling && this.querySet && !this.profileBusy && this.frames % 30 === 0 ? this.profilePass() : null;
     let pass = enc.beginComputePass(this.querySet && !profile ? { timestampWrites: { querySet: this.querySet, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } } : undefined);
-    const run = (name: KernelName, slotIndex: number, threads: number) => {
+    /** `grid`: which scatter grid the kernel's gridIn is (0: A, 1: B). */
+    const run = (name: KernelName, slotIndex: number, threads: number, grid = 0) => {
       if (threads <= 0) return;
       if (profile) {
         pass.end();
@@ -166,20 +169,21 @@ export class GpuBackend implements MpmBackend {
         profile.names.push(name);
         pass = enc.beginComputePass({ timestampWrites: { querySet: profile.queries, beginningOfPassWriteIndex: 2 * k, endOfPassWriteIndex: 2 * k + 1 } });
       }
-      const [g0, g1] = this.groups.get(name)!;
+      const [g0, ...g1] = this.groups.get(name)!;
       pass.setPipeline(this.pipelines.get(name)!);
       pass.setBindGroup(0, g0, [slotIndex * S_ALIGN]);
-      pass.setBindGroup(1, g1);
+      pass.setBindGroup(1, g1[grid]);
       pass.dispatchWorkgroups(Math.ceil(threads / WORKGROUP));
     };
     const N = m.particles;
     run("applyEdits", SLOT_FRAME, frame.edits);
     const dv = frame.steps.subarray(S.DV, S.DV + 3);
     if (dv[0] || dv[1] || dv[2]) run("addVelocity", SLOT_FRAME, N);
+    // Substep s reads grid s % 2 and scatters into the other; the frame starts and ends with both clear.
+    run("p2g", 0, N, 0);
     for (let s = 0; s < n; s++) {
-      run("p2g", s, N);
-      run("gridUpdate", s, m.nodes);
-      run("g2p", s, N);
+      run("gridUpdate", s, m.nodes, s % 2);
+      run("g2p2g", s, N, (s + 1) % 2);
     }
     run("reduceReactions", SLOT_FRAME, N);
     run("pack", SLOT_FRAME, N);
