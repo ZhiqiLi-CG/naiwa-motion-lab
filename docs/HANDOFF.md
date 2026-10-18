@@ -64,6 +64,11 @@ MediaPipe 的 wasm 和姿态模型已自托管在 `public/mediapipe/`（运行�
 15. **推迟到这一版验收后**：本机 Lab 模式——像 RobotGen 那样的 Codex 对话界面 +“优化手感”“生成新舞蹈”按钮（方案见 `docs/next/lab.md`）。
 16. **协作规则**：提交信息不加 AI 署名（Co-Authored-By / Generated with）；GitHub 操作（push、remote 等）由用户授权后通过 Codex CLI
     会话执行；向用户汇报用中文；并行要多（“尽量多启动几个subagent”）。
+17. **检测 GPU**（2026-10-17）：页面检测有没有可用的 GPU（非软件 / fallback 的 WebGPU 适配器）。没有 GPU 时 MPM / FEM
+    **不禁用**，改走 CPU 并行（Web Worker + SharedArrayBuffer，需要 COOP/COEP 头）；同一个算法两套后端，页面显示当前用的是哪个。
+18. **检测本地 Codex CLI 登录**（2026-10-17）：本机 Lab 服务检测 Codex CLI 是否安装并登录（`codex login status`）；登录了就在
+    很多地方提供“用 Codex 优化”（模拟参数 / 分部位软度、retarget 参数和指标、代码实验室里用户的板块、舞蹈）；没有就隐藏这些入口
+    并说明怎么登录。见 `docs/next/lab.md`。
 
 版权提醒：奶蛙是 2024 年从奶龙（第七印象的商业 IP）二创出来的梗；仓库目前是私有的，公开发布前需要用户决定。
 
