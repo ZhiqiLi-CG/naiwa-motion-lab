@@ -45,6 +45,35 @@ describe.each(SIM_LIBRARY_SIMULATORS.map((s) => s.id))("%s on the test rig", (id
     sim.dispose();
   }, 30000);
 
+  it("takes a pinch, a throw, a landing and a ball, and resets", async () => {
+    const spec = createTestRigSpec();
+    const sim = createFrogSim(spec, PARAMS, { id, settings: {} });
+    await sim.ready;
+    sim.setMode("free");
+    for (let k = 0; k < 10; k++) sim.step(1 / 60);
+    // Pinch the belly and pull it out 8 cm, then let go.
+    const hit = sim.raycast(new THREE.Ray(new THREE.Vector3(0, 0.45, 2), new THREE.Vector3(0, 0, -1)));
+    expect(hit).not.toBeNull();
+    const pinch = sim.grab(hit!);
+    pinch.move(hit!.point.clone().add(new THREE.Vector3(0, 0, 0.08)));
+    for (let k = 0; k < 20; k++) sim.step(1 / 60);
+    pinch.release(new THREE.Vector3(0, 3, 0));
+    // Thrown up, it lands; a ball hits the belly on the way down.
+    sim.throwBall(new THREE.Vector3(0, 0.5, 1.5), new THREE.Vector3(0, 0, -8));
+    for (let k = 0; k < 150; k++) sim.step(1 / 60);
+    const body = sim.readBody();
+    expect(body.every(Number.isFinite)).toBe(true);
+    let lowest = Infinity;
+    for (let v = 1; v < body.length; v += 3) lowest = Math.min(lowest, body[v]);
+    expect(lowest).toBeGreaterThan(-0.05);
+    const s = sim.stats();
+    expect(Math.abs(s.volume!.body - 1)).toBeLessThan(0.25);
+    sim.reset();
+    sim.step(1 / 60);
+    expect(sim.readBody().every(Number.isFinite)).toBe(true);
+    sim.dispose();
+  }, 30000);
+
   it("is two-way: a push on the belly moves the bones, and the frog gains the push's momentum", async () => {
     const spec = createTestRigSpec();
     // Twin frogs without gravity (the floor then exchanges little momentum with them); only one is pushed.
