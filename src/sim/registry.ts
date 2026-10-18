@@ -66,6 +66,7 @@ export function listSimulators(): SimulatorInfo[] {
       : used.map((b) => b?.available?.() ?? null).find((u) => u) ?? null;
     return {
       id: def.id, name: def.name, summary: def.summary, origin, unavailable,
+      backend: used.map((b) => b?.backend?.() ?? null).find((b) => b) ?? null,
       device: used.some((b) => b?.device === "gpu") ? "gpu" : "cpu",
       parameters: used.flatMap((b) => b?.parameters ?? []),
     };

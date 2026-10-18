@@ -255,8 +255,12 @@ export interface BlockDefinition<S extends Slot = Slot> {
   parameters: SimParameter[];
   /** Neighbouring slots whose job this block does itself; the core builds no block there. */
   covers?: Slot[];
-  /** null when it can run in this browser (and with these neighbours), else why not. */
+  /** null when it can run in this browser (and with these neighbours), else why not. Synchronous: probe the device
+   *  once at start-up (initPhysics awaits it) and read the result here. */
   available?(): Text | null;
+  /** What it runs on here when that varies, e.g. "WebGPU", or { zh: "CPU 并行 · 8 线程", en: "CPU parallel · 8 workers" }
+   *  where there is no usable GPU. Shown next to the simulator in the Lab. */
+  backend?(): Text | string | null;
   /** Build it. Blocks of the earlier slots are in the scene already (a slot it covers is not). */
   create(scene: Scene, settings: Readonly<Settings>): SlotBlocks[S] | Promise<SlotBlocks[S]>;
 }
