@@ -135,7 +135,7 @@ export function mountLab(opts: LabOptions): MountedLab {
     rightEdge() {
       const lab = opts.codeLab?.insets().right ?? 0;
       const sim = document.querySelector<HTMLElement>(".nw-ui[data-lab='open'] .nw-panel--sim");
-      const simEdge = sim && sim.offsetParent !== null ? innerWidth - sim.getBoundingClientRect().left : 0;
+      const simEdge = sim && sim.getClientRects().length > 0 ? innerWidth - sim.getBoundingClientRect().left : 0;
       return Math.max(lab, simEdge);
     },
   });

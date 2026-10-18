@@ -4,6 +4,7 @@
  *  (a moved slider leaves the preset, which both panels then show as modified). */
 import type { AppState, MaterialPreset, PhysicsParams } from "../contracts";
 import { FEEL_KEY, copy, presetName, type FeelSliderId } from "./copy";
+import { codexButton } from "./codex";
 import { changed, type Ctx, type Part } from "./ctx";
 import { append, h, icon } from "./dom";
 import { matchingPreset } from "./format";
@@ -125,7 +126,7 @@ export function createFeelPanel(ctx: Ctx, host: HTMLElement): Part {
     h(
       "div",
       { class: "nw-section" },
-      h("div", { class: "nw-section-head" }, h("h3", { class: "nw-section-title" }, T.feel.material), reset),
+      h("div", { class: "nw-section-head" }, h("h3", { class: "nw-section-title" }, T.feel.material), h("span", { class: "nw-section-actions" }, codexButton({ kind: "feel" }, { zh: "优化手感", en: "Tune the feel" }), reset)),
       h("div", { class: "nw-chips", role: "group", "aria-label": T.feel.material }, ...chips),
     ),
     h("div", { class: "nw-feel-sliders" }, ...sliders.map((x) => x.row)),

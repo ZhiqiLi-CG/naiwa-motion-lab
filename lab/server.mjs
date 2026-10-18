@@ -76,7 +76,7 @@ export function repoPath(repo, p) {
  * The server, not yet listening. Tests pass their own `codex` (a fake turn runner) and `status`.
  * @param {{ repo?: string, codex?: Function, status?: { get(force?: boolean): Promise<object> }, effort?: string | null, model?: string | null }} o
  */
-export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status, effort = process.env.NAIWA_LAB_EFFORT ?? null, model = process.env.NAIWA_LAB_MODEL ?? null } = {}) {
+export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status, log = () => {}, effort = process.env.NAIWA_LAB_EFFORT ?? null, model = process.env.NAIWA_LAB_MODEL ?? null } = {}) {
   const codexStatus = status ?? createStatus();
   const turn =
     codex ??
@@ -143,13 +143,19 @@ export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
       const client = { res, page: url.searchParams.get("page") === "1" };
       clients.add(client);
-      if (client.page) pageClient = client;
+      if (client.page) {
+        pageClient = client;
+        log(`page connected (${req.headers.origin ?? "no origin"})`);
+      }
       write(res, { ch: "hello", ...(await statusBody()), convs: chat.list() });
       const keep = setInterval(() => res.write(": keep-alive\n\n"), 15000);
-      req.on("close", () => {
+      res.on("close", () => {
         clearInterval(keep);
         clients.delete(client);
-        if (pageClient === client) pageClient = [...clients].reverse().find((c) => c.page) ?? null;
+        if (pageClient === client) {
+          pageClient = [...clients].reverse().find((c) => c.page) ?? null;
+          log(pageClient ? "page disconnected; another page is open" : "page disconnected");
+        }
       });
       return;
     }
@@ -172,6 +178,7 @@ export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status
       const s = await codexStatus.get();
       if (!codex && !s.loggedIn) throw new HttpError(503, "Codex CLI is not logged in");
       const { conv } = await chat.send({ conv: b.conv ?? null, text: b.text, context: b.context ?? null, effort: b.effort ?? null });
+      log(`chat ${conv}: ${String(b.text).slice(0, 60)}`);
       return json({ conv });
     }
     let m = pathname.match(/^\/api\/chat\/([\w-]+)(\/stop)?$/);
@@ -190,7 +197,9 @@ export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status
       const b = await readJson(req);
       const s = await codexStatus.get();
       if (!codex && !s.loggedIn) throw new HttpError(503, "Codex CLI is not logged in");
-      return json({ run: await jobs.start(m[1], b.input ?? {}) });
+      const run = await jobs.start(m[1], b.input ?? {});
+      log(`job ${run}`);
+      return json({ run });
     }
     m = pathname.match(/^\/api\/runs\/([\w-]+)(\/stop)?$/);
     if (m) {
@@ -276,7 +285,7 @@ export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const i = process.argv.indexOf("--port");
   const port = i > 0 ? Number(process.argv[i + 1]) : Number(process.env.NAIWA_LAB_PORT ?? DEFAULT_PORT);
-  const lab = createLabServer();
+  const lab = createLabServer({ log: (m) => console.log(`${new Date().toLocaleTimeString()} ${m}`) });
   const p = await lab.listen(port);
   const s = await createStatus().get();
   console.log(`Naiwa Lab server on http://127.0.0.1:${p}/  (repo ${path.resolve(HERE, "..")})`);

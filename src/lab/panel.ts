@@ -46,29 +46,29 @@ const textOf = (t: Text | string | undefined): string => (t === undefined ? "" :
 const baseName = (p: string) => p.split("/").pop() ?? p;
 
 export function createPanel(host: HTMLElement, on: PanelHandlers) {
-  const status = h("span", { class: "nw-lab-status" }, h("span", { class: "nw-lab-status-dot" }), h("span", {}));
-  const log = h("div", { class: "nw-lab-log", role: "log", "aria-live": "polite" });
+  const status = h("span", { class: "nw-cx-status" }, h("span", { class: "nw-cx-status-dot" }), h("span", {}));
+  const log = h("div", { class: "nw-cx-log", role: "log", "aria-live": "polite" });
   const empty = h(
     "div",
-    { class: "nw-lab-empty" },
+    { class: "nw-cx-empty" },
     h("p", {}, tr(L.empty)),
-    h("div", { class: "nw-lab-suggest" }, ...L.suggestions.map((s) => h("button", { class: "nw-chip", type: "button", onclick: () => prefill(tr(s)) }, tr(s)))),
+    h("div", { class: "nw-cx-suggest" }, ...L.suggestions.map((s) => h("button", { class: "nw-chip", type: "button", onclick: () => prefill(tr(s)) }, tr(s)))),
   );
-  const busyLine = h("p", { class: "nw-lab-busy" }, h("span", { class: "nw-lab-spinner", "aria-hidden": "true" }), tr(L.thinking));
-  const items = h("div", { class: "nw-lab-items" });
+  const busyLine = h("p", { class: "nw-cx-busy" }, h("span", { class: "nw-cx-spinner", "aria-hidden": "true" }), tr(L.thinking));
+  const items = h("div", { class: "nw-cx-items" });
   log.append(empty, items, busyLine);
-  const composeHost = h("div", { class: "nw-lab-compose-host" });
-  const input = h("textarea", { class: "nw-input nw-lab-input", rows: "2", placeholder: tr(L.placeholder), "aria-label": tr(L.placeholder) });
-  const sendBtn = h("button", { class: "nw-btn nw-btn--primary nw-btn--sm nw-lab-send", type: "submit" });
-  const form = h("form", { class: "nw-lab-form" }, input, h("div", { class: "nw-lab-form-row" }, h("span", { class: "nw-lab-keys" }, tr(L.keys)), sendBtn));
+  const composeHost = h("div", { class: "nw-cx-compose-host" });
+  const input = h("textarea", { class: "nw-input nw-cx-input", rows: "2", placeholder: tr(L.placeholder), "aria-label": tr(L.placeholder) });
+  const sendBtn = h("button", { class: "nw-btn nw-btn--primary nw-btn--sm nw-cx-send", type: "submit" });
+  const form = h("form", { class: "nw-cx-form" }, input, h("div", { class: "nw-cx-form-row" }, h("span", { class: "nw-cx-keys" }, tr(L.keys)), sendBtn));
   const el = h(
     "section",
-    { class: "nw-lab", hidden: true, "aria-label": tr(L.title) },
+    { class: "nw-cx", hidden: true, "aria-label": tr(L.title) },
     h(
       "header",
-      { class: "nw-lab-head" },
-      h("span", { class: "nw-lab-mark" }, icon("sparkle")),
-      h("div", { class: "nw-lab-titles" }, h("h2", { class: "nw-lab-title" }, tr(L.title)), status),
+      { class: "nw-cx-head" },
+      h("span", { class: "nw-cx-mark" }, icon("sparkle")),
+      h("div", { class: "nw-cx-titles" }, h("h2", { class: "nw-cx-title" }, tr(L.title)), status),
       h("button", { class: "nw-icon-btn nw-icon-btn--sm", type: "button", "aria-label": tr(L.newChat), title: tr(L.newChat), onclick: () => on.newChat() }, icon("again")),
       h("button", { class: "nw-icon-btn nw-icon-btn--sm", type: "button", "aria-label": tr(L.close), title: tr(L.close), onclick: () => close() }, icon("close")),
     ),
@@ -110,14 +110,14 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
   function toolLine(x: Extract<StepItem, { kind: "tool" }>): HTMLElement {
     const head = h(
       "span",
-      { class: "nw-lab-tool-head" },
-      h("span", { class: "nw-lab-tool-dot", "aria-hidden": "true" }),
-      h("span", { class: "nw-lab-tool-kind" }, textOf(L.tools[x.tool] ?? L.tools.shell)),
-      h("code", { class: "nw-lab-tool-title", title: x.title }, x.title),
+      { class: "nw-cx-tool-head" },
+      h("span", { class: "nw-cx-tool-dot", "aria-hidden": "true" }),
+      h("span", { class: "nw-cx-tool-kind" }, textOf(L.tools[x.tool] ?? L.tools.shell)),
+      h("code", { class: "nw-cx-tool-title", title: x.title }, x.title),
     );
-    const cls = `nw-lab-tool nw-lab-tool--${x.status}${x.tool === "page" ? " nw-lab-tool--page" : ""}`;
+    const cls = `nw-cx-tool nw-cx-tool--${x.status}${x.tool === "page" ? " nw-cx-tool--page" : ""}`;
     if (!x.output.trim()) return h("div", { class: cls }, head);
-    return h("details", { class: cls }, h("summary", {}, head), h("pre", { class: "nw-lab-tool-out" }, x.output));
+    return h("details", { class: cls }, h("summary", {}, head), h("pre", { class: "nw-cx-tool-out" }, x.output));
   }
 
   function artifactCard(a: Artifact): HTMLElement {
@@ -142,53 +142,53 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
             .map(([k, v]) => `${k} ${(v as number).toFixed(2)}`)
             .join(" · ")
         : a.path;
-    const why = a.kind === "preset" && typeof a.data.why === "string" ? h("p", { class: "nw-lab-card-why" }, a.data.why) : null;
+    const why = a.kind === "preset" && typeof a.data.why === "string" ? h("p", { class: "nw-cx-card-why" }, a.data.why) : null;
     return h(
       "div",
-      { class: "nw-lab-card" },
-      h("div", { class: "nw-lab-card-head" }, h("span", { class: "nw-badge" }, textOf(L.artifacts[a.kind])), h("b", { class: "nw-lab-card-title" }, title)),
-      detail ? h("p", { class: "nw-lab-card-detail", title: detail }, detail) : null,
+      { class: "nw-cx-card" },
+      h("div", { class: "nw-cx-card-head" }, h("span", { class: "nw-badge" }, textOf(L.artifacts[a.kind])), h("b", { class: "nw-cx-card-title" }, title)),
+      detail ? h("p", { class: "nw-cx-card-detail", title: detail }, detail) : null,
       why,
-      h("div", { class: "nw-lab-card-actions" }, btn, a.kind !== "preset" && a.kind !== "file" ? h("a", { class: "nw-btn nw-btn--ghost nw-btn--sm", href: on.fileUrl(a.path), target: "_blank", rel: "noopener" }, tr(L.apply.file)) : null),
+      h("div", { class: "nw-cx-card-actions" }, btn, a.kind !== "preset" && a.kind !== "file" ? h("a", { class: "nw-btn nw-btn--ghost nw-btn--sm", href: on.fileUrl(a.path), target: "_blank", rel: "noopener" }, tr(L.apply.file)) : null),
     );
   }
 
   function stepEl(x: StepItem): HTMLElement {
     switch (x.kind) {
       case "assistant":
-        return h("div", { class: "nw-lab-msg nw-lab-msg--codex" }, h("div", { class: "nw-md" }, renderMarkdown(x.text)));
+        return h("div", { class: "nw-cx-msg nw-cx-msg--codex" }, h("div", { class: "nw-md" }, renderMarkdown(x.text)));
       case "tool":
         return toolLine(x);
       case "plan":
         return h(
           "div",
-          { class: "nw-lab-plan" },
-          h("span", { class: "nw-lab-plan-k" }, tr(L.plan)),
+          { class: "nw-cx-plan" },
+          h("span", { class: "nw-cx-plan-k" }, tr(L.plan)),
           h("ul", {}, ...x.items.map((t) => h("li", { class: t.done ? "is-done" : "" }, icon(t.done ? "check" : "free"), t.text))),
         );
       case "artifact":
         return artifactCard(x.artifact);
       case "error":
-        return h("p", { class: "nw-lab-error" }, icon("alert"), x.text);
+        return h("p", { class: "nw-cx-error" }, icon("alert"), x.text);
     }
   }
 
   function jobCard(x: Extract<FeedItem, { kind: "job" }>): HTMLElement {
-    const chip = h("span", { class: `nw-lab-chip nw-lab-chip--${x.status}` }, tr(L.job[x.status]));
+    const chip = h("span", { class: `nw-cx-chip nw-cx-chip--${x.status}` }, tr(L.job[x.status]));
     const stop = x.status === "running" ? h("button", { class: "nw-btn nw-btn--ghost nw-btn--sm", type: "button", onclick: () => on.stopJob(x.run) }, icon("stop"), tr(L.job.stop)) : null;
     const pct = Math.round(x.progress * 100);
     const bar =
       x.status === "running"
-        ? h("div", { class: "nw-lab-progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("span", { style: `width:${pct}%` }))
+        ? h("div", { class: "nw-cx-progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("span", { style: `width:${pct}%` }))
         : null;
     const last = x.log.at(-1);
     const toolsDone = x.steps.filter((s) => s.kind === "tool").length;
     const steps = x.log.length || x.steps.length
       ? h(
           "details",
-          { class: "nw-lab-job-steps", open: x.status === "running" ? true : null },
+          { class: "nw-cx-job-steps", open: x.status === "running" ? true : null },
           h("summary", {}, `${tr(L.job.log)} · ${toolsDone}`),
-          ...x.log.map((l) => h("p", { class: "nw-lab-job-log" }, l)),
+          ...x.log.map((l) => h("p", { class: "nw-cx-job-log" }, l)),
           ...x.steps.filter((s) => s.kind !== "artifact").map(stepEl),
         )
       : null;
@@ -196,16 +196,16 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
     const metrics = r?.metrics ? metricTable(r.metrics) : null;
     return h(
       "div",
-      { class: "nw-lab-job" },
-      h("div", { class: "nw-lab-job-head" }, icon("flask"), h("b", {}, x.name ? tr(x.name) : x.run), chip, stop),
+      { class: "nw-cx-job" },
+      h("div", { class: "nw-cx-job-head" }, icon("flask"), h("b", {}, x.name ? tr(x.name) : x.run), chip, stop),
       bar,
-      x.status === "running" && last ? h("p", { class: "nw-lab-job-now" }, last) : null,
+      x.status === "running" && last ? h("p", { class: "nw-cx-job-now" }, last) : null,
       steps,
-      r ? h("div", { class: "nw-lab-job-summary nw-md" }, renderMarkdown(tr(r.summary))) : null,
+      r ? h("div", { class: "nw-cx-job-summary nw-md" }, renderMarkdown(tr(r.summary))) : null,
       metrics,
       ...(r?.artifacts ?? []).map(artifactCard),
       ...x.steps.filter((s): s is Extract<StepItem, { kind: "artifact" }> => s.kind === "artifact").map((s) => artifactCard(s.artifact)),
-      x.error && x.status !== "stopped" ? h("p", { class: "nw-lab-error" }, icon("alert"), x.error) : null,
+      x.error && x.status !== "stopped" ? h("p", { class: "nw-cx-error" }, icon("alert"), x.error) : null,
     );
   }
 
@@ -213,10 +213,10 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
     const fmt = (v: number | null) => (v === null ? "—" : Math.abs(v) >= 100 ? v.toFixed(0) : String(+v.toPrecision(3)));
     return h(
       "div",
-      { class: "nw-lab-metrics" },
+      { class: "nw-cx-metrics" },
       h(
         "table",
-        { class: "nw-lab-table" },
+        { class: "nw-cx-table" },
         h("thead", {}, h("tr", {}, h("th", { scope: "col" }, tr(L.job.metric)), h("th", { scope: "col" }, tr(L.job.before)), h("th", { scope: "col" }, tr(L.job.after)))),
         h(
           "tbody",
@@ -227,17 +227,17 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
               {},
               h("th", { scope: "row" }, h("code", {}, row.key)),
               h("td", {}, fmt(row.before)),
-              h("td", { class: row.verdict ? `nw-lab-diff--${row.verdict}` : "" }, fmt(row.after), row.verdict && row.verdict !== "same" ? ` · ${tr(L.job[row.verdict])}` : ""),
+              h("td", { class: row.verdict ? `nw-cx-diff--${row.verdict}` : "" }, fmt(row.after), row.verdict && row.verdict !== "same" ? ` · ${tr(L.job[row.verdict])}` : ""),
             ),
           ),
         ),
       ),
-      h("p", { class: "nw-lab-note" }, tr(L.job.lowerBetter)),
+      h("p", { class: "nw-cx-note" }, tr(L.job.lowerBetter)),
     );
   }
 
   function itemEl(x: FeedItem): HTMLElement {
-    if (x.kind === "user") return h("div", { class: "nw-lab-msg nw-lab-msg--user" }, x.text);
+    if (x.kind === "user") return h("div", { class: "nw-cx-msg nw-cx-msg--user" }, x.text);
     if (x.kind === "job") return jobCard(x);
     return stepEl(x);
   }
@@ -272,18 +272,18 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
   function compose(c: Composer | null) {
     composeHost.replaceChildren();
     if (!c) return;
-    const text = c.text ? h("textarea", { class: "nw-input nw-lab-compose-text", rows: "2", placeholder: c.text.hint ? tr(c.text.hint) : "", "aria-label": tr(c.text.label) }) : null;
+    const text = c.text ? h("textarea", { class: "nw-input nw-cx-compose-text", rows: "2", placeholder: c.text.hint ? tr(c.text.hint) : "", "aria-label": tr(c.text.label) }) : null;
     text?.addEventListener("keydown", (e) => e.stopPropagation());
-    const budget = c.budget ? h("input", { class: "nw-input nw-lab-compose-budget", type: "number", min: String(c.budget.min), max: String(c.budget.max), value: String(c.budget.value), "aria-label": tr(L.budget) }) : null;
+    const budget = c.budget ? h("input", { class: "nw-input nw-cx-compose-budget", type: "number", min: String(c.budget.min), max: String(c.budget.max), value: String(c.budget.value), "aria-label": tr(L.budget) }) : null;
     const start = h("button", { class: "nw-btn nw-btn--primary nw-btn--sm", type: "submit" }, icon("play"), tr(L.start));
     const f = h(
       "form",
-      { class: "nw-lab-compose" },
-      h("div", { class: "nw-lab-compose-head" }, icon("sparkle"), h("b", {}, tr(c.title))),
-      h("p", { class: "nw-lab-note" }, tr(c.summary), " ", tr(L.usage)),
-      text ? h("label", { class: "nw-lab-field" }, h("span", {}, tr(c.text!.label)), text) : null,
-      budget ? h("label", { class: "nw-lab-field nw-lab-field--row" }, h("span", {}, tr(L.budget)), budget) : null,
-      h("div", { class: "nw-lab-card-actions" }, start, h("button", { class: "nw-btn nw-btn--ghost nw-btn--sm", type: "button", onclick: () => compose(null) }, tr(L.cancel))),
+      { class: "nw-cx-compose" },
+      h("div", { class: "nw-cx-compose-head" }, icon("sparkle"), h("b", {}, tr(c.title))),
+      h("p", { class: "nw-cx-note" }, tr(c.summary), " ", tr(L.usage)),
+      text ? h("label", { class: "nw-cx-field" }, h("span", {}, tr(c.text!.label)), text) : null,
+      budget ? h("label", { class: "nw-cx-field nw-cx-field--row" }, h("span", {}, tr(L.budget)), budget) : null,
+      h("div", { class: "nw-cx-card-actions" }, start, h("button", { class: "nw-btn nw-btn--ghost nw-btn--sm", type: "button", onclick: () => compose(null) }, tr(L.cancel))),
     );
     f.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -349,7 +349,7 @@ export function createPanel(host: HTMLElement, on: PanelHandlers) {
     prefill,
     place,
     setStatus(text: string, ok: boolean) {
-      status.className = `nw-lab-status ${ok ? "is-ok" : "is-off"}`;
+      status.className = `nw-cx-status ${ok ? "is-ok" : "is-off"}`;
       status.lastElementChild!.textContent = text;
       connected = ok;
       setSend();
