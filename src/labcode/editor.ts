@@ -63,6 +63,8 @@ export function createEditor(parent: HTMLElement, opts: { onChange(): void; onSa
         javascript({ typescript: true }),
         syntaxHighlighting(highlight),
         lintGutter(),
+        // The editor shares the sheet with the learning page (and is the whole width of a phone): long lines wrap.
+        EditorView.lineWrapping,
         theme,
         readOnly.of([EditorState.readOnly.of(true), EditorView.editable.of(false)]),
         EditorView.contentAttributes.of({ "aria-label": opts.label }),

@@ -35,6 +35,13 @@ export interface CodeLabOptions {
   storage?: LabStorage;
 }
 
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 export interface CodeLabTarget {
   kind: CoreKind;
   slot?: string;
@@ -48,6 +55,10 @@ export interface CodeLab {
    *  boot, so a page reloaded on "My experiment" finds it. */
   readonly ready: Promise<void>;
   readonly lab: Lab;
+  /** The part of the window the open sheet covers (from the right on wide screens; nothing when closed, or on a phone
+   *  where it covers everything): frame the stage in what is left, as with the UI's own insets. */
+  insets(): Insets;
+  onInsets(cb: (i: Insets) => void): () => void;
   destroy(): void;
 }
 
@@ -649,7 +660,9 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
       // A phone shows one view at a time: the code first.
       if (matchMedia("(max-width: 820px)").matches && tab !== "compare") tab = "code";
       root.hidden = false;
-      document.addEventListener("keydown", onKey, true);
+      addEventListener("resize", emitInsets);
+      requestAnimationFrame(emitInsets);
+      document.addEventListener("keydown", onPageKey);
       requestAnimationFrame(() => root.focus({ preventScroll: true }));
     }
     sources = await blockSources();
@@ -662,25 +675,43 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
     if (!openNow) return;
     openNow = false;
     root.hidden = true;
-    document.removeEventListener("keydown", onKey, true);
+    removeEventListener("resize", emitInsets);
+    emitInsets();
+    document.removeEventListener("keydown", onPageKey);
     if (sel.type === "mine") lab.save(sel.key, editor.get());
   }
 
-  function onKey(e: KeyboardEvent) {
-    if (!openNow) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+  const isSave = (e: KeyboardEvent) => (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s";
+
+  /** Keys in the panel (after the editor had them): save applies, Esc closes unless the editor used it (its search,
+   *  completions), and none reaches the page's own shortcuts. */
+  function onPanelKey(e: KeyboardEvent) {
+    e.stopPropagation();
+    if (e.defaultPrevented) return;
+    if (isSave(e)) {
       e.preventDefault();
-      e.stopPropagation();
       void apply();
-      return;
-    }
-    // Esc inside the editor first closes its own popups (search, completions).
-    if (e.key === "Escape" && !(e.target instanceof Element && e.target.closest(".cm-editor"))) {
-      e.stopPropagation();
-      close();
-    }
-    // The page's own shortcuts (tools, play/pause) stay off while typing here.
-    if (e.target instanceof Node && root.contains(e.target) && !e.ctrlKey && !e.metaKey) e.stopPropagation();
+    } else if (e.key === "Escape") close();
+  }
+
+  /** Ctrl/Cmd+S with the focus outside the panel (on the stage) still applies, instead of the browser saving the page. */
+  function onPageKey(e: KeyboardEvent) {
+    if (!openNow || !isSave(e) || (e.target instanceof Node && root.contains(e.target))) return;
+    e.preventDefault();
+    void apply();
+  }
+  root.addEventListener("keydown", onPanelKey);
+
+  const NONE: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  const insetListeners = new Set<(i: Insets) => void>();
+  function insets(): Insets {
+    if (!openNow) return NONE;
+    const left = root.getBoundingClientRect().left;
+    return left <= 0 ? NONE : { ...NONE, right: Math.round(innerWidth - left) };
+  }
+  function emitInsets() {
+    const i = insets();
+    insetListeners.forEach((cb) => cb(i));
   }
 
   /* ---------------- outside changes ---------------- */
@@ -706,6 +737,11 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
     open: (t) => void open(t),
     close,
     isOpen: () => openNow,
+    insets,
+    onInsets(cb) {
+      insetListeners.add(cb);
+      return () => insetListeners.delete(cb);
+    },
     ready: lab.ready,
     lab,
     destroy() {

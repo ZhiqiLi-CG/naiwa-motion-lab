@@ -6,6 +6,6 @@
  *   await codeLab.ready;                          // before the simulation is built at boot
  *   openCodeLab({ kind: "simulator" });           // the Lab's "编辑代码 / Edit code"
  */
-export { mountCodeLab, openCodeLab, type CodeLab, type CodeLabOptions, type CodeLabTarget } from "./panel";
+export { mountCodeLab, openCodeLab, type CodeLab, type CodeLabOptions, type CodeLabTarget, type Insets } from "./panel";
 export { LAB_ASSEMBLY } from "./lab";
 export type { CoreKind } from "./catalog";
