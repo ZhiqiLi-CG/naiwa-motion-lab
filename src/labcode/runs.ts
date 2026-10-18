@@ -81,6 +81,12 @@ export async function measureSim(
     const steps = Math.round(seconds / DT);
     const samples: { t: number; s: ReturnType<LabFrogSim["stats"]> }[] = [];
     let stepMs = 0;
+    // The rendered surface (the output block) against the flesh solver's own surface, and how rough it is.
+    const body = sim.scene.parts[0];
+    const rings = neighbours(body.indices, body.positions.length / 3);
+    const offsets: number[] = [];
+    const roughness: number[] = [];
+    let readMs = 0;
     for (let i = 1; i <= steps; i++) {
       const t = i * DT;
       if (i === Math.round(1 / DT)) {
@@ -95,7 +101,15 @@ export async function measureSim(
       const t0 = performance.now();
       sim.step(DT);
       stepMs += performance.now() - t0;
-      if (i % 6 === 0) samples.push({ t, s: sim.stats() });
+      if (i % 6 === 0) {
+        samples.push({ t, s: sim.stats() });
+        const t1 = performance.now();
+        const out = sim.readBody();
+        readMs += performance.now() - t1;
+        const solver = sim.scene.flesh.surface?.(body);
+        offsets.push(solver ? meanDistance(out, solver) : 0);
+        roughness.push(meanUmbrella(out, rings));
+      }
       if (i % 20 === 0) {
         progress?.(i / steps);
         await breathe();
@@ -114,11 +128,51 @@ export async function measureSim(
       { key: "penetration", label: { zh: "四肢入体", en: "Limb penetration" }, unit: "mm", digits: 1, value: Math.max(0, ...of("penetration")) * 1000 },
       { key: "jitter", label: { zh: "静止抖动（最后 1 秒）", en: "Jitter at rest (last 1 s)" }, unit: "mm/s", digits: 2, value: mean(of("jitter", seconds - 1)) * 1000 },
       { key: "energy", label: { zh: "静止能量漂移", en: "Energy drift at rest" }, unit: "J", digits: 3, value: energy.length > 10 ? Math.abs(energy[energy.length - 1] - energy[energy.length - 10]) : 0 },
+      { key: "surfaceOffset", label: { zh: "表面离求解器表面", en: "Surface off the solver's" }, unit: "mm", digits: 2, value: mean(offsets) * 1000 },
+      { key: "roughness", label: { zh: "表面粗糙度", en: "Surface roughness" }, unit: "mm", digits: 2, value: mean(roughness) * 1000 },
       { key: "stepMs", label: { zh: "每步耗时", en: "Time per step" }, unit: "ms", digits: 2, value: stepMs / steps },
+      { key: "readMs", label: { zh: "输出耗时", en: "Output time" }, unit: "ms", digits: 2, value: readMs / Math.max(1, samples.length) },
     ];
   } finally {
     sim.dispose();
   }
+}
+
+/** Each vertex's neighbours along the surface's edges. */
+function neighbours(indices: Uint32Array, count: number): number[][] {
+  const out: Set<number>[] = Array.from({ length: count }, () => new Set());
+  for (let t = 0; t < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      out[indices[t + k]].add(indices[t + ((k + 1) % 3)]);
+      out[indices[t + k]].add(indices[t + ((k + 2) % 3)]);
+    }
+  }
+  return out.map((s) => [...s]);
+}
+
+function meanDistance(a: Float32Array, b: Float32Array): number {
+  const n = Math.min(a.length, b.length) / 3;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += Math.hypot(a[i * 3] - b[i * 3], a[i * 3 + 1] - b[i * 3 + 1], a[i * 3 + 2] - b[i * 3 + 2]);
+  return n ? sum / n : 0;
+}
+
+/** Mean length of the umbrella Laplacian (a vertex's offset from the mean of its neighbours): 0 on a plane. */
+function meanUmbrella(p: Float32Array, rings: number[][]): number {
+  let sum = 0;
+  for (let v = 0; v < rings.length; v++) {
+    const ring = rings[v];
+    if (!ring.length) continue;
+    let x = 0, y = 0, z = 0;
+    for (const n of ring) {
+      x += p[n * 3];
+      y += p[n * 3 + 1];
+      z += p[n * 3 + 2];
+    }
+    const k = ring.length;
+    sum += Math.hypot(p[v * 3] - x / k, p[v * 3 + 1] - y / k, p[v * 3 + 2] - z / k);
+  }
+  return sum / rings.length;
 }
 
 /** Build the retargeter with these blocks and run a second of motion through every slot. */

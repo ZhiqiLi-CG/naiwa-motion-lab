@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>labcode · Naiwa Motion Lab dev</title>
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg-app);
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+      #dev {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: calc(100vw - 24px);
+      }
+      #status {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        z-index: 10;
+        font: 12px/16px var(--font-mono);
+        color: var(--text-secondary);
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="dev"></div>
+    <div id="status"></div>
+    <div id="ui"></div>
+    <script type="module" src="./labcode.ts"></script>
+  </body>
+</html>

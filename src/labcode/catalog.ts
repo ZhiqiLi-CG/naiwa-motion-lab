@@ -3,7 +3,7 @@
  * algorithms and the docs' examples), found by reading the sources, so a new built-in block shows up without being
  * listed here; and the learning pages and API documents that go with them.
  */
-import type { Lang } from "../i18n";
+import type { Lang, Text } from "../i18n";
 import { pageFiles, pageSource } from "./loader";
 
 export type CoreKind = "simulator" | "retargeter";
@@ -16,6 +16,8 @@ export interface BlockSource {
   id: string;
   /** The file below src/ ("sim/examples/smoothSurface.ts"). */
   path: string;
+  /** Its name as the source declares it. */
+  name: Text | null;
 }
 
 /** The directories whose files define blocks of each core. */
@@ -23,9 +25,17 @@ const ROOTS: Record<CoreKind, string[]> = { simulator: ["sim/"], retargeter: ["m
 
 const DEFINITION = /BlockDefinition<"(\w+)">\s*=\s*\{[\s\S]*?\bid:\s*"([^"]+)"/g;
 
-/** The block definitions in a source text (`const x: BlockDefinition<"slot"> = { id: "…", … }`). */
-export function definitionsIn(source: string): { slot: string; id: string }[] {
-  return [...source.matchAll(DEFINITION)].map((m) => ({ slot: m[1], id: m[2] }));
+const NAME = /\bname:\s*\{\s*zh:\s*"([^"]*)",\s*en:\s*"([^"]*)"\s*\}/;
+
+/** The block definitions in a source text (`const x: BlockDefinition<"slot"> = { id: "…", name: { zh, en }, … }`). */
+export function definitionsIn(source: string): { slot: string; id: string; name: Text | null }[] {
+  return [...source.matchAll(DEFINITION)].map((m) => ({ slot: m[1], id: m[2], name: nameIn(source.slice(m.index! + m[0].length)) }));
+}
+
+/** The first `name: { zh: "…", en: "…" }` in a source text. */
+export function nameIn(source: string): Text | null {
+  const m = source.match(NAME);
+  return m ? { zh: m[1], en: m[2] } : null;
 }
 
 let scanned: Promise<BlockSource[]> | null = null;
