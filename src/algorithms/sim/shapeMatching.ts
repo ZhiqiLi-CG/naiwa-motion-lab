@@ -31,8 +31,8 @@ class ShapeMatching implements PieceSolver {
   private goal: Float64Array;
   private count: Float64Array;
   private p: Float64Array;
-  private iterations = 2;
-  private stiffness = 0.5;
+  private iterations = 1;
+  private stiffness = 0.25;
   private beta = 0;
   private softness = 0.5;
   private regionK: Float64Array = new Float64Array(0);
@@ -81,8 +81,8 @@ class ShapeMatching implements PieceSolver {
   }
 
   setSettings(s: Readonly<Settings>) {
-    this.iterations = Math.max(1, Math.round(Number(s.smIterations ?? 2)));
-    this.stiffness = Number(s.smStiffness ?? 0.5);
+    this.iterations = Math.max(1, Math.round(Number(s.smIterations ?? 1)));
+    this.stiffness = Number(s.smStiffness ?? 0.25);
     this.beta = Number(s.smLinear ?? 0);
     this.update();
   }
@@ -167,8 +167,8 @@ export const shapeMatching = particleFleshBlock({
     en: "One cluster of particles per region (neighbouring clusters overlap) fits its best rigid motion R, c and pulls each particle a fraction α towards its goal Rq + c; meshless and unconditionally stable.",
   },
   parameters: [
-    { key: "smStiffness", kind: "number", default: 0.5, min: 0.02, max: 1, step: 0.02, label: { zh: "拉回强度 α", en: "Pull α" } },
-    { key: "smIterations", kind: "number", default: 2, min: 1, max: 8, step: 1, label: { zh: "迭代次数", en: "Iterations" } },
+    { key: "smStiffness", kind: "number", default: 0.25, min: 0.02, max: 1, step: 0.02, label: { zh: "拉回强度 α", en: "Pull α" } },
+    { key: "smIterations", kind: "number", default: 1, min: 1, max: 8, step: 1, label: { zh: "迭代次数", en: "Iterations" } },
     {
       key: "smLinear", kind: "number", default: 0, min: 0, max: 1, step: 0.05,
       label: { zh: "线性形变 β", en: "Linear deformation β" },

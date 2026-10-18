@@ -49,3 +49,28 @@ it.skipIf(!fs.existsSync(GLB))("compares the simulators on the real frog", async
     expect(Math.abs(r.volume - 1), name).toBeLessThan(0.2);
   }
 }, 900000);
+
+/** The feel panel's extremes: firmest and softest, both bounciest. Nothing explodes, the frog stands and bends. */
+it.skipIf(!fs.existsSync(GLB))("survives the extremes of the sliders", async () => {
+  const spec = (await loadFrog())!;
+  const { createFrogSim } = await import("../../sim");
+  const { PARAMS, bent } = await import("./testSupport");
+  const ids = [...new Set(ROWS.map(([, o]) => o.id))].filter((id) => id !== "cpu-constraints");
+  for (const softness of [0, 1]) {
+    for (const id of ids) {
+      const params = { ...PARAMS, softness, bounciness: 1 };
+      const sim = createFrogSim(spec, params, { id, settings: {} });
+      await sim.ready;
+      sim.setMode("free");
+      for (let k = 0; k < 180; k++) sim.step(1 / 60);
+      sim.setMode("driven");
+      sim.setTargets(bent(spec, { spine: 25, chest: 25, head: 17 }));
+      for (let k = 0; k < 120; k++) sim.step(1 / 60);
+      const body = sim.readBody(), s = sim.stats(), label = `${id} at softness ${softness}`;
+      expect(body.every(Number.isFinite), label).toBe(true);
+      expect(Math.abs(s.volume!.body - 1), label).toBeLessThan(0.3);
+      expect(s.deviation!, label).toBeLessThan(0.12);
+      sim.dispose();
+    }
+  }
+}, 900000);

@@ -38,7 +38,7 @@ class SoftTethers implements CouplingBlock {
   private near = 20;
   private far = 0.5;
   private reach = 1.2;
-  private zeta = 0.7;
+  private zeta = 0.4;
 
   constructor(private scene: Scene, settings: Readonly<Settings>) {
     const p = new THREE.Vector3();
@@ -64,7 +64,7 @@ class SoftTethers implements CouplingBlock {
     this.near = Number(s.tetherNear ?? 20);
     this.far = Number(s.tetherFar ?? 0.5);
     this.reach = Number(s.tetherReach ?? 1.2);
-    this.zeta = Number(s.tetherDamping ?? 0.7);
+    this.zeta = Number(s.tetherDamping ?? 0.4);
     for (const t of this.tethers.values()) {
       t.loose = [];
       for (let i = 0; i < t.depth.length; i++) {
@@ -171,7 +171,7 @@ export const softTethers: BlockDefinition<"coupling"> = {
       label: { zh: "衰减范围", en: "Falloff reach" },
       help: { zh: "强度从骨头到这个深度（以肉厚为单位）平滑降到表面值。", en: "Depth (in units of the flesh's thickness) over which the strength falls to the surface value." },
     },
-    { key: "tetherDamping", kind: "number", default: 0.7, min: 0, max: 2, step: 0.05, label: { zh: "阻尼比", en: "Damping ratio" } },
+    { key: "tetherDamping", kind: "number", default: 0.4, min: 0, max: 2, step: 0.05, label: { zh: "阻尼比", en: "Damping ratio" } },
   ],
   create: (scene, settings) => new SoftTethers(scene, settings),
 };

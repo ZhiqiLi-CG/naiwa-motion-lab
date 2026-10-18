@@ -41,6 +41,8 @@ export function isSimParticles(view: ParticleView): view is SimParticles {
 /** Free particles slower than this (m/s) for SLEEP_STEPS steps, with every body they ride on asleep, go to sleep. */
 const SLEEP_SPEED = 0.01;
 const SLEEP_STEPS = 30;
+/** m/s: a velocity change this large on a particle is a poke, which wakes the bones. */
+const KICK = 0.3;
 
 /** One part's particles: the nodes of its tetrahedra. */
 export class Piece implements SimParticles {
@@ -69,6 +71,8 @@ export class Piece implements SimParticles {
   /** Bumped whenever a particle is attached or detached. */
   version = 0;
   sleeping = false;
+  /** The flesh was poked: wake the bones it rides on before passing them its reactions. */
+  private kicked = false;
   private quiet = 0;
   private synced = -1;
   private body: (RAPIER.RigidBody | null)[];
@@ -136,6 +140,8 @@ export class Piece implements SimParticles {
     this.v[i * 3] += x * this.w[i];
     this.v[i * 3 + 1] += y * this.w[i];
     this.v[i * 3 + 2] += z * this.w[i];
+    // A poke or a slap (not the small steady impulses of a coupling) wakes the bones, so they take their share.
+    if (Math.abs(x) + Math.abs(y) + Math.abs(z) > KICK * this.m[i]) this.kicked = true;
     this.wake();
   }
   setPosition(i: number, x: number, y: number, z: number) {
@@ -284,6 +290,10 @@ export class Piece implements SimParticles {
   /** Each awake dynamic body receives the impulses its particles passed on this step: an attached particle's from the
    *  flesh pulling on it, a free particle's from its damping (to its home bone). */
   applyReactions() {
+    if (this.kicked) {
+      this.kicked = false;
+      for (const b of new Set(this.body)) if (b?.isDynamic()) b.wakeUp();
+    }
     const sums = new Map<RAPIER.RigidBody, Float64Array>();
     const R = this.reaction, X = this.x;
     for (let i = 0; i < this.count; i++) {
@@ -426,7 +436,6 @@ export const PARTICLE_PARAMETERS: SimParameter[] = [
   },
 ];
 
-/** Rapier's internal PGS iterations for the skeleton (see ParticleFlesh). */
 export class ParticleFlesh implements FleshBlock {
   readonly pieces = new Map<SimPart, { piece: Piece; solver: PieceSolver }>();
   private rate = 0;

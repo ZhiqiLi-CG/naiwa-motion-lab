@@ -17,13 +17,15 @@ import type { PhysicsParams } from "../../contracts";
 import { edgeStiffness, elements, updateEdgeShares, type Elements } from "./elements";
 import type { Piece, PieceSolver } from "./flesh";
 import { tetVolume } from "./lattice";
-import { youngModulus } from "./material";
+import { DEFAULT_YOUNG, youngModulus } from "./material";
 
 export interface PositionBasedOptions {
   /** XPBD (compliance, multipliers) or PBD (stiffness). */
   xpbd: boolean;
-  /** PBD: iterations per step; XPBD: substeps (one iteration each). */
+  /** PBD: iterations per substep; XPBD: substeps (one iteration each). */
   iterations: number;
+  /** PBD: substeps per step (shorter steps lose less of the jiggle). */
+  substeps?: number;
   /** PBD: stiffness of the distance and volume constraints, 0..1 (scaled by the material and regions). */
   stiffness: number;
   volumeStiffness: number;
@@ -72,7 +74,7 @@ export class PositionBased implements PieceSolver {
       const K = this.E / (3 * (1 - 2 * this.o.poisson));
       for (let t = 0; t < V.length; t++) this.tetK[t] = V[t] / (K * ts[t]);
     } else {
-      const rel = this.E / 8500;
+      const rel = this.E / DEFAULT_YOUNG;
       for (let e = 0; e < this.edgeK.length; e++) this.edgeK[e] = Math.min(1, this.o.stiffness * rel * this.el.edgeShare[e] / meanShare(this.el));
       for (let t = 0; t < V.length; t++) this.tetK[t] = Math.min(1, this.o.volumeStiffness * ts[t]);
     }
@@ -80,7 +82,7 @@ export class PositionBased implements PieceSolver {
 
   step(h: number, g: readonly [number, number, number]) {
     const { x: X, v: Vel, w, fixed, count: n } = this.piece, p = this.p, prev = this.prev;
-    const substeps = this.o.xpbd ? Math.max(1, Math.round(this.o.iterations)) : 1;
+    const substeps = Math.max(1, Math.round(this.o.xpbd ? this.o.iterations : this.o.substeps ?? 1));
     const iterations = this.o.xpbd ? 1 : Math.max(1, Math.round(this.o.iterations));
     const hs = h / substeps;
     // Attached particles move with their prescribed velocity, from the start of the step.

@@ -18,6 +18,7 @@ import { addStressForces, deformation, elements, type Elements } from "./element
 import { particleFleshBlock, type Piece, type PieceSolver } from "./flesh";
 import { BlockSparse, CGWork, det3, extractRotation, m3, mulT3 } from "./linalg";
 import { lame, youngModulus } from "./material";
+import { Bdf2 } from "./bdf2";
 
 type Material = "linear" | "corotational" | "neohookean";
 
@@ -134,6 +135,8 @@ class ImplicitFem implements PieceSolver {
   /** Per active cell, the 16 block slots (node a, node b) of the matrix, −1 where a node is attached. */
   private slots = new Int32Array(0);
   private R = m3();
+  private integrator: "bdf2" | "backward-euler" = "bdf2";
+  private bdf2: Bdf2;
 
   constructor(private piece: Piece, settings: Readonly<Settings>) {
     this.el = elements(piece);
@@ -145,6 +148,7 @@ class ImplicitFem implements PieceSolver {
     this.s = new Float64Array(piece.count * 3);
     this.f = new Float64Array(piece.count * 3);
     this.trial = new Float32Array(piece.count * 3);
+    this.bdf2 = new Bdf2(piece.count);
     this.mu = new Float64Array(nt);
     this.la = new Float64Array(nt);
     this.setSettings(settings);
@@ -171,7 +175,15 @@ class ImplicitFem implements PieceSolver {
     this.newton = Math.max(1, Math.round(Number(s.femNewton ?? 1)));
     this.cg = Math.max(1, Math.round(Number(s.femCgIterations ?? 10)));
     this.poisson = Number(s.femPoisson ?? 0.4);
+    // Auto: BDF2 for the rotation-invariant materials; the linear one's ghost forces (a turning cell is "stretched")
+    // keep pumping energy in, which only backward Euler's numerical damping drains.
+    const integrator = String(s.femIntegrator ?? "auto");
+    this.integrator = integrator === "backward-euler" || (integrator === "auto" && m === "linear") ? "backward-euler" : "bdf2";
     this.updateLame();
+  }
+
+  reset() {
+    this.bdf2.reset();
   }
 
   attachmentsChanged() {
@@ -318,18 +330,27 @@ class ImplicitFem implements PieceSolver {
   }
 
   step(h: number, g: readonly [number, number, number]) {
-    this.h = h;
     const piece = this.piece, { x: X, v: V, m } = piece, s = this.s, free = this.free, nf = free.length;
-    for (const i of free) for (let k = 0; k < 3; k++) s[i * 3 + k] = X[i * 3 + k] + h * V[i * 3 + k] + h * h * g[k];
+    // The inertial target and the step of the inertia term: BDF2 (little numerical damping, bdf2.ts) or backward Euler.
+    const bdf2 = this.integrator === "bdf2";
+    if (bdf2) this.h = this.bdf2.target(piece, h, g, s);
+    else {
+      this.h = h;
+      for (const i of free) for (let k = 0; k < 3; k++) s[i * 3 + k] = X[i * 3 + k] + h * V[i * 3 + k] + h * h * g[k];
+    }
+    const hi = this.h;
     const old = Float64Array.from(X);
     for (const i of free) for (let k = 0; k < 3; k++) X[i * 3 + k] = s[i * 3 + k];
     const b = new Float64Array(nf * 3), dx = new Float64Array(nf * 3);
-    for (let it = 0; it < this.newton && nf; it++) {
+    // One Newton step solves the linear and (nearly) the corotational step; the neo-Hookean one, strongly nonlinear in a
+    // fast shake, needs at least two or a badly converged step can throw the flesh out.
+    const newton = this.material === "neohookean" ? Math.max(2, this.newton) : this.newton;
+    for (let it = 0; it < newton && nf; it++) {
       this.rotations(X);
       this.forces(X);
       // −∇Φ = elastic force − M/h² (x − s)
       free.forEach((i, k) => {
-        for (let r = 0; r < 3; r++) b[k * 3 + r] = this.f[i * 3 + r] - (m[i] / (h * h)) * (X[i * 3 + r] - s[i * 3 + r]);
+        for (let r = 0; r < 3; r++) b[k * 3 + r] = this.f[i * 3 + r] - (m[i] / (hi * hi)) * (X[i * 3 + r] - s[i * 3 + r]);
       });
       this.assemble(X);
       dx.fill(0);
@@ -351,7 +372,8 @@ class ImplicitFem implements PieceSolver {
         for (let r = 0; r < 3; r++) X[i * 3 + r] += step * dx[q * 3 + r];
       });
     }
-    for (const i of free) for (let k = 0; k < 3; k++) V[i * 3 + k] = (X[i * 3 + k] - old[i * 3 + k]) / h;
+    if (bdf2) this.bdf2.finish(piece, h);
+    else for (const i of free) for (let k = 0; k < 3; k++) V[i * 3 + k] = (X[i * 3 + k] - old[i * 3 + k]) / h;
     // What the flesh pulls on the attached particles with, over the step (only cells with an attached particle).
     this.forces(X, piece.boundaryTets);
     for (let i = 0; i < piece.count; i++) if (piece.fixed[i]) for (let k = 0; k < 3; k++) piece.reaction[i * 3 + k] += this.f[i * 3 + k] * h;
@@ -377,6 +399,19 @@ export const implicitFem = particleFleshBlock({
       help: {
         zh: "线性材料转动时会变形变大；共旋和 Neo-Hookean 对旋转不变。",
         en: "The linear material grows when it turns; corotational and neo-Hookean are rotation-invariant.",
+      },
+    },
+    {
+      key: "femIntegrator", kind: "choice", default: "auto",
+      label: { zh: "时间积分", en: "Time integration" },
+      choices: [
+        { value: "auto", label: { zh: "自动（线性材料用后向欧拉）", en: "Auto (backward Euler for the linear material)" } },
+        { value: "bdf2", label: { zh: "BDF2（数值阻尼小）", en: "BDF2 (little numerical damping)" } },
+        { value: "backward-euler", label: { zh: "后向欧拉（数值阻尼大）", en: "Backward Euler (strong numerical damping)" } },
+      ],
+      help: {
+        zh: "后向欧拉每步都吃掉一部分晃动；BDF2 几乎保留它，阻尼来自弹性滑块。",
+        en: "Backward Euler eats part of the jiggle every step; BDF2 keeps nearly all of it, and the damping comes from the bounciness slider.",
       },
     },
     { key: "femNewton", kind: "number", default: 1, min: 1, max: 5, step: 1, label: { zh: "牛顿迭代", en: "Newton iterations" } },

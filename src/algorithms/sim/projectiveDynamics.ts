@@ -16,6 +16,7 @@ import { deformation, elements, type Elements } from "./elements";
 import { particleFleshBlock, type Piece, type PieceSolver } from "./flesh";
 import { EnvelopeCholesky, det3, extractRotation, m3 } from "./linalg";
 import { lame, youngModulus } from "./material";
+import { Bdf2 } from "./bdf2";
 
 class ProjectiveDynamics implements PieceSolver {
   private el: Elements;
@@ -30,6 +31,10 @@ class ProjectiveDynamics implements PieceSolver {
   private freeIndex = new Int32Array(0);
   private chol: EnvelopeCholesky | null = null;
   private dirty = true;
+  /** The inertia step the factor was made for. */
+  private factoredFor = 0;
+  private integrator: "bdf2" | "backward-euler" = "bdf2";
+  private bdf2: Bdf2;
   private s: Float64Array;
   private rhs: Float64Array;
   private target: Float64Array;
@@ -42,6 +47,7 @@ class ProjectiveDynamics implements PieceSolver {
     this.quat = new Float64Array(nt * 4);
     for (let t = 0; t < nt; t++) this.quat[t * 4 + 3] = 1;
     this.s = new Float64Array(piece.count * 3);
+    this.bdf2 = new Bdf2(piece.count);
     this.rhs = new Float64Array(piece.count * 3);
     this.target = new Float64Array(nt * 9);
     this.setSettings(settings);
@@ -54,6 +60,7 @@ class ProjectiveDynamics implements PieceSolver {
 
   setSettings(s: Readonly<Settings>) {
     this.iterations = Math.max(1, Math.round(Number(s.pdIterations ?? 3)));
+    this.integrator = s.pdIntegrator === "backward-euler" ? "backward-euler" : "bdf2";
     const nu = Number(s.pdPoisson ?? 0.4);
     if (nu !== this.poisson) {
       this.poisson = nu;
@@ -72,12 +79,17 @@ class ProjectiveDynamics implements PieceSolver {
     }
   }
 
+  reset() {
+    this.bdf2.reset();
+  }
+
   attachmentsChanged() {
     this.dirty = true;
   }
 
   /** Factor M/h² + Σ (w_shape + w_volume) GᵀG over the free particles. */
   private factor(h: number) {
+    this.factoredFor = h;
     const piece = this.piece, T = piece.mesh.tets, grad = this.el.grad;
     this.free = [];
     this.freeIndex = new Int32Array(piece.count).fill(-1);
@@ -129,23 +141,26 @@ class ProjectiveDynamics implements PieceSolver {
   }
 
   step(h: number, g: readonly [number, number, number]) {
-    if (this.dirty || !this.chol) this.factor(h);
     const piece = this.piece, { x: X, v: V, fixed, m } = piece, n = piece.count, T = piece.mesh.tets, grad = this.el.grad;
-    const free = this.free, rhs = this.rhs, s = this.s;
-    // Inertial target s = x + h v + h² g; start from it.
-    for (let i = 0; i < n; i++) {
-      if (fixed[i]) continue;
-      for (let k = 0; k < 3; k++) {
-        s[i * 3 + k] = X[i * 3 + k] + h * V[i * 3 + k] + h * h * g[k];
+    const rhs = this.rhs, s = this.s, bdf2 = this.integrator === "bdf2";
+    // Inertial target and the step of the inertia term: BDF2 (⅔h, little numerical damping, bdf2.ts) or backward Euler (h).
+    let hi = h;
+    if (bdf2) hi = this.bdf2.target(piece, h, g, s);
+    else {
+      for (let i = 0; i < n; i++) {
+        if (fixed[i]) continue;
+        for (let k = 0; k < 3; k++) s[i * 3 + k] = X[i * 3 + k] + h * V[i * 3 + k] + h * h * g[k];
       }
     }
+    if (this.dirty || !this.chol || this.factoredFor !== hi) this.factor(hi);
+    const free = this.free;
     const old = Float64Array.from(X);
     for (const i of free) for (let k = 0; k < 3; k++) X[i * 3 + k] = s[i * 3 + k];
     for (let it = 0; it < this.iterations; it++) {
       this.local();
       // rhs = M/h² s + Σ w Gᵀ T − (coupling to the attached particles, which sit on the right-hand side).
       rhs.fill(0);
-      for (const i of free) for (let k = 0; k < 3; k++) rhs[i * 3 + k] = (m[i] / (h * h)) * s[i * 3 + k];
+      for (const i of free) for (let k = 0; k < 3; k++) rhs[i * 3 + k] = (m[i] / (hi * hi)) * s[i * 3 + k];
       for (const t of piece.activeTets) {
         const w = this.wShape[t] + this.wVolume[t];
         for (let a = 0; a < 4; a++) {
@@ -175,7 +190,8 @@ class ProjectiveDynamics implements PieceSolver {
         for (let r = 0; r < 3; r++) X[i * 3 + r] = b[k * 3 + r];
       });
     }
-    for (const i of free) for (let k = 0; k < 3; k++) V[i * 3 + k] = (X[i * 3 + k] - old[i * 3 + k]) / h;
+    if (bdf2) this.bdf2.finish(piece, h);
+    else for (const i of free) for (let k = 0; k < 3; k++) V[i * 3 + k] = (X[i * 3 + k] - old[i * 3 + k]) / h;
     // The elastic force on each attached particle, −Σ w (F − T) ∇N, over the step (T from the last local step).
     const F = m3();
     for (const t of piece.boundaryTets) {
@@ -204,6 +220,14 @@ export const projectiveDynamics = particleFleshBlock({
   },
   parameters: [
     { key: "pdIterations", kind: "number", default: 3, min: 1, max: 30, step: 1, label: { zh: "局部/全局迭代", en: "Local/global iterations" } },
+    {
+      key: "pdIntegrator", kind: "choice", default: "bdf2",
+      label: { zh: "时间积分", en: "Time integration" },
+      choices: [
+        { value: "bdf2", label: { zh: "BDF2（数值阻尼小）", en: "BDF2 (little numerical damping)" } },
+        { value: "backward-euler", label: { zh: "后向欧拉（原论文）", en: "Backward Euler (the paper's)" } },
+      ],
+    },
     { key: "pdPoisson", kind: "number", default: 0.4, min: 0, max: 0.48, step: 0.02, label: { zh: "泊松比（体积权重）", en: "Poisson ratio (volume weight)" } },
   ],
   solver: (piece, scene, settings) => {

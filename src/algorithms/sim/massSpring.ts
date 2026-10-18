@@ -17,7 +17,9 @@ class MassSpring implements PieceSolver {
   /** Explicit: the substeps asked for, and those the stability limit needs (whichever is more). */
   private substeps = 10;
   private omega = 0;
-  private dampingRatio = 0.3;
+  /** Rayleigh stiffness damping β (s): each spring's damper is c = β k, so a mode of frequency ω has damping ratio
+   *  β ω / 2: the lattice-scale buzz of stiff springs is damped, the slow jiggle hardly. */
+  private beta = 0.001;
   private E = 0;
   private f: Float64Array;
   // Semi-implicit: the system over the free particles.
@@ -55,7 +57,7 @@ class MassSpring implements PieceSolver {
   setSettings(s: Readonly<Settings>) {
     this.implicit = s.integrator === "semi-implicit";
     this.substeps = Math.max(1, Math.round(Number(s.springSubsteps ?? 10)));
-    this.dampingRatio = Number(s.springDamping ?? 0.3);
+    this.beta = Number(s.springDamping ?? 1) / 1000;
     this.iterations = Math.max(1, Math.round(Number(s.springCgIterations ?? 30)));
   }
 
@@ -76,7 +78,7 @@ class MassSpring implements PieceSolver {
   /** Spring and damping forces at the current state into f (only active edges). Damping: ζ of each spring's own
    *  critical damping, along the spring. */
   private forces(X: Float32Array, V: Float32Array) {
-    const f = this.f, E = this.piece.mesh.edges, m = this.piece.m;
+    const f = this.f, E = this.piece.mesh.edges;
     f.fill(0);
     for (const e of this.piece.activeEdges) {
       const a = E[e * 2], b = E[e * 2 + 1];
@@ -85,7 +87,7 @@ class MassSpring implements PieceSolver {
       if (l < 1e-12) continue;
       const nx = dx / l, ny = dy / l, nz = dz / l;
       const vrel = (V[b * 3] - V[a * 3]) * nx + (V[b * 3 + 1] - V[a * 3 + 1]) * ny + (V[b * 3 + 2] - V[a * 3 + 2]) * nz;
-      const c = 2 * this.dampingRatio * Math.sqrt(this.k[e] * Math.min(m[a], m[b]));
+      const c = this.beta * this.k[e];
       const s = this.k[e] * (l - this.rest[e]) + c * vrel;
       f[a * 3] += s * nx; f[a * 3 + 1] += s * ny; f[a * 3 + 2] += s * nz;
       f[b * 3] -= s * nx; f[b * 3 + 1] -= s * ny; f[b * 3 + 2] -= s * nz;
@@ -142,7 +144,7 @@ class MassSpring implements PieceSolver {
       const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (l < 1e-12) continue;
       const n = [dx / l, dy / l, dz / l];
-      const k = this.k[e], c = 2 * this.dampingRatio * Math.sqrt(k * Math.min(m[i], m[j]));
+      const k = this.k[e], c = this.beta * k;
       const t = Math.max(0, 1 - this.rest[e] / l);
       // Block of K (and C) for this spring: k (n nᵀ + t (I − n nᵀ)), c n nᵀ.
       for (let r = 0; r < 3; r++) {
@@ -205,8 +207,9 @@ export const massSpring = particleFleshBlock({
       help: { zh: "显式积分每步的子步数：太少会炸开。", en: "Substeps per step of the explicit integrator: too few and it blows up." },
     },
     {
-      key: "springDamping", kind: "number", default: 0.3, min: 0, max: 1, step: 0.05,
-      label: { zh: "弹簧阻尼比", en: "Spring damping ratio" },
+      key: "springDamping", kind: "number", default: 1, min: 0, max: 5, step: 0.1, unit: "ms",
+      label: { zh: "弹簧阻尼 β（刚度比例）", en: "Spring damping β (stiffness-proportional)" },
+      help: { zh: "每根弹簧的阻尼 c = βk：越硬的弹簧阻尼越大，慢的晃动几乎不受影响。", en: "Each spring's damper is c = βk: stiff springs are damped more, the slow jiggle hardly at all." },
     },
     {
       key: "springCgIterations", kind: "number", default: 30, min: 5, max: 100, step: 5,

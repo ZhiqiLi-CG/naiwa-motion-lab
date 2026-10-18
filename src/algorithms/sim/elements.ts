@@ -73,10 +73,14 @@ export function updateEdgeShares(piece: Piece, el: Elements) {
   }
 }
 
-/** Spring stiffness of each edge for Young's modulus E: k = 2 E · share / L² (springs only resist along their edge;
- *  twice the volume share gives about the modulus of the continuum). */
+/** How much stiffer a lattice's edge springs must be than the modulus suggests: a spring network has no Poisson effect
+ *  and resists shear only through the cubes' diagonals, so with k = E · share / L² it rings at a third of the
+ *  frequency of the continuum (FEM) and sags into itself. Measured on the frog: ×16 matches the FEM blocks. */
+export const NETWORK_STIFFENING = 16;
+
+/** Spring stiffness of each edge for Young's modulus E: k = NETWORK_STIFFENING · E · share / L². */
 export function edgeStiffness(el: Elements, E: number, out: Float64Array): Float64Array {
-  for (let e = 0; e < out.length; e++) out[e] = (2 * E * el.edgeShare[e]) / (el.restLength[e] * el.restLength[e]);
+  for (let e = 0; e < out.length; e++) out[e] = (NETWORK_STIFFENING * E * el.edgeShare[e]) / (el.restLength[e] * el.restLength[e]);
   return out;
 }
 
