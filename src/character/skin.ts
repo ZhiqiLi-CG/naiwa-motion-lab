@@ -39,6 +39,8 @@ export class FleshSkin {
   readonly surface: Float32Array;
   /** The smoothed residual (simulation − skinning), world. */
   readonly residual: Float32Array;
+  /** Expression → per welded vertex offsets (rest world frame). */
+  readonly shapes: ReadonlyMap<Expression, Float32Array>;
 
   private skinIndex: Uint16Array;
   private skinWeight: Float32Array;
@@ -60,6 +62,7 @@ export class FleshSkin {
     this.residual = new Float32Array(3 * n);
     this.boneDelta = new Float32Array(16 * init.boneCount);
     this.smoother = new Smoother(init.rest, init.smoothing);
+    this.shapes = init.morphs;
 
     // Only the vertices an expression moves are visited each frame.
     this.morphs = [...init.morphs].map(([name, d]) => {
@@ -116,9 +119,11 @@ export class FleshSkin {
 
   /**
    * What is shown (fills positions and normals): the deformed surface with breathing and the expressions on top,
-   * the expression offsets turned by turn (the face's rotation from rest); weights: expression weights; breath: −1…1.
+   * the expression offsets carried by face (the linear part: the face patch's rotation and stretch from rest, the same
+   * map the mouth inside rides on, so the lips and what is in the mouth stay together); weights: expression weights;
+   * breath: −1…1.
    */
-  finish(turn: THREE.Quaternion, weights: Record<Expression, number>, breath: number): void {
+  finish(face: THREE.Matrix4, weights: Record<Expression, number>, breath: number): void {
     const n = this.count, P = this.positions;
     // Breathing along last frame's normals, mostly in the soft belly.
     const nrm = this.normals, soft = this.softness;
@@ -130,20 +135,18 @@ export class FleshSkin {
         P[3 * i] += a * nrm[3 * i]; P[3 * i + 1] += a * nrm[3 * i + 1]; P[3 * i + 2] += a * nrm[3 * i + 2];
       }
     }
-    // Expressions on top, turned with the face.
-    const q = turn;
-    const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    // Expressions on top, carried with the face.
+    const m = face.elements;
+    const m0 = m[0], m1 = m[1], m2 = m[2], m4 = m[4], m5 = m[5], m6 = m[6], m8 = m[8], m9 = m[9], m10 = m[10];
     for (const [name, d, moved] of this.morphs) {
       const w = weights[name];
       if (!(w > 1e-4)) continue;
       for (let k = 0; k < moved.length; k++) {
         const i = 3 * moved[k];
         const vx = d[i] * w, vy = d[i + 1] * w, vz = d[i + 2] * w;
-        // Quaternion rotation v' = v + 2w(q×v) + 2q×(q×v).
-        const tx = 2 * (qy * vz - qz * vy), ty = 2 * (qz * vx - qx * vz), tz = 2 * (qx * vy - qy * vx);
-        P[i] += vx + qw * tx + (qy * tz - qz * ty);
-        P[i + 1] += vy + qw * ty + (qz * tx - qx * tz);
-        P[i + 2] += vz + qw * tz + (qx * ty - qy * tx);
+        P[i] += m0 * vx + m4 * vy + m8 * vz;
+        P[i + 1] += m1 * vx + m5 * vy + m9 * vz;
+        P[i + 2] += m2 * vx + m6 * vy + m10 * vz;
       }
     }
     computeNormals(P, this.indices, nrm);

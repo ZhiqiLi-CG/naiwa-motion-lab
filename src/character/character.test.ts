@@ -145,4 +145,46 @@ describe.skipIf(!fs.existsSync(GLB))("naiwa.glb", () => {
     c.center(c2);
     expect(c2.y).toBeGreaterThan(0.4);
   });
+
+  it("the tongue grows out of the mouth: over the lower lip onto the chin, never off the face", async () => {
+    const c = await loadGlb();
+    console.log("tongue:", (c as unknown as { tongueNote: string | null }).tongueNote);
+    c.setLively(false);
+    const rest = new Map(c.spec.bones.map((b) => [b.name, b.restWorld.clone()]));
+    const cam = new THREE.PerspectiveCamera();
+    const body = c.object.getObjectByName("Body") as THREE.Mesh;
+    const mouth = c.object.getObjectByName("MouthInside") as THREE.SkinnedMesh;
+    const col = mouth.geometry.attributes.color;
+    const tongue: number[] = [];
+    for (let i = 0; i < col.count; i++) if (col.getX(i) > 0.35 && col.getX(i) > 1.8 * col.getY(i)) tongue.push(i);
+    expect(tongue.length).toBeGreaterThan(20);
+    const measure = (e: "tongue" | "laugh" | "surprise") => {
+      c.setExpressions({ [e]: 1 });
+      for (let f = 0; f < 120; f++) {
+        c.applySim(rest, c.spec.body.positions);
+        c.update(1 / 60, cam);
+      }
+      const bp = body.geometry.attributes.position;
+      const b = new THREE.Vector3(), v = new THREE.Vector3();
+      let gapMin = Infinity, gapMax = 0, low = Infinity;
+      for (const i of tongue) {
+        mouth.getVertexPosition(i, v).applyMatrix4(mouth.matrixWorld);
+        low = Math.min(low, v.y);
+        let dmin = Infinity;
+        for (let j = 0; j < bp.count; j++) dmin = Math.min(dmin, b.fromBufferAttribute(bp, j).distanceToSquared(v));
+        gapMin = Math.min(gapMin, Math.sqrt(dmin));
+        gapMax = Math.max(gapMax, Math.sqrt(dmin));
+      }
+      console.log(`${e}: tongue to Body nearest ${(gapMin * 1000).toFixed(1)} mm, farthest ${(gapMax * 1000).toFixed(1)} mm, lowest y ${low.toFixed(3)}`);
+      return { gapMin, gapMax, low };
+    };
+    const t = measure("tongue");
+    expect(t.gapMin).toBeLessThan(0.004);
+    expect(t.gapMax).toBeLessThan(0.02);
+    // It hangs below the lower lip (about 0.79 m) onto the chin.
+    expect(t.low).toBeLessThan(0.765);
+    const l = measure("laugh");
+    expect(l.gapMin).toBeLessThan(0.004);
+    expect(l.gapMax).toBeLessThan(0.02);
+  });
 });

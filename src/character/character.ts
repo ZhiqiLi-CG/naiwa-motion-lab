@@ -21,6 +21,7 @@ import { Life } from "./life";
 import { boneExtents, findSkeleton, forwardKinematics, restPoints, type RestSkeleton } from "./rig";
 import { softSkinMaterial, tieRoots, type LimbRoot, type RootTie } from "./skin";
 import { Stance } from "./stance";
+import { seatTongue } from "./tongue";
 import type { SurfaceReport } from "./surface";
 
 /** The character with what the contract does not cover yet (all optional to use). */
@@ -41,6 +42,7 @@ type Part = THREE.SkinnedMesh;
 const ATTACK = 22;
 const RELEASE = 9;
 const NO_EXPRESSION: Record<Expression, number> = { laugh: 0, tongue: 0, blink: 0, surprise: 0 };
+const IDENTITY = new THREE.Matrix4();
 /** Spacing of the smooth basis the simulated flesh is shown through (m): the Body, and the thinner limbs. */
 const BODY_SMOOTHING = 0.018;
 const LIMB_SMOOTHING = 0.015;
@@ -95,6 +97,8 @@ class NaiwaFrog implements NaiwaCharacter {
   private rigidLimbs: { tie: RootTie; offset: THREE.BufferAttribute; toLocal: THREE.Matrix3 }[] = [];
   private rivets: Rivet[] = [];
   private mouth: Rivet;
+  /** What was done to seat the asset's tongue on the face, if anything. */
+  readonly tongueNote: string | null;
   private eyes: Eye[] = [];
   private morphMeshes: { mesh: THREE.Mesh; slot: Partial<Record<Expression, number>> }[] = [];
   private life = new Life();
@@ -248,6 +252,9 @@ class NaiwaFrog implements NaiwaCharacter {
     const mouthBox = new THREE.Box3();
     for (const p of parts.mouth) mouthBox.union(new THREE.Box3().setFromArray(restPoints(p).positions));
     const mouthRivet = makeRivet("mouth", mouthBox.getCenter(new THREE.Vector3()), 0.06, bodyRest, bodyIdx, true);
+    // A tongue authored off the face is laid back onto it (before the mouth is bound, in the rest frame).
+    this.tongueNote = seatTongue(parts.mouth, { rest: bodyRest, indices: bodyIdx, shapes: bodyPiece.skin.shapes },
+      mouthBox.getCenter(new THREE.Vector3()).y);
     this.mouth = mouthRivet;
     this.rivets.push(mouthRivet);
     for (const mesh of parts.mouth) {
@@ -393,7 +400,6 @@ class NaiwaFrog implements NaiwaCharacter {
 
   // ------------------------------------------------------------------------------------------------ rendering
 
-  private _q = new THREE.Quaternion();
   private _m = new THREE.Matrix4();
   private _v = new THREE.Vector3();
 
@@ -421,18 +427,18 @@ class NaiwaFrog implements NaiwaCharacter {
       });
       p.skin.deform(p.simulated ? p.sim : null, p.deltas, tie);
     };
-    // The face rides on the deformed head surface; the mouth's expressions turn with the patch around it, so the
+    // The face rides on the deformed head surface; the mouth's expressions move with the patch around it, so the
     // lips and the teeth behind them stay together.
     const body = this.body.pieces[0];
     deform(body);
     for (const r of this.rivets) updateRivet(r, body.skin.surface);
-    body.skin.finish(this.mouth.turn, this.weights, this.life.out.breath);
+    body.skin.finish(this.mouth.bone.matrixWorld, this.weights, this.life.out.breath);
     showFlesh(this.body);
     const residual = body.skin.residual;
     for (const set of this.softLimbs) {
       for (const p of set.pieces) {
         deform(p, { roots: p.roots!, residual });
-        p.skin.finish(this._q.identity(), NO_EXPRESSION, 0);
+        p.skin.finish(IDENTITY, NO_EXPRESSION, 0);
       }
       showFlesh(set);
     }
