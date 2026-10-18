@@ -427,17 +427,11 @@ export const PARTICLE_PARAMETERS: SimParameter[] = [
 ];
 
 /** Rapier's internal PGS iterations for the skeleton (see ParticleFlesh). */
-const SKELETON_PGS_ITERATIONS = 2;
-
 export class ParticleFlesh implements FleshBlock {
   readonly pieces = new Map<SimPart, { piece: Piece; solver: PieceSolver }>();
   private rate = 0;
 
   constructor(scene: Scene, settings: Readonly<Settings>, factory: SolverFactory) {
-    // The rigid skeleton's stiff motors need a second PGS iteration to settle (the built-in Rapier soft bodies add
-    // theirs); with one, the legs buzz and the standing frog creeps across the floor and never sleeps.
-    const ip = scene.world.integrationParameters;
-    ip.numInternalPgsIterations = Math.max(ip.numInternalPgsIterations, SKELETON_PGS_ITERATIONS);
     for (const part of scene.parts) {
       const particles = Number(part.limb ? settings.limbParticles ?? 40 : settings.bodyParticles ?? 250);
       const volume = new TriMesh(part.positions, part.indices).volume();

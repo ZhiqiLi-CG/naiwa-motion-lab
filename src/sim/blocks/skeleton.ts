@@ -464,6 +464,10 @@ class RigidSkeleton implements SkeletonBlock {
   private standing: { mgh: number; inertia: number } | null = null;
 
   constructor(scene: Scene) {
+    // The stiff joint motors need a second PGS iteration to settle; with one the legs buzz and the standing frog
+    // creeps across the floor and never sleeps (whatever flesh solver rides on it).
+    const ip = scene.world.integrationParameters;
+    ip.numInternalPgsIterations = Math.max(ip.numInternalPgsIterations, 2);
     const spec = scene.spec;
     this.params = scene.params;
     const body = new TriMesh(spec.body.positions, spec.body.indices);

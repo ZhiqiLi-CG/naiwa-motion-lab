@@ -8,6 +8,7 @@ import { createStage } from "./stage";
 import { loadCharacter } from "./character";
 import { createFrogSim, initPhysics, listSimulators, onSimulatorsChanged } from "./sim";
 import { registerMotionLibrary } from "./algorithms/motion";
+import { registerSimLibrary } from "./algorithms/sim";
 import { createMotion, metricReadouts } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
 import { mountCodeLab, openCodeLab } from "./labcode";
@@ -354,6 +355,7 @@ async function boot() {
   store.set({ loading: { active: true, message: tr({ zh: "正在叫醒奶蛙…", en: "Waking 奶蛙 up…" }) } });
   void motion.ready().then(() => setDances(motion.dances()));
   const [, loaded] = await Promise.all([initPhysics(), loadCharacter()]);
+  registerSimLibrary();
   // Saved experiments register their blocks before the lists are read.
   await codeLab.ready;
   store.set({ simulators: listSimulators(), retargeters: motion.retargeters() });
@@ -418,8 +420,8 @@ async function boot() {
   };
   requestAnimationFrame(tick);
 
-  // For the end-to-end checks.
-  Object.assign(window, { __naiwa: { store, sim, character, stage, motion, commands } });
+  // For the end-to-end checks; getters, since the simulation and the character are rebuilt.
+  Object.assign(window, { __naiwa: { store, get sim() { return sim; }, get character() { return character; }, stage, motion, commands } });
 }
 
 boot().catch((err) => {
