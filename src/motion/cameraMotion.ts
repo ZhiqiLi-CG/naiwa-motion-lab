@@ -133,7 +133,7 @@ function picture(gray: Float32Array | Uint8Array | Uint8ClampedArray, w: number,
   for (let i = 0; i < w * h; i++) hist[Math.min(BINS - 1, Math.floor((base[i] / 256) * BINS))]++;
   for (let b = 0; b < BINS; b++) hist[b] /= w * h;
   const levels: Level[] = [];
-  let cur = { img: base, w, h };
+  let cur: { img: Float32Array; w: number; h: number } = { img: base, w, h };
   for (let l = 0; l < LEVELS; l++) {
     levels.push(level(cur.img, cur.w, cur.h));
     if (l < LEVELS - 1) cur = halve(cur.img, cur.w, cur.h);
