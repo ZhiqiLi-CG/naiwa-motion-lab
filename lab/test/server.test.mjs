@@ -80,6 +80,13 @@ describe("tool arguments", () => {
     assert.deepEqual(parseToolArgs(["{softness:0.8,region:belly,v:[0,1.5,2],x:true}"]), { softness: 0.8, region: "belly", v: [0, 1.5, 2], x: true });
     assert.throws(() => parseToolArgs(["oops"]));
   });
+  it("reads @file.json written by PowerShell (with a BOM)", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "naiwa args "));
+    const file = path.join(dir, "a.json");
+    writeFileSync(file, `${String.fromCharCode(0xfeff)}{\r\n  "region": "head"\r\n}\r\n`);
+    assert.deepEqual(parseToolArgs([`@${file}`, "strength=0.5"]), { region: "head", strength: 0.5 });
+    rmSync(dir, { recursive: true, force: true });
+  });
 });
 
 describe("relay", () => {

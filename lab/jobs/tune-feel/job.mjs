@@ -25,10 +25,10 @@ async function measure() {
   return out;
 }
 
-/** The preset Codex wrote, else the first JSON object with params in its answer. */
+/** The preset Codex wrote (PowerShell writes a BOM, which trim drops), else the first JSON object with params in its answer. */
 function readPreset(file, answer) {
   try {
-    return JSON.parse(readFileSync(file, "utf8"));
+    return JSON.parse(readFileSync(file, "utf8").trim());
   } catch {
     const m = answer.match(/\{[\s\S]*"params"[\s\S]*\}/);
     if (m) return JSON.parse(m[0]);

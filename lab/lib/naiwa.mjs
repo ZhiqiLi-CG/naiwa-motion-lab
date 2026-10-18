@@ -52,7 +52,8 @@ function setPath(obj, key, value) {
 export function parseToolArgs(argv) {
   const args = {};
   for (const a of argv) {
-    if (a.startsWith("@")) Object.assign(args, JSON.parse(readFileSync(a.slice(1), "utf8")));
+    // PowerShell writes JSON files with a BOM (trim drops it)
+    if (a.startsWith("@")) Object.assign(args, JSON.parse(readFileSync(a.slice(1), "utf8").trim()));
     else if (a.trim().startsWith("{")) {
       let v;
       try {

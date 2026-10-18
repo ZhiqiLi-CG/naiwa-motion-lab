@@ -9,7 +9,7 @@
  */
 import "./lab.css";
 import type { DanceTrack, MaterialPreset, Stage } from "../contracts";
-import { getLang, onLang, tr } from "../i18n";
+import { getLang, onLang, tr, type Text } from "../i18n";
 import { openCodeLab, setCodexImprove, type CodeLab, type CodexBlockTarget } from "../labcode";
 import type { NaiwaMotion } from "../motion";
 import { loadSaved } from "../motion/saved";
@@ -340,6 +340,16 @@ export function mountLab(opts: LabOptions): MountedLab {
         render();
         return;
       case "job":
+        // a job that started before this page mounted (a reload): its name comes from the server
+        if (msg.ev.type !== "start" && !feed.items.some((x) => x.key === `job:${msg.run}`)) {
+          void client.get<{ job: string; name: Text }>(`/api/runs/${msg.run}`).then(
+            (r) => {
+              feed = applyJob(feed, msg.run, { type: "start", job: r.job, name: r.name, workdir: "" });
+              render();
+            },
+            () => {},
+          );
+        }
         feed = applyJob(feed, msg.run, msg.ev);
         panel.open();
         render();
