@@ -240,6 +240,21 @@ describe.skipIf(!process.env.SIM_BENCH || !fs.existsSync(GLB))("benchmark, the r
     });
     if (inspector) fs.writeFileSync(process.env.SIM_PROF!, JSON.stringify((await post("Profiler.stop")).profile));
     for (const b of benches) b.probe("naenae end");
+    // How far each variant's surfaces are from the first's, in the same pose (mean and max over the vertices, mm).
+    const surfaces = (sim: LabFrogSim) => sim.scene.parts.map((p) => (sim.scene.flesh.surface?.(p) ?? p.positions).slice());
+    const reference = surfaces(benches[0].sim);
+    for (const b of benches.slice(1)) {
+      const diff = surfaces(b.sim).map((S, k) => {
+        let sum = 0, max = 0;
+        for (let v = 0; v < S.length; v += 3) {
+          const d = Math.hypot(S[v] - reference[k][v], S[v + 1] - reference[k][v + 1], S[v + 2] - reference[k][v + 2]);
+          sum += d;
+          max = Math.max(max, d);
+        }
+        return `${b.sim.scene.parts[k].name} ${((1000 * sum * 3) / S.length).toFixed(1)}/${(1000 * max).toFixed(1)}`;
+      });
+      console.log(`${b.name.padEnd(12)} surfaces against ${benches[0].name} (mean/max mm): ${diff.join(", ")}`);
+    }
     phase("swing", 300, (sim, k) => {
       if (sim === benches[0].sim) swing(spec, k / 60, targets);
       sim.setTargets(targets);
