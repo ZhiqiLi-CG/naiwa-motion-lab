@@ -361,7 +361,9 @@ class Core implements LabFrogSim {
     if (!this.built) return;
     const s = clamp01(strength);
     const part = this.partAt(hit.point);
-    this.blocks.interaction?.push(part, hit.point, direction.clone().normalize().multiplyScalar(lerp(1.5, 5, s)), part.limb ? 0.08 : 0.14);
+    // Incompressible flesh spreads a push into a bulge around the dent rather than squeezing it: 2.5–9 m/s dents the
+    // belly about as deep as 1.5–5 m/s did when the cells gave up volume.
+    this.blocks.interaction?.push(part, hit.point, direction.clone().normalize().multiplyScalar(lerp(2.5, 9, s)), part.limb ? 0.08 : 0.14);
     this.emit("poke", hit.point, s, hit.region);
   }
 

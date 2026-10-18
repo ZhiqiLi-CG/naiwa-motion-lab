@@ -336,6 +336,18 @@ export class Skeleton {
     }
   }
 
+  /** Free mode: the joints' goal eases from the pose they were in when free mode began to rest (w 0..1). */
+  relax(w: number) {
+    const rel = new THREE.Quaternion();
+    for (const b of this.bones.values()) {
+      if (!b.joint || !b.parent) continue;
+      rel.slerpQuaternions(b.fromRel, b.restRel, w);
+      if (rel.angleTo(b.commandRel) < 1e-4) continue;
+      b.commandRel.copy(rel);
+      b.joint.setLocalFrame1(v3(b.anchor), q4(rel));
+    }
+  }
+
   /** Blend from where the bones are now (a new motion, or entering driven mode). */
   startBlend() {
     for (const b of this.bones.values()) {
@@ -347,9 +359,17 @@ export class Skeleton {
   }
 
   setMode(driven: boolean) {
+    const q = new THREE.Quaternion(), r = new THREE.Quaternion();
     for (const b of this.bones.values()) {
-      b.commandRel.copy(b.restRel);
-      if (!b.torso && b.joint) b.joint.setLocalFrame1(v3(b.anchor), q4(b.restRel));
+      // Driven, a limb's goal starts at rest and blends to the targets. Free, every joint's goal starts at the pose the
+      // bone is in and eases to rest (relax): set at once, the leg motors straightened a squat within two steps and
+      // threw the torso up at 4 m/s, tearing the flesh off the floor.
+      if (driven || !b.parent) b.commandRel.copy(b.restRel);
+      else {
+        const p = b.parent.body.rotation(), c = b.body.rotation();
+        b.commandRel.copy(q.set(p.x, p.y, p.z, p.w).invert().multiply(r.set(c.x, c.y, c.z, c.w)));
+      }
+      if (b.joint && (driven ? !b.torso : true)) b.joint.setLocalFrame1(v3(b.anchor), q4(b.commandRel));
     }
     this.startBlend();
     for (const b of this.bones.values()) {
@@ -481,6 +501,8 @@ function standing(scene: Scene): { mgh: number; inertia: number } {
 
 /** Seconds to blend from where the bones are into driven mode. */
 const DRIVE_BLEND = 0.35;
+/** Seconds the joints take to ease to rest when free mode begins. */
+const RELAX = 0.5;
 /** Fastest the driven bones may move (m/s, rad/s): well above a dance's (狗熊哆嗦毛 turns the hips at ~13 rad/s). */
 const MAX_SPEED = 6;
 const MAX_TURN = 25;
@@ -492,6 +514,7 @@ class RigidSkeleton implements SkeletonBlock {
   private mode: BodyMode = "free";
   private params: PhysicsParams;
   private driveBlend = 1;
+  private relaxBlend = 1;
   /** Time since the frog was knocked about (landing, throw). */
   private sinceKnock = 10;
   private rootFromHips: THREE.Matrix4;
@@ -523,6 +546,7 @@ class RigidSkeleton implements SkeletonBlock {
     this.mode = mode;
     this.skeleton.setMode(mode === "driven");
     this.driveBlend = mode === "driven" ? 0 : 1;
+    this.relaxBlend = mode === "driven" ? 1 : 0;
   }
 
   transition() {
@@ -568,6 +592,10 @@ class RigidSkeleton implements SkeletonBlock {
       const { mgh, inertia } = (this.standing ??= standing(scene));
       const k = BALANCE * s * lerp(0.3, 1, recover) * mgh;
       this.skeleton.balance(lerp(0.04, 1, s) * lerp(0.15, 1, recover), k, 2 * Math.sqrt(k * inertia));
+      if (this.relaxBlend < 1) {
+        this.relaxBlend = Math.min(1, this.relaxBlend + scene.dt / RELAX);
+        this.skeleton.relax(THREE.MathUtils.smoothstep(this.relaxBlend, 0, 1));
+      }
     }
     this.sinceKnock += scene.dt;
   }

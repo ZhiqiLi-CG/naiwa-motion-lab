@@ -19,6 +19,11 @@ import { limbFlesh } from "./skeleton";
 
 /** kg/m³: a 1 m frog of about 15 kg (a big plush toy, not a pond of water). */
 const DENSITY = 190;
+/** Hz: how fast a cell regains its volume (see material). */
+const VOLUME_HZ = 30;
+/** Lattice particles in fewer cells than this get extra edges, up to BRACE_EDGES in all (see braces). */
+const BRACED = 4;
+const BRACE_EDGES = 8;
 const CELL_MODELS: Record<string, RAPIER.SoftBodyCellModel> = {
   volume: RAPIER.SoftBodyCellModel.Volume,
   corotational: RAPIER.SoftBodyCellModel.Corotational,
@@ -42,7 +47,11 @@ function material(p: PhysicsParams): RAPIER.SoftBodyMaterial {
   m.elasticDampingRatio = z;
   m.edgeSoftness = { naturalFrequency: f, dampingRatio: z };
   m.bendSoftness = { naturalFrequency: f, dampingRatio: z };
-  m.volumeSoftness = { naturalFrequency: f * 2, dampingRatio: z };
+  // Flesh is nearly incompressible: its softness is shear (the edges), while each cell keeps its volume within a few
+  // steps. At twice the edges' rate (7 Hz for the jelly) a hop's landing or a fast spin left the free flesh lagging a
+  // cell behind the flesh on the bones, and up to 90 cells turned inside out (22% of the volume lost) for half a second.
+  // Lightly damped, so the volume it keeps goes into the jiggle (a dent bulges out around it and rings).
+  m.volumeSoftness = { naturalFrequency: Math.max(VOLUME_HZ, 2 * f), dampingRatio: 0.3 * z };
   m.shapeMatchingSoftness = { naturalFrequency: f, dampingRatio: z };
   return m;
 }
@@ -71,8 +80,12 @@ class Piece implements FleshPiece {
   constructor(scene: Scene, readonly part: SimPart, settings: Readonly<Settings>) {
     const surface = new TriMesh(part.positions, part.indices);
     const particles = Number(part.limb ? settings.limbParticles : settings.bodyParticles);
-    const desc = RAPIER.SoftBodyDesc.volumetric(part.positions, part.indices, cellSizeFor(part, surface, particles), true);
+    const cellSize = cellSizeFor(part, surface, particles);
+    const desc = RAPIER.SoftBodyDesc.volumetric(part.positions, part.indices, cellSize, true);
     if (!desc) throw new Error(`sim: ${part.name} cannot be filled with cells (is it closed?)`);
+    // The same lattice's edges plus braces for its loose corners (addEdges replaces the generator's edges).
+    const lattice = latticeOf(part, cellSize, 1);
+    desc.addEdges(Uint32Array.from([...lattice.edges, ...braces(lattice)]));
     desc
       .setNoSurfaceCollider()
       .setMass(DENSITY * surface.volume())
@@ -350,10 +363,48 @@ function latticeOf(part: SimPart, cellSize: number, mass: number) {
     if (!desc) throw new Error(`sim: ${part.name} cannot be filled with cells (is it closed?)`);
     const soft = world.createSoftBody(desc.setNoSurfaceCollider().setMass(mass));
     const masses = Float32Array.from({ length: soft.numParticles() }, (_, i) => soft.particleMass(i));
-    return { rest: soft.particlePositions(), cells: soft.cells(), masses };
+    return { rest: soft.particlePositions(), cells: soft.cells(), edges: soft.edges(), masses };
   } finally {
     world.free();
   }
+}
+
+/** Extra edges for the lattice's loose corners. The mesher leaves some outer particles in one or two cells, held by
+ *  three or four edges: a fast move flipped such a particle through its cell, and it swung free up to a metre away,
+ *  dragging the belly's surface into a fold. Each particle in fewer than BRACED cells is tied to its nearest
+ *  particles (within two cell sizes) until it has BRACE_EDGES edges. */
+function braces({ rest: P, cells, edges }: { rest: Float32Array; cells: Uint32Array; edges: Uint32Array }): Uint32Array {
+  const n = P.length / 3, inCells = new Uint16Array(n), linked = Array.from({ length: n }, () => new Set<number>());
+  for (const i of cells) inCells[i]++;
+  for (let e = 0; e < edges.length; e += 2) {
+    linked[edges[e]].add(edges[e + 1]);
+    linked[edges[e + 1]].add(edges[e]);
+  }
+  const spacing = (() => {
+    let sum = 0;
+    for (let e = 0; e < edges.length; e += 2) {
+      const a = edges[e] * 3, b = edges[e + 1] * 3;
+      sum += Math.hypot(P[a] - P[b], P[a + 1] - P[b + 1], P[a + 2] - P[b + 2]);
+    }
+    return sum / Math.max(1, edges.length / 2);
+  })();
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (inCells[i] >= BRACED) continue;
+    const near: { j: number; d: number }[] = [];
+    for (let j = 0; j < n; j++) {
+      if (j === i || linked[i].has(j)) continue;
+      const d = Math.hypot(P[i * 3] - P[j * 3], P[i * 3 + 1] - P[j * 3 + 1], P[i * 3 + 2] - P[j * 3 + 2]);
+      if (d < 2 * spacing) near.push({ j, d });
+    }
+    near.sort((a, b) => a.d - b.d);
+    for (const { j } of near.slice(0, Math.max(0, BRACE_EDGES - linked[i].size))) {
+      out.push(i, j);
+      linked[i].add(j);
+      linked[j].add(i);
+    }
+  }
+  return Uint32Array.from(out);
 }
 
 /** Each vertex of V in the cell (4 particle indices into P) that holds it, with its barycentric weights there; a vertex
