@@ -10,21 +10,15 @@
  * rides on the bone when that flesh reaches into the carried core.
  */
 import * as THREE from "three";
-import type { CoreBone } from "../../contracts";
 import type { BlockDefinition, CouplingBlock, Scene, Settings, SimBone, SimPart } from "../api";
 import { nearestBone, particleAttributes } from "../parts";
 
-/** The part of the flesh's thickness around a bone that rides on it, for the firmest flesh (softness 0). A limb is
- *  only a few lattice steps thick, so its flesh rides whole on its bones and bends in the cells at the joints: free
- *  nodes there hung on soft cells and crumpled when the limbs swung. */
-const CARRIED: Record<string, number> = {
-  head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55,
-  upperarm: 2, forearm: 2, hand: 2, thigh: 9, shin: 9, foot: 9,
-};
+/** The part of the Body's thickness around a torso bone that rides on it, for the firmest flesh (softness 0). A limb is
+ *  only a lattice step or two thick: its flesh rides whole on its bones and bends in the cells across the joints
+ *  (free nodes there hung on soft cells, crumpled when the limbs swung and let the feet shuffle on the floor). */
+const CARRIED: Record<string, number> = { head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55 };
 /** The softest flesh (the belly) keeps this much less on the bone. */
 const SOFT_LOOSENS = 0.35;
-
-const carriedOf = (bone: CoreBone) => CARRIED[bone.replace(/_[LR]$/, "")] ?? 0.6;
 
 /** How thick the flesh is around each bone of a part: the median distance of its surface vertices to the bone. */
 function thickness(part: SimPart): Map<SimBone, number> {
@@ -65,7 +59,8 @@ class BoneAttach implements CouplingBlock {
       const free: number[] = [];
       for (let i = 0; i < view.count; i++) {
         const { bone, distance } = nearestBone(part, p.fromArray(view.rest, i * 3));
-        const reach = scale * carriedOf(bone.name) * (1 - SOFT_LOOSENS * softness[i]) * (thick.get(bone) ?? 0) + half;
+        const carried = CARRIED[bone.name];
+        const reach = carried === undefined ? Infinity : scale * carried * (1 - SOFT_LOOSENS * softness[i]) * (thick.get(bone) ?? 0) + half;
         if (distance < reach) view.attach(i, bone.body);
         else free.push(i);
       }
@@ -98,8 +93,8 @@ export const boneAttach: BlockDefinition<"coupling"> = {
       key: "carried", kind: "number", default: 1, min: 0.3, max: 1.5, step: 0.1, rebuild: true,
       label: { zh: "挂骨比例", en: "Flesh on the bones" },
       help: {
-        zh: "相对默认的倍数：越小，挂在骨头上的肉越少，越软。",
-        en: "Times the default: smaller leaves more flesh free, softer.",
+        zh: "身体的肉挂在骨头上的比例，相对默认的倍数：越小，自由的肉越多，越软。四肢的肉总是整块挂在骨头上。",
+        en: "How much of the Body's flesh rides on the bones, times the default: smaller leaves more free, softer. Limb flesh always rides whole.",
       },
     },
   ],
