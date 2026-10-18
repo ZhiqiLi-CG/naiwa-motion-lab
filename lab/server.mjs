@@ -8,7 +8,7 @@
  *   GET  /api/stream?page=1               server-sent events: chat, job, tool requests (page=1: this page runs tools)
  *   POST /api/page/result                 { id, ok, value | error }: the page's answer to a tool request
  *   POST /api/tool                        { action, args }: run a page tool (for scripts and tests)
- *   POST /api/chat                        { conv?, text, context?, effort? } → { conv }
+ *   POST /api/chat                        { conv?, create?, text, context?, effort? } → { conv }
  *   POST /api/chat/<conv>/stop            GET /api/chat/<conv> → its events so far
  *   GET  /api/jobs                        [{ id, name, summary }]
  *   POST /api/jobs/<id>                   { input } → { run }
@@ -177,7 +177,7 @@ export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status
       const b = await readJson(req);
       const s = await codexStatus.get();
       if (!codex && !s.loggedIn) throw new HttpError(503, "Codex CLI is not logged in");
-      const { conv } = await chat.send({ conv: b.conv ?? null, text: b.text, context: b.context ?? null, effort: b.effort ?? null });
+      const { conv } = await chat.send({ conv: b.conv ?? null, create: Boolean(b.create), text: b.text, context: b.context ?? null, effort: b.effort ?? null });
       log(`chat ${conv}: ${String(b.text).slice(0, 60)}`);
       return json({ conv });
     }

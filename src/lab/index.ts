@@ -155,17 +155,13 @@ export function mountLab(opts: LabOptions): MountedLab {
   async function send(text: string) {
     if (feed.busy) return toast(tr(L.busy), "warning");
     panel.open();
+    // named here, so the events of its first turn are followed from the start (create: also when the server
+    // restarted and no longer knows it)
+    conv ??= `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    session.set(conv);
     try {
-      const r = await client.post<{ conv: string }>("/api/chat", { conv, text, context: context() });
-      conv = r.conv;
-      session.set(conv);
+      await client.post("/api/chat", { conv, create: true, text, context: context() });
     } catch (e) {
-      // a conversation the server no longer knows (it restarted): start a new one
-      if (conv && /no conversation/.test(String(e))) {
-        conv = null;
-        session.set(null);
-        return send(text);
-      }
       toast(e instanceof Error ? e.message : String(e), "error");
     }
   }

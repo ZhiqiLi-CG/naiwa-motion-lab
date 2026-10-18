@@ -1,4 +1,4 @@
-# Codex in the Naiwa Motion Lab (local Lab mode)
+﻿# Codex in the Naiwa Motion Lab (local Lab mode)
 
 You are driven from the Lab panel of the Naiwa Motion Lab page the user has open in their browser: a soft-body +
 skeleton frog (奶蛙) whose flesh is simulated (src/sim, docs/simulator-api.md) and whose motion is transferred from
@@ -45,10 +45,10 @@ numbers and true/false are typed; dotted keys nest (`regionSoftness.belly=1`, `s
 | `step` | `frames` | advance while paused |
 | `wait` | `ms` | let the simulation run |
 | `metrics` | | fps, step ms, the simulator's metrics (deviation, jitter, penetration, volume, inverted cells, momentum, energy), the retargeter's (fidelity °, jerk, penetration, footSlide) |
-| `probe` | `scene` (poke slap drop rest), `region`, `seconds`, `strength`, `reset=false` to skip the reset | a standard perturbation, sampled at 10 Hz → `surface_peak_mm`, `surface_settle_s`, `surface_rest_mm`, and with the simulator's metrics `peak_mm`, `settle_s`, `jitter_rest_mm_s`, `penetration_mm`, `inverted_cells`, `volume_err_pct`, `step_ms`. Lower is better except the peaks, which say how much the flesh gives |
-| `screenshot` | `width` (default 960) | the 3D view as a PNG → `{ path }`; look at it (view the image file) |
-| `record` | `seconds` | a recording of the view → `{ path }` |
-| `block.compare` | `core` (simulator or retargeter), `slot`, `from.id`, `from.path` (the page block, path below src/), `file` (your .ts) or `code` | runs your block and the built-in one on the code lab's comparison scene → `{ scene, builtin: rows, mine: rows }` (lower is better) |
+| `probe` | `scene` (poke slap drop rest), `region`, `seconds`, `strength`, `reset=false` to skip the reset | a standard perturbation, sampled at 10 Hz -> `surface_peak_mm`, `surface_settle_s`, `surface_rest_mm`, and with the simulator's metrics `peak_mm`, `settle_s`, `jitter_rest_mm_s`, `penetration_mm`, `inverted_cells`, `volume_err_pct`, `step_ms`. Lower is better except the peaks, which say how much the flesh gives |
+| `screenshot` | `width` (default 960) | the 3D view as a PNG -> `{ path }`; look at it (view the image file) |
+| `record` | `seconds` | a recording of the view -> `{ path }` |
+| `block.compare` | `core` (simulator or retargeter), `slot`, `from.id`, `from.path` (the page block, path below src/), `file` (your .ts) or `code` | runs your block and the built-in one on the code lab's comparison scene -> `{ scene, builtin: rows, mine: rows }` (lower is better) |
 
 ## Handing results back
 
@@ -61,9 +61,9 @@ node lab/bin/naiwa.mjs artifact kind=block path=.cache/lab/blocks/x.ts core=simu
 node lab/bin/naiwa.mjs artifact kind=file path=<repo path>
 ```
 
-- preset → the physics parameters; dance → 我的舞蹈; block → loaded into the code lab as the user's experiment.
+- preset -> the physics parameters; dance -> 我的舞蹈; block -> loaded into the code lab as the user's experiment.
 - A dance is a `DanceTrack` (src/contracts.ts): `{ id, name, nameEn, fps, duration, source: { title, url, start, end },
-  frames: [{ world: 33 × [x, y, z, visibility], image: 33 × [x, y, z, visibility] }] }` — MediaPipe Pose landmarks
+  frames: [{ world: 33 x [x, y, z, visibility], image: 33 x [x, y, z, visibility] }] }` - MediaPipe Pose landmarks
   per frame (world: metres, hip-centred, +y down as MediaPipe gives it; image: 0..1 of the frame), looping. Look at a
   captured one in public/dances/ for the conventions before you keyframe one, and check it with `dance.preview` plus a
   screenshot.

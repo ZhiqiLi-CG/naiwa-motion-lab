@@ -37,13 +37,15 @@ export function createChat({ codex, emit, effort = null }) {
     emit(c.id, ev);
   };
 
-  /** Send a message; resolves when the turn ends. */
-  async function send({ conv, text, context = null, images = [], effort: e = null }) {
+  /** Send a message. conv: an existing conversation, or with create the id for a new one (the page names it, so it
+   *  can follow the events from the first); without conv a new one is named here. */
+  async function send({ conv, create = false, text, context = null, images = [], effort: e = null }) {
     if (!text || !String(text).trim()) throw Object.assign(new Error("empty message"), { status: 400 });
+    if (conv && !/^[\w-]{1,64}$/.test(conv)) throw Object.assign(new Error("bad conversation id"), { status: 400 });
     let c = conv ? convs.get(conv) : null;
-    if (conv && !c) throw Object.assign(new Error(`no conversation "${conv}"`), { status: 404 });
+    if (conv && !c && !create) throw Object.assign(new Error(`no conversation "${conv}"`), { status: 404 });
     if (!c) {
-      c = { id: `c${Date.now().toString(36)}${(seq++).toString(36)}`, threadId: null, busy: false, controller: null, history: [] };
+      c = { id: conv ?? `c${Date.now().toString(36)}${(seq++).toString(36)}`, threadId: null, busy: false, controller: null, history: [] };
       convs.set(c.id, c);
     }
     if (c.busy) throw Object.assign(new Error("Codex is still answering"), { status: 409 });
