@@ -29,23 +29,23 @@ v = (p − x) / h;  x = p
 ## Parameters
 | Parameter | Meaning | Typical range | What you see when you change it |
 |---|---|---|---|
-| `smStiffness` | pull α per step (times region and material) | 0.1–1 | low: a slow, wobbly jelly; 1: rigid regions |
-| `smIterations` | fit-and-pull passes per step | 1–4 | more: firmer |
+| `smStiffness` | pull α per step (times region and material) | 0.1–1 | default 0.25: a slow (2 Hz) wobbly jelly; 1: rigid regions that hardly jiggle (the pull is an implicit, dissipative correction) |
+| `smIterations` | fit-and-pull passes per step | 1–4 | more: firmer and more damped |
 | `smLinear` | β, affine part of the goal | 0–0.5 | the regions may stretch and shear |
 
 ## When to use it
-When it must be cheap and unconditionally stable: the cheapest flesh of the library (about 0.2 ms per step), never
-inverted cells. The price: with one cluster per region the flesh moves as a few soft blobs; the head deviates most
+When it must be cheap and unconditionally stable: the cheapest flesh of the library (about 0.2 ms per step), and at its
+soft default the most jelly-like wobble after the FEM blocks (2 Hz, 2.5–3.5 swings over 0.7–0.8 s). The price: with one cluster per region the flesh moves as a few soft blobs; the head deviates most
 from its bone in the bend (16 mm against 8–9 mm for the FEM blocks), since the head cluster also contains neck flesh
 pulled by the chest. More, smaller clusters (e.g. one per lattice cube with its neighbours) give finer detail at more
 cost.
 
-Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5 cm):
+Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5.4 cm; the shake is the jiggle harness of the index):
 
-| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) |
-|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| `shape-matching` | 3.66 | 0 | 0.979 | 15.9 | 6.9 | 0.63 (0.15) |
+| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) | shake, default: peak mm / swings / decay s | shake, softest |
+|---|---|---|---|---|---|---|---|---|
+| cpu-constraints (built-in) | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) | 32 / 3.5 / 0.47 | 25 / 3.5 / 0.50 |
+| `shape-matching` | 4.50 | 4 | 0.995 | 15.9 | 19.3 | 1.10 (0.20) | 41 / 2.5 / 0.72 | 39 / 3.5 / 0.80 |
 
 ## In the code
 `src/algorithms/sim/shapeMatching.ts`, a **flesh** block. First experiments: make clusters per lattice region instead

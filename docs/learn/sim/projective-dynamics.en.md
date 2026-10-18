@@ -8,12 +8,16 @@ linear system to get as close as possible to all those shapes and to where inert
 never changes, so it is factored once and every iteration costs only two triangular solves.
 
 ## The math
-With the inertial target $\mathbf s = \mathbf x + h\mathbf v + h^2\mathbf g$ and per-cell deformation $F = \sum_k \mathbf x_k \nabla N_k^\top$:
+With an inertial target $\mathbf s$ and per-cell deformation $F = \sum_k \mathbf x_k \nabla N_k^\top$:
 
-$$\min_{\mathbf x}\; \frac{1}{2h^2}\|\mathbf x - \mathbf s\|_M^2 + \sum_t \frac{w_t}{2}\,\|F_t(\mathbf x) - T_t\|^2$$
+$\min_{\mathbf x}\; \frac{1}{2h'^2}\|\mathbf x - \mathbf s\|_M^2 + \sum_t \frac{w_t}{2}\,\|F_t(\mathbf x) - T_t\|^2$$
 
 - local: $T_t$ = the rotation R of $F_t$ (weight $2\mu V$, "as rigid as possible") and $F_t/\sqrt[3]{\det F_t}$ (weight $\lambda V$, volume);
-- global: $\big(M/h^2 + \sum_t w_t G_t^\top G_t\big)\,\mathbf x = M\mathbf s/h^2 + \sum_t w_t G_t^\top T_t$, the same scalar matrix for x, y and z.
+- global: $\big(M/h^2 + \sum_t w_t G_t^\top G_t\big)\,\mathbf x = M\mathbf s/h^2 + \sum_t w_t G_t^\top T_t$, the same scalar matrix for x, y and z (with $h'$ for h).
+
+Time integration: the paper's backward Euler ($h' = h$, $\mathbf s = \mathbf x + h\mathbf v + h^2\mathbf g$) loses 8 % of a 4 Hz wobble every step;
+here BDF2 by default ($h' = \tfrac23 h$, $\mathbf s = \tfrac43\mathbf x_0 - \tfrac13\mathbf x_{-1} + h'(\tfrac43\mathbf v_0 - \tfrac13\mathbf v_{-1}) + h'^2\mathbf g$,
+then $\mathbf v = (\mathbf x - \tfrac43\mathbf x_0 + \tfrac13\mathbf x_{-1})/h'$, `bdf2.ts`) loses 0.4 %, so the jiggle lasts as long as the bounciness slider says.
 
 The matrix covers the free particles only; attached ones move to the right-hand side, and when one is attached or
 detached (a pinch) the matrix is factored again. Sparse Cholesky in envelope form with reverse Cuthill–McKee ordering.
@@ -34,20 +38,21 @@ reaction (attached) = −Σ w (F − T) ∇N · h
 | Parameter | Meaning | Typical range | What you see when you change it |
 |---|---|---|---|
 | `pdIterations` | local/global iterations | 2–10 | more: closer to the true implicit step (stiffer, less artificial softness) |
+| `pdIntegrator` | BDF2 or backward Euler | — | backward Euler: the shake dies in 0.2 s; BDF2: 5.5–6.5 swings over ~1 s |
 | `pdPoisson` | ν, the volume weight against the shape weight | 0.3–0.48 | higher: keeps volume better |
 
 ## When to use it
 When you want an implicit, unconditionally stable step at a fixed cost: the deviation from the bones is the lowest of
-the library in the bend (1.75 cm), 0 inverted cells. Its weakness is that few iterations make the material softer than
+the library in the bend (1.9 cm), 0 inverted cells, and with BDF2 it jiggles like the FEM blocks. Its weakness is that few iterations make the material softer than
 it should be (each iteration only moves part of the way), and any material that is not a projection (neo-Hookean
-proper) needs a quasi-Newton extension. About 1.2 ms of flesh per step; a pinch costs one refactorisation.
+proper) needs a quasi-Newton extension. About 1.8 ms of flesh per step; a pinch costs one refactorisation.
 
-Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5 cm):
+Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5.4 cm; the shake is the jiggle harness of the index):
 
-| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) |
-|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| `projective-dynamics` | 1.75 | 0 | 0.980 | 7.6 | 28.0 | 1.74 (1.23) |
+| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) | shake, default: peak mm / swings / decay s | shake, softest |
+|---|---|---|---|---|---|---|---|---|
+| cpu-constraints (built-in) | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) | 32 / 3.5 / 0.47 | 25 / 3.5 / 0.50 |
+| `projective-dynamics` | 1.94 | 0 | 0.982 | 7.6 | 4.3 | 2.73 (1.84) | 63 / 6.5 / 0.87 | 104 / 5.5 / 1.07 |
 
 ## In the code
 `src/algorithms/sim/projectiveDynamics.ts`, a **flesh** block; `EnvelopeCholesky` in `linalg.ts`. First experiments:

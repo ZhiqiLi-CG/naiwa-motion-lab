@@ -11,8 +11,11 @@ For the spring between particles i and j, rest length L, stiffness k, damping c,
 
 $$\mathbf f_i = \big(k\,(l - L) + c\,(\mathbf v_j - \mathbf v_i)\cdot\mathbf n\big)\,\mathbf n, \qquad \mathbf f_j = -\mathbf f_i$$
 
-Stiffness from the material: $k = 2E\,V_e/L^2$, $V_e$ the edge's share of the volume of its cells (a sixth of each, times
-the region's stiffness); $c = 2\zeta\sqrt{k\,m}$.
+Stiffness from the material: $k = 16E\,V_e/L^2$, $V_e$ the edge's share of the volume of its cells (a sixth of each,
+times the region's stiffness). The 16: a spring network has no Poisson effect and resists shear only through the cube
+diagonals, so it needs that much to ring at the frequency of the continuum (the FEM blocks) instead of sagging into
+itself. Damping is Rayleigh stiffness damping, $c = \beta k$: a mode of frequency ω gets the damping ratio βω/2, so the
+lattice-scale buzz of stiff springs is damped and the slow jiggle hardly (the bounciness slider damps the jiggle).
 
 **Explicit** (symplectic Euler, substeps of $h_s$): $\mathbf v \mathrel{+}= h_s(\mathbf g + \mathbf f/m)$, then $\mathbf x \mathrel{+}= h_s\mathbf v$. Stable only while $h_s\,\omega < 2$
 for the fastest particle, $\omega^2 \approx \sum k/m$: the code takes at least $\lceil h\,\omega\rceil$ substeps.
@@ -39,27 +42,27 @@ else for (s of substeps)                    // max(springSubsteps, ⌈h·ω⌉)
 |---|---|---|---|
 | `integrator` | explicit or semi-implicit | — | semi-implicit: steadier and fewer inverted cells, costs a CG solve |
 | `springSubsteps` | least explicit substeps per step | 5–20 | fewer is cheaper; the stability limit raises it anyway |
-| `springDamping` | ζ of each spring | 0.1–0.6 | low: the flesh rings and the standing frog never comes to rest |
+| `springDamping` | Rayleigh β (ms) | 0.5–3 | 0: at the firmest setting the springs' buzz couples into the bones and the body collapses; large: the jiggle dies too |
 | `springCgIterations` | CG iterations (semi-implicit) | 10–50 | fewer: the step is softer than it should be |
 | `bodyParticles` | lattice nodes in the Body | 150–600 | finer, slower; the explicit substeps grow too (smaller cells are stiffer) |
 
 ## When to use it
-For learning and as a baseline. Cheap (0.3 ms of flesh per step on the frog), but its flesh loses
-volume when the torso bends (Body 0.92 of rest) and cells turn inside out (20 in the 50° bend) because nothing
+For learning and as a baseline. Cheap (0.4 ms of flesh per step on the frog), but its flesh loses
+volume when the torso bends (Body 0.94 of rest) and cells turn inside out (6 in the 50° bend) because nothing
 measures a cell's volume. XPBD and the FEM blocks fix exactly that. See the measured table in
 [the index](../sim-index.md).
 
-Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5 cm):
+Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5.4 cm; the shake is the jiggle harness of the index):
 
-| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) |
-|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| `mass-spring`, explicit | 2.13 | 20 | 0.917 | 8.8 | 12.0 | 0.84 (0.30) |
-| `mass-spring`, semi-implicit | 2.14 | 6 | 0.941 | 9.1 | 11.1 | 1.15 (0.61) |
+| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) | shake, default: peak mm / swings / decay s | shake, softest |
+|---|---|---|---|---|---|---|---|---|
+| cpu-constraints (built-in) | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) | 32 / 3.5 / 0.47 | 25 / 3.5 / 0.50 |
+| `mass-spring`, explicit | 2.04 | 6 | 0.942 | 9.1 | 14.7 | 1.07 (0.37) | 32 / 3.0 / 0.30 | 94 / 2.0 / 0.30 |
+| `mass-spring`, semi-implicit | 2.04 | 6 | 0.942 | 9.1 | 13.9 | 1.68 (0.89) | — | — |
 
 ## In the code
 `src/algorithms/sim/massSpring.ts`, a **flesh** block (the particles, lattice and two-way attachments come from
-`flesh.ts`). First experiments: add a volume spring per cell to `forces`, or compare `springDamping` 0.1 and 0.6 while
+`flesh.ts`). First experiments: add a volume spring per cell to `forces`, or compare `springDamping` 0.5 and 3 while
 poking the belly.
 
 ## References

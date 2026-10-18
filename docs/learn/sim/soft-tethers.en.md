@@ -35,22 +35,22 @@ afterStep (after the flesh's step and the targets):
 | `tetherNear` | frequency next to the bone (Hz) | 10–40 | lower: the deep flesh lags on fast moves |
 | `tetherFar` | frequency at the surface (Hz) | 0.2–3 | higher: the surface is pulled back to the bone's shape, less jiggle |
 | `tetherReach` | depth over which the strength falls | 0.8–2 | larger: a firmer, more bone-shaped body |
-| `tetherDamping` | ζ of the tethers | 0.3–1 | lower: more bounce |
+| `tetherDamping` | ζ of the tethers | 0.2–1 | lower: more bounce; below about 0.3 the tethers' explicit pull on the bones keeps the standing frog fidgeting |
 
 ## When to use it
 When the flesh should give everywhere a little and the transition from carried to free must not show. It costs
-almost nothing itself; with the corotational FEM the Body follows the bend within 2.3 cm with 0 inverted cells, and the
+almost nothing itself; with the corotational FEM the Body follows the bend within 2.5 cm with 0 inverted cells, and the
 head, with less of it riding hard on the skull, gives more (17 mm from rigid against 8 mm with bone attachments). It is
 applied after the flesh's step (operator splitting): tethers and elasticity are not solved together, so very stiff
 tethers can fight a stiff solver; the hard core is what carries the weight.
 
-Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5 cm):
+Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5.4 cm; the shake is the jiggle harness of the index):
 
-| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) |
-|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| `implicit-fem`, corotational | 1.82 | 0 | 0.970 | 8.1 | 21.0 | 1.93 (1.48) |
-| `fem-tethers` (soft tethers) | 2.31 | 0 | 0.977 | 17.0 | 17.0 | 2.52 (1.86) |
+| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) | shake, default: peak mm / swings / decay s | shake, softest |
+|---|---|---|---|---|---|---|---|---|
+| cpu-constraints (built-in) | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) | 32 / 3.5 / 0.47 | 25 / 3.5 / 0.50 |
+| `implicit-fem`, corotational | 2.00 | 0 | 0.970 | 7.9 | 12.7 | 3.10 (2.21) | 60 / 7.0 / 0.85 | 104 / 7.0 / 1.38 |
+| `fem-tethers` (soft tethers) | 2.53 | 0 | 0.976 | 16.3 | 14.5 | 3.24 (2.34) | 60 / 3.5 / 0.28 | 101 / 3.0 / 0.33 |
 
 ## In the code
 `src/algorithms/sim/softTethers.ts`, a **coupling** block (the `fem-tethers` simulator pairs it with

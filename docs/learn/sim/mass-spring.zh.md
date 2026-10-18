@@ -9,7 +9,9 @@
 
 $$\mathbf f_i = \big(k\,(l - L) + c\,(\mathbf v_j - \mathbf v_i)\cdot\mathbf n\big)\,\mathbf n, \qquad \mathbf f_j = -\mathbf f_i$$
 
-刚度来自材质：$k = 2E\,V_e/L^2$，$V_e$ 是这条边分到的周围单元体积（每个单元的六分之一，乘以区域刚度）；$c = 2\zeta\sqrt{k\,m}$。
+刚度来自材质：$k = 16E\,V_e/L^2$，$V_e$ 是这条边分到的周围单元体积（每个单元的六分之一，乘以区域刚度）。乘 16 是因为弹簧网络没有泊松效应、
+只靠立方体对角线抗剪，要这么硬才能以连续体（有限元）的频率晃动，而不是塌下去。阻尼用 Rayleigh 刚度比例阻尼 $c = \beta k$：频率 ω 的模态阻尼比
+为 βω/2，硬弹簧的格子尺度高频被压住，慢的晃动几乎不受影响（晃动的阻尼由弹性滑块决定）。
 
 **显式**（辛欧拉，子步 $h_s$）：$\mathbf v \mathrel{+}= h_s(\mathbf g + \mathbf f/m)$，再 $\mathbf x \mathrel{+}= h_s\mathbf v$。只有最快的粒子满足 $h_s\,\omega < 2$ 时才稳定，
 $\omega^2 \approx \sum k/m$：代码至少取 $\lceil h\,\omega\rceil$ 个子步。
@@ -36,25 +38,25 @@ else for (s of substeps)                    // max(springSubsteps, ⌈h·ω⌉)
 |---|---|---|---|
 | `integrator` | 显式或半隐式 | — | 半隐式更稳、翻转单元更少，多一次 CG 求解 |
 | `springSubsteps` | 显式每步至少的子步数 | 5–20 | 少则便宜；稳定性限制会自动加上去 |
-| `springDamping` | 每根弹簧的阻尼比 ζ | 0.1–0.6 | 太低：肉一直颤，站着的奶蛙停不下来 |
+| `springDamping` | Rayleigh β（ms） | 0.5–3 | 0：最硬时弹簧的高频颤动传给骨头，身体会塌；太大：晃动也没了 |
 | `springCgIterations` | CG 迭代次数（半隐式） | 10–50 | 少：这一步比应有的软 |
 | `bodyParticles` | 身体的格点数 | 150–600 | 越细越慢；显式子步也会变多（小单元更硬） |
 
 ## 何时用
-用来学习和做基准。很便宜（奶蛙上每步约 0.3 ms 软体时间），但躯干弯曲时肉会丢体积（身体只剩静止的 0.92），单元也会翻转
-（50° 弯腰时 20 个），因为没有任何东西在量单元的体积。XPBD 和有限元正好解决这个。实测见[索引](../sim-index.md)。
+用来学习和做基准。很便宜（奶蛙上每步约 0.4 ms 软体时间），但躯干弯曲时肉会丢体积（身体只剩静止的 0.94），单元也会翻转
+（50° 弯腰时 6 个），因为没有任何东西在量单元的体积。XPBD 和有限元正好解决这个。实测见[索引](../sim-index.md)。
 
-在真奶蛙上用[索引](../sim-index.md)的同一套测量（都能站稳：头高 0.99，漂移 ≤ 5 cm）：
+在真奶蛙上用[索引](../sim-index.md)的同一套测量（都能站稳：头高 0.99，漂移 ≤ 5.4 cm；"摇"是索引里的抖动测量）：
 
-| naiwa.glb，弯腰 50° | 偏离 cm | 翻转单元 | 身体体积 | 头误差 mm | 手入肚 mm | 每步 ms（软体） |
-|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| `mass-spring`, explicit | 2.13 | 20 | 0.917 | 8.8 | 12.0 | 0.84 (0.30) |
-| `mass-spring`, semi-implicit | 2.14 | 6 | 0.941 | 9.1 | 11.1 | 1.15 (0.61) |
+| naiwa.glb，弯腰 50° | 偏离 cm | 翻转单元 | 身体体积 | 头误差 mm | 手入肚 mm | 每步 ms（软体） | 摇，默认：峰值 mm / 摆动 / 衰减 s | 摇，最软 |
+|---|---|---|---|---|---|---|---|---|
+| cpu-constraints (built-in) | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) | 32 / 3.5 / 0.47 | 25 / 3.5 / 0.50 |
+| `mass-spring`, explicit | 2.04 | 6 | 0.942 | 9.1 | 14.7 | 1.07 (0.37) | 32 / 3.0 / 0.30 | 94 / 2.0 / 0.30 |
+| `mass-spring`, semi-implicit | 2.04 | 6 | 0.942 | 9.1 | 13.9 | 1.68 (0.89) | — | — |
 
 ## 在代码里
 `src/algorithms/sim/massSpring.ts`，**flesh**（软体）块（粒子、格子和双向附着来自 `flesh.ts`）。先试：在 `forces` 里给每个单元加一根
-体积弹簧；或者戳肚子时比较 `springDamping` 0.1 和 0.6。
+体积弹簧；或者戳肚子时比较 `springDamping` 0.5 和 3。
 
 ## 参考
 - D. Baraff, A. Witkin, *Large Steps in Cloth Simulation*, SIGGRAPH 1998. https://doi.org/10.1145/280814.280821

@@ -45,21 +45,21 @@ for (part of parts)
 ## When to use it
 With any of the library's particle solvers (all assemblies use it). It is a post-step projection, not part of the
 solve: simple and shared, but a contact and a stiff elastic force can disagree within a step; that is why shallow
-overlaps are resolved softly. Hands pressed into the belly end up 0–29 mm deep depending on the solver (built-in, solved
-inside Rapier: 8 mm). A solver that handles contacts in its own solve (e.g. as XPBD constraints in the substeps)
+overlaps are resolved softly. Hands pressed into the belly end up 4–28 mm deep depending on the solver (built-in, solved
+inside Rapier: 0–8 mm). A solver that handles contacts in its own solve (e.g. as XPBD constraints in the substeps)
 should cover the `collision` slot instead.
 
-Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5 cm):
+Measured on the real frog with the one harness of [the index](../sim-index.md) (all standing: head height 0.99, drift ≤ 5.4 cm; the shake is the jiggle harness of the index):
 
-| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) |
-|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| `mass-spring`, explicit | 2.13 | 20 | 0.917 | 8.8 | 12.0 | 0.84 (0.30) |
-| `pbd` | 2.19 | 0 | 0.991 | 6.4 | 0.0 | 1.34 (0.87) |
-| `xpbd` | 2.46 | 0 | 0.995 | 9.0 | 14.9 | 0.97 (0.51) |
-| `shape-matching` | 3.66 | 0 | 0.979 | 15.9 | 6.9 | 0.63 (0.15) |
-| `projective-dynamics` | 1.75 | 0 | 0.980 | 7.6 | 28.0 | 1.74 (1.23) |
-| `implicit-fem`, corotational | 1.82 | 0 | 0.970 | 8.1 | 21.0 | 1.93 (1.48) |
+| naiwa.glb, bend 50° | deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) | shake, default: peak mm / swings / decay s | shake, softest |
+|---|---|---|---|---|---|---|---|---|
+| cpu-constraints (built-in) | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) | 32 / 3.5 / 0.47 | 25 / 3.5 / 0.50 |
+| `mass-spring`, explicit | 2.04 | 6 | 0.942 | 9.1 | 14.7 | 1.07 (0.37) | 32 / 3.0 / 0.30 | 94 / 2.0 / 0.30 |
+| `pbd` | 2.65 | 0 | 0.996 | 8.0 | 28.1 | 2.85 (1.97) | 80 / 2.5 / 0.38 | 81 / 3.0 / 0.38 |
+| `xpbd` | 2.23 | 0 | 0.970 | 9.9 | 14.8 | 2.23 (1.45) | 34 / 1.5 / 0.13 | 71 / 5.0 / 0.18 |
+| `shape-matching` | 4.50 | 4 | 0.995 | 15.9 | 19.3 | 1.10 (0.20) | 41 / 2.5 / 0.72 | 39 / 3.5 / 0.80 |
+| `projective-dynamics` | 1.94 | 0 | 0.982 | 7.6 | 4.3 | 2.73 (1.84) | 63 / 6.5 / 0.87 | 104 / 5.5 / 1.07 |
+| `implicit-fem`, corotational | 2.00 | 0 | 0.970 | 7.9 | 12.7 | 3.10 (2.21) | 60 / 7.0 / 0.85 | 104 / 7.0 / 1.38 |
 
 ## In the code
 `src/algorithms/sim/sdfContacts.ts`, a **collision** block. First experiments: give the floor a softness instead of a

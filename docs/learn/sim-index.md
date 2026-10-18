@@ -41,9 +41,20 @@ surface, particle metrics) and `fem-tethers` (implicit FEM with soft tethers ins
   on the belly moves the frog by the push's momentum (tested in `library.test.ts`).
   **双向附着**：挂着的粒子随刚体移动，肉施加给它的冲量还给刚体；它自身的质量以只有质量的碰撞体挂在刚体上；自由肉相对目标的阻尼把去掉的
   动量交给最近的骨头，所以戳肚子时整只奶蛙得到等量的动量。
-- **One material for all** (`material.ts`): the softness slider is Young's modulus (60 kPa → 6 kPa, 8.5 kPa at the
-  default), the regions are up to 4 × firmer, density 190 kg/m³, bounciness the damping ratio.
-  **统一材质**：软硬滑块就是杨氏模量，区域最多硬 4 倍。
+- **One material for all** (`material.ts`): the softness slider is Young's modulus (30 kPa → 1 kPa, 1.7 kPa at the
+  default; the belly then wobbles at 3–4 Hz in a shake, about 3 Hz at the softest), the regions are up to 4 × firmer,
+  density 190 kg/m³. The bounciness slider is a **decay time**, 0.12 s (dough) → 3 s (a jelly that keeps going), 1 s at
+  the default, applied as mass-proportional (Rayleigh) damping of the jiggle relative to the bones.
+  **统一材质**：软硬滑块就是杨氏模量（30 kPa → 1 kPa），区域最多硬 4 倍；弹性滑块是晃动衰减到 1/e 的时间（0.12 s → 3 s），以质量比例阻尼施加。
+- **Time integration that keeps the jiggle**: implicit FEM and Projective Dynamics step with BDF2 (`bdf2.ts`) instead
+  of backward Euler, which shrinks a 4 Hz wobble by 8 % every step at 60 Hz (gone in 0.2 s) and faster ones sooner;
+  BDF2 loses 0.4 % per step there and still damps the stiff, lattice-scale modes, so it stays stable at the firmest
+  setting (Newmark's energy-conserving trapezoidal rule, tried first, blows up there through the explicit flesh–bone
+  coupling). Spring networks (mass–spring, XPBD's edges) are 16 × stiffer than the modulus suggests (they have no
+  Poisson effect and resist shear only through the cube diagonals) and mass–spring damps them by Rayleigh stiffness
+  damping c = βk. A poke wakes the bones the flesh rides on, so they take their share of it.
+  **保留晃动的时间积分**：有限元和投影动力学用 BDF2 代替后向欧拉（后者在 60 Hz 下每步吃掉 4 Hz 晃动的 8%）；BDF2 每步只损失 0.4%，又能压住
+  格子尺度的高频，最硬时也稳定。
 
 ## Measured · 实测
 One harness for all (`src/algorithms/sim/bench.ts`, the table printed by `npx vitest run src/algorithms/sim/bench.test.ts`)
@@ -57,48 +68,94 @@ on naiwa.glb with the app's default material (softness 0.85, bounciness 0.65), e
 - **hands in belly**: both hands driven 3 cm into the belly for 2 s — the deepest a limb's contact capsule reaches into
   the Body's surface;
 - **ms/step**: the whole step (skeleton, flesh, contacts, coupling) during the bend, and the flesh block alone in
-  brackets (for `cpu-constraints` the flesh is solved inside Rapier's step, so it is in the total), Node on a laptop
-  CPU, the fastest of three runs.
+  brackets (for `cpu-constraints` the flesh is solved inside Rapier's step, so it is in the total), Node, the fastest
+  of three runs.
+
+The bench also runs every library simulator at the sliders' extremes (softness 0 and 1, bounciness 1): standing 3 s
+and bending 2 s, nothing explodes, the volume stays within 30 % and the flesh within 12 cm of its bones.
 
 同一套测量：真奶蛙、默认材质、各自默认参数。自由站立 10 秒；驱动弯腰 50° 保持 3 秒；双手按进肚子 3 厘米；每步毫秒（括号内是软体块本身）。
+另外每个模拟器在滑块两端（最硬、最软，最弹）各跑一次：不炸、体积变化 < 30%。
 
 | simulator | particles / cells | head height | lean ° | drift cm | jitter mm/s | bend: deviation cm | inverted | Body volume | head error mm | hands in belly mm | ms/step (flesh) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| cpu-constraints (built-in) | 417 / 1190 | 0.991 | 0.4 | 4.3 | 0.0 | 4.06 | 0 | 0.988 | 8.9 | 7.9 | 1.48 (in Rapier) |
-| mass-spring, explicit | 444 / 1206 | 0.991 | 0.1 | 1.5 | 1.9 | 2.13 | 20 | 0.917 | 8.8 | 12.0 | 0.84 (0.30) |
-| mass-spring, semi-implicit | 444 / 1206 | 0.991 | 0.1 | 1.6 | 1.6 | 2.14 | 6 | 0.941 | 9.1 | 11.1 | 1.15 (0.61) |
-| pbd | 444 / 1206 | 0.991 | 0.1 | 1.4 | 2.1 | 2.19 | 0 | 0.991 | 6.4 | 0.0 | 1.34 (0.87) |
-| xpbd | 444 / 1206 | 0.991 | 0.1 | 1.4 | 2.4 | 2.46 | 0 | **0.995** | 9.0 | 14.9 | 0.97 (0.51) |
-| shape-matching | 444 / 1206 | 0.991 | 0.1 | 1.5 | 1.4 | 3.66 | 0 | 0.979 | 15.9 | 6.9 | **0.63 (0.15)** |
-| projective-dynamics | 444 / 1206 | 0.992 | 0.0 | 1.4 | 0.5 | **1.75** | 0 | 0.980 | **7.6** | 28.0 | 1.74 (1.23) |
-| implicit-fem, linear | 444 / 1206 | 0.991 | 0.2 | 4.9 | 0.6 | 2.94 | 0 | 1.152 | 25.4 | 28.9 | 1.27 (0.81) |
-| implicit-fem, corotational | 444 / 1206 | 0.991 | 0.2 | 4.9 | 0.6 | 1.82 | 0 | 0.970 | 8.1 | 21.0 | 1.93 (1.48) |
-| implicit-fem, neo-Hookean | 444 / 1206 | 0.991 | 0.0 | 1.4 | 0.7 | 1.89 | 0 | 0.984 | 8.5 | 10.2 | 2.64 (2.06) |
-| fem-tethers | 444 / 1206 | 0.991 | 0.0 | 1.4 | 1.5 | 2.31 | 0 | 0.977 | 17.0 | 17.0 | 2.52 (1.86) |
+| cpu-constraints (built-in) | 417 / 1190 | 0.992 | 1.5 | 11.4 | 0.0 | 3.47 | 0 | 0.999 | 8.5 | 0.0 | 2.38 (in Rapier) |
+| mass-spring, explicit | 444 / 1206 | 0.991 | 0.3 | 5.1 | 1.1 | 2.04 | 6 | 0.942 | 9.1 | 14.7 | 1.07 (0.37) |
+| mass-spring, semi-implicit | 444 / 1206 | 0.992 | 0.1 | 1.5 | 1.2 | 2.04 | 6 | 0.942 | 9.1 | 13.9 | 1.68 (0.89) |
+| pbd | 444 / 1206 | 0.991 | 0.3 | 4.7 | 3.0 | 2.65 | 0 | 0.996 | 8.0 | 28.1 | 2.85 (1.97) |
+| xpbd | 444 / 1206 | 0.991 | 0.1 | 1.6 | 1.6 | 2.23 | 0 | 0.970 | 9.9 | 14.8 | 2.23 (1.45) |
+| shape-matching | 444 / 1206 | 0.992 | 0.0 | 1.4 | 1.9 | 4.50 | 4 | 0.995 | 15.9 | 19.3 | 1.10 (0.20) |
+| projective-dynamics | 444 / 1206 | 0.991 | 0.2 | 5.3 | 1.4 | **1.94** | 0 | 0.982 | **7.6** | 4.3 | 2.73 (1.84) |
+| implicit-fem, linear | 444 / 1206 | 0.991 | 0.1 | 1.5 | 1.4 | 3.17 | 0 | 1.158 | 25.5 | 7.5 | 1.80 (1.06) |
+| implicit-fem, corotational | 444 / 1206 | 0.991 | 0.3 | 5.4 | 1.4 | 2.00 | 0 | 0.970 | 7.9 | 12.7 | 3.10 (2.21) |
+| implicit-fem, neo-Hookean | 444 / 1206 | 0.991 | 0.3 | 5.4 | 1.4 | 2.05 | 0 | 0.986 | 8.2 | 6.6 | 6.46 (5.40) |
+| fem-tethers | 444 / 1206 | 0.991 | 0.1 | 4.5 | 4.9 | 2.53 | 0 | 0.976 | 16.3 | 14.5 | 3.24 (2.34) |
+
+(The machine was busy during this run: the built-in step took 2.4 ms here against 1.5 ms on a quiet run.)
+
+### Jiggle · 抖动
+`src/algorithms/sim/jiggle.ts` (`npx vitest run src/algorithms/sim/jiggle.test.ts`): the frog stands 2 s, then
+**poke** — the page's strongest poke into the belly (5 m/s, free mode) — or **shake** — driven, the torso swings
+sideways ±20° at 3 Hz for half a second and stops dead. The signal is the belly's rendered surface around the poke
+(or the belly's front) against where its bones carry it, about where it settles. Each cell: **peak mm / oscillations
+(full swings above a tenth of the peak) / 1/e decay s / Hz**, at the default material (softness 0.85, bounciness 0.65)
+and the softest the feel panel allows (softness 1, bounciness 1).
+
+戳：页面上最强的一戳；摇：驱动模式下躯干左右摆 ±20°、3 Hz、半秒后急停。每格：峰值 mm / 摆动次数 / 衰减到 1/e 的秒数 / 频率。
+
+| before (backward Euler, damping ratio from bounciness, 6–60 kPa) | poke, default | poke, softest | shake, default | shake, softest |
+|---|---|---|---|---|
+| cpu-constraints (built-in) | 12 / 4.0 / 1.35 / 1.4 | 25 / 2.5 / 0.25 / 1.0 | 32 / 3.5 / 0.47 / 1.2 | 25 / 3.5 / 0.50 / 1.1 |
+| mass-spring | 16 / 0.5 / 0.03 / — | 19 / 0.5 / 0.05 / — | 24 / 1.0 / 0.17 / 3.3 | 50 / 1.0 / 0.22 / 2.7 |
+| pbd | 9 / 0.0 / 0.03 / — | 9 / 0.0 / 0.05 / — | 32 / 1.0 / 0.08 / 2.7 | 48 / 1.5 / 0.22 / 2.3 |
+| xpbd | 8 / 0.5 / 0.02 / — | 11 / 0.5 / 0.02 / — | 28 / 2.0 / 0.13 / 3.6 | 44 / 2.5 / 0.27 / 3.4 |
+| shape-matching | 47 / 0.5 / 0.07 / — | 56 / 1.0 / 0.17 / 3.3 | 38 / 1.5 / 0.18 / 2.9 | 62 / 2.0 / 0.42 / 2.6 |
+| projective-dynamics | 17 / 0.5 / 0.05 / — | 19 / 0.5 / 0.03 / — | 1 / 3.0 / 0.22 / 5.2 | 2 / 3.0 / 0.33 / 4.7 |
+| implicit-fem (corotational) | 5 / 0.0 / 0.02 / — | 7 / 0.0 / 0.03 / — | 3 / 1.5 / 0.15 / 5.5 | 5 / 1.5 / 0.17 / 6.0 |
+| implicit-fem, neo-Hookean | 4 / 0.0 / 0.02 / — | 6 / 0.0 / 0.03 / — | 60 / 3.0 / 0.08 / 1.1 | 73 / 5.0 / 2.53 / 1.6 |
+| fem-tethers | 5 / 0.0 / 0.03 / — | 7 / 0.0 / 0.03 / — | 5 / 1.0 / 0.10 / 5.0 | 6 / 1.5 / 0.12 / 6.7 |
+
+| after (BDF2, decay time from bounciness, 1–30 kPa) | poke, default | poke, softest | shake, default | shake, softest |
+|---|---|---|---|---|
+| mass-spring | 20 / 2.5 / 0.10 / 12.0 | 24 / 2.5 / 0.13 / 9.2 | 32 / 3.0 / 0.30 / 5.2 | 94 / 2.0 / 0.30 / 2.1 |
+| pbd | 13 / 0.5 / 0.03 / — | 13 / 0.5 / 0.03 / — | 80 / 2.5 / 0.38 / 2.5 | 81 / 3.0 / 0.38 / 2.1 |
+| xpbd | 16 / 1.5 / 0.05 / 15.0 | 21 / 1.5 / 0.07 / 10.0 | 34 / 1.5 / 0.13 / 5.0 | 71 / 5.0 / 0.18 / 3.6 |
+| shape-matching | 53 / 1.5 / 0.25 / 2.6 | 39 / 2.0 / 0.28 / 2.3 | 41 / 2.5 / 0.72 / 2.1 | 39 / 3.5 / 0.80 / 1.9 |
+| projective-dynamics | 28 / 1.5 / 0.12 / 6.0 | 34 / 2.5 / 0.13 / 4.1 | 63 / 6.5 / 0.87 / 3.4 | 104 / 5.5 / 1.07 / 2.8 |
+| implicit-fem (corotational) | 20 / 1.5 / 0.08 / 6.7 | 27 / 1.5 / 0.10 / 5.5 | 60 / **7.0** / 0.85 / 3.6 | 104 / 7.0 / 1.38 / 2.9 |
+| implicit-fem, neo-Hookean | 19 / 1.5 / 0.08 / 6.7 | 25 / 1.5 / 0.12 / 5.5 | 70 / 6.5 / 0.83 / 3.6 | 110 / **8.5** / **1.72** / 2.9 |
+| fem-tethers | 20 / 1.0 / 0.03 / 7.5 | 25 / 1.0 / 0.12 / 6.0 | 60 / 3.5 / 0.28 / 3.3 | 101 / 3.0 / 0.33 / 2.8 |
 
 Reading it · 怎么读:
-- **Everything stands.** All simulators stand within 1 % of their height and come to rest within 5 cm (the built-in
-  4 cm). The library's flesh blocks raise Rapier's internal PGS iterations to 2: with one, the rigid skeleton's stiff
-  leg motors buzz and the frog creeps across the floor (the built-in soft bodies add their own iterations).
-- **Volume and inversion are where the models differ.** Springs do not see volume: mass–spring loses 6–8 % of the Body
-  and turns 6–20 cells inside out in the bend. Everything with a volume term (PBD, XPBD, PD, corotational and
-  neo-Hookean FEM) has 0 inverted cells. Linear FEM is not rotation-invariant: the bent torso *grows* by 15 % and the
-  head distorts (25 mm) — the classic reason for corotational FEM.
-- **Following the bones.** Projective Dynamics and the FEM blocks keep the flesh closest to its bones (1.75–1.9 cm, the
-  built-in 4.1 cm) and the head in shape (8 mm). Shape matching with one cluster per region is the loosest (3.7 cm,
-  head 16 mm).
-- **Hands in the belly.** The SDF contacts push the Body's surface off the hands' capsules after the flesh's step;
-  how much of that survives the next step depends on how hard the solver pulls back: from 0–7 mm (PBD, shape matching)
-  to 28 mm (PD, linear FEM). The built-in resolves contacts inside its solve (8 mm).
-- **Cost.** In Node on a quiet machine (the table) a whole step takes 0.6–2.6 ms (the built-in 1.5 ms), and they
-  all fit the page's 4 ms physics budget per frame (one step per frame at 60 Hz). JavaScript in the browser is slower
-  than Rapier's WebAssembly: in Chrome, on a busy machine, with the torso swaying (all simulators in one page, best of
-  two rounds), a step took cpu-constraints 3.6–3.9 ms, shape-matching 1.9–2.0, mass-spring 2.1–2.2, xpbd 2.5–3.1,
-  pbd 3.5–4.3, projective-dynamics 4.4–5.1, implicit-fem 5.4–6.3 and fem-tethers 5.6–6.6 ms. So XPBD, shape matching and
-  mass–spring are the safe interactive choices; PD and FEM cost about 1.2–1.6 × the built-in and need a quiet machine
-  (or fewer `bodyParticles`, CG iterations or PD iterations) to stay within 4 ms.
+- **The causes, per solver.** Backward Euler shrank every wobble by 1/√(1 + (hω)²) per step (FEM, PD: the shake died
+  within 0.15–0.3 s whatever the sliders); the bounciness slider set a damping *ratio* at a stiff frequency, i.e. a
+  damping rate of 7 /s (the jiggle's 1/e time 0.27 s at the default); the moduli were so stiff (8.5 kPa) that the
+  wobble ran at 5–8 Hz and was gone before it showed; mass–spring's per-spring dampers added up to an overdamped
+  body; PBD's projections and shape matching's pull are implicit position corrections that dissipate by
+  construction; the soft tethers had damping ratio 0.7.
+- **After.** FEM and PD shake 5.5–8.5 times over 0.8–1.7 s at 3–4 Hz (softest 2.8–2.9 Hz), more than the built-in
+  (3.5 swings, 0.5 s); shape matching wobbles slowly (2 Hz, 0.7–0.8 s). XPBD with one Gauss–Seidel pass per substep,
+  and PBD, remain the most dissipative: their unconverged projections damp what they do not resolve (more substeps
+  help, at a cost). A **poke** is local: the dent rings 1–2.5 times at 4–7 Hz and spreads its energy into the whole
+  body within 0.1–0.3 s; the built-in's slower 1–1.4 Hz sway after a poke is the flesh sloshing on its soft
+  constraints.
+- **Everything stands** within 1 % of its height (drift 1.4–5.4 cm; built-in 11 cm in this run); the linear FEM steps
+  with backward Euler by default (its ghost forces would otherwise keep the frog fidgeting).
+- **Volume and inversion.** Springs do not see volume: mass–spring loses 6 % of the Body and turns 6 cells inside out
+  in the bend. Everything with a volume term (PBD, XPBD, PD, corotational and neo-Hookean FEM) has 0 inverted cells
+  (shape matching 4, now that its pull is softer). Linear FEM is not rotation-invariant: the bent torso *grows* by
+  16 % and the head distorts (25 mm).
+- **Following the bones.** PD and the FEM blocks keep the flesh closest to its bones (1.9–2.1 cm, the built-in 3.5 cm)
+  and the head in shape (8 mm).
+- **Cost.** In Chrome on this laptop (all simulators in one page, the torso swaying, best of two rounds) a step took
+  cpu-constraints 2.2 ms, shape-matching 0.9, mass-spring 1.2, xpbd 2.2, pbd 2.5, projective-dynamics 2.5,
+  implicit-fem (corotational) 2.7 and fem-tethers 3.1 ms: all within the page's 4 ms physics budget per frame. The
+  neo-Hookean material takes two Newton steps (one is not enough for it without backward Euler's damping) and about
+  twice the corotational cost: it is not interactive on a busy machine.
 
 ## Not covered yet · 还没有
 The belly pump (`bellySize`) inflates only PBD and XPBD (their volume constraints); the other solvers ignore it.
 Contacts inside the solvers (XPBD contact constraints, FEM with barrier or penalty contacts); self-collision of the
-Body's flesh; GPU versions (the `gpu` slot of the API is another agent's work); a skinned (multi-bone) target.
+Body's flesh; GPU versions (the `gpu` slot of the API is another agent's work); a skinned (multi-bone) target. A poke
+excites the dent more than the whole belly (energy spreads into the body within a few tenths of a second); a
+broader, slower wobble would need the poke spread wider or the belly's global mode targeted directly.
