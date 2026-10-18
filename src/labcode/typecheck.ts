@@ -160,7 +160,16 @@ async function closure(path: string, code: string): Promise<{ files: [string, st
 }
 
 /** Type problems of the user's source at `path` (a path below src/, as the loader takes it). */
-export async function checkTypes(path: string, code: string): Promise<TypeProblem[]> {
+export function checkTypes(path: string, code: string): Promise<TypeProblem[]> {
+  // One at a time: a check must not post before the files an earlier one is still gathering.
+  const run = queue.then(() => check(path, code));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+let queue: Promise<unknown> = Promise.resolve();
+
+async function check(path: string, code: string): Promise<TypeProblem[]> {
   const w = await start();
   const { files, entries } = await closure(path, code);
   const id = ++ids;
