@@ -71,17 +71,18 @@ const round = (n) => Object.fromEntries(Object.entries(n).map(([k, v]) => [k, Ma
 /** The change of a number in percent, as text. */
 const pct = (a, b) => (a > 1e-9 ? `${Math.round(((b - a) / a) * 100)}%` : "—");
 
-function describe(e, lang) {
+function describe(e, track) {
   const r = e.report, b = e.before, a = e.after;
+  const undone = track.cameraUndone;
   const zh = [
-    r.movingShots ? `去掉了 ${r.movingShots} 个镜头里的相机运动` : "镜头基本没动",
+    undone ? "镜头运动在上传分析时已去掉" : r.movingShots ? `去掉了 ${r.movingShots} 个镜头里的相机运动` : track.camera ? "镜头基本没动" : null,
     r.cuts.length ? `${r.cuts.length} 处剪辑接上了（不再跳）` : null,
     r.flips ? `纠正了 ${r.flips} 段左右腿/手臂互换` : null,
     `抖动 ${pct(b["jerk m/s³"], a["jerk m/s³"])}，脚滑 ${pct(b["foot slide cm/s"], a["foot slide cm/s"])}，奶蛙的抖动 ${pct(b["frog jerk m/s³"], a["frog jerk m/s³"])}`,
     r.looped ? "首尾接成了无缝循环" : null,
   ].filter(Boolean).join("；");
   const en = [
-    r.movingShots ? `camera motion removed from ${r.movingShots} shot(s)` : "the camera hardly moved",
+    undone ? "the camera was already taken out when the video was analysed" : r.movingShots ? `camera motion removed from ${r.movingShots} shot(s)` : track.camera ? "the camera hardly moved" : null,
     r.cuts.length ? `${r.cuts.length} cut(s) joined without a jump` : null,
     r.flips ? `${r.flips} left/right swaps undone` : null,
     `jitter ${pct(b["jerk m/s³"], a["jerk m/s³"])}, foot slide ${pct(b["foot slide cm/s"], a["foot slide cm/s"])}, the frog's jitter ${pct(b["frog jerk m/s³"], a["frog jerk m/s³"])}`,
@@ -217,7 +218,7 @@ export default {
     const out = { ...best.track, id: `${track.id ?? "dance"}-coherent`, name: `${track.name ?? "舞蹈"}·连贯`, nameEn: `${track.nameEn ?? track.name ?? "Dance"} (coherent)` };
     writeFileSync(path.join(ctx.workdir, "dance.json"), JSON.stringify(out));
     writeFileSync(path.join(ctx.workdir, "report.json"), JSON.stringify({ by, report: best.report, before: best.before, after: best.after, score: best.score, deterministic: { score: first.score, after: first.after } }, null, 1));
-    const summary = describe(best, lang);
+    const summary = describe(best, track);
     if (by === "codex" && answer.trim()) {
       const extra = answer.trim().slice(0, 600);
       summary.zh += ` Codex：${extra}`;

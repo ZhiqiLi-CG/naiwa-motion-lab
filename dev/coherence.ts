@@ -10,6 +10,7 @@
  *
  * URL: ?src=<video url> &seconds=<length filmed> &cut=<seconds of the cut>. Results: window.__coherence.
  * ?only=<video url> &camera=0|1: just analyse that video, the track in window.__coherence.track.
+ * ?save=1: just film, the clip as base64 in window.__coherence.filmed (to upload it elsewhere).
  */
 import { buildTestFrog } from "../src/motion/testFrog";
 import { createMotion } from "../src/motion/index";
@@ -333,12 +334,26 @@ async function main() {
 
 async function only(url: string) {
   status(`analysing ${url}…`);
+  videoAnalysis.keepRaw = true;
   results.track = await analyse(url, params.get("camera") !== "0");
+  videoAnalysis.keepRaw = false;
+  results.raw = { ...(results.track as Track), frames: videoAnalysis.raw, camera: undefined, cuts: undefined, cameraUndone: undefined };
   status("done");
   results.done = true;
 }
 
-(params.get("only") ? only(params.get("only")!) : main()).catch((e) => {
+async function save() {
+  status("filming through a virtual camera…");
+  const { file } = await film();
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  results.filmed = btoa(s);
+  status("done");
+  results.done = true;
+}
+
+(params.get("only") ? only(params.get("only")!) : params.get("save") ? save() : main()).catch((e) => {
   console.error(e);
   status(`failed: ${e instanceof Error ? e.message : String(e)}`);
   results.error = String(e);

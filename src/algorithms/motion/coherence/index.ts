@@ -161,7 +161,7 @@ export function coherence(track: Track, params: Partial<CoherenceParams> = {}): 
 
   const flips = p.flips ? fixFlips(frames, cuts, aspect) : 0;
   let outliers = 0;
-  const bad = p.outliers ? findOutliers(frames, cuts, p.boneTolerance, p.spike) : frames.map(() => new Set<number>());
+  const bad = p.outliers ? findOutliers(frames, cuts, p.boneTolerance, p.spike, Math.max(3, Math.round(0.3 * fps))) : frames.map(() => new Set<number>());
   for (const s of segs.filter((x) => x.fix === "outlier"))
     for (let k = Math.max(0, s.from); k < Math.min(n, s.to); k++) for (let i = 0; i < 33; i++) bad[k].add(i);
   if (bad.some((b) => b.size)) outliers = replaceOutliers(frames, bad, cuts);
@@ -196,9 +196,11 @@ export function compare(input: Track, result: { track: Track; reference: Frame[]
   const aspect = aspectOf(input), fps = input.fps;
   const contacts = detectContacts(result.track.frames, fps, aspect, { height: p.contactHeight, speed: p.contactSpeed });
   const cuts = result.track.cuts ?? [];
+  const n = result.track.frames.length;
+  const fidelityUntil = p.loop > 0 ? n - Math.min(Math.round(p.loop * fps), Math.floor(n / 3)) : n;
   return {
-    before: measure(input.frames, fps, aspect, { cuts, contacts, reference: result.reference }),
-    after: measure(result.track.frames, fps, aspect, { cuts, contacts, reference: result.reference }),
+    before: measure(input.frames, fps, aspect, { cuts, contacts, reference: result.reference, fidelityUntil }),
+    after: measure(result.track.frames, fps, aspect, { cuts, contacts, reference: result.reference, fidelityUntil }),
   };
 }
 

@@ -5,8 +5,9 @@
  * - Left/right flips: the detector swaps the legs (or arms) of a person seen from behind or crossing over. Frame by
  *   frame, each limb group is compared, as labelled and swapped, with where the previous frames put it (constant
  *   velocity); a swap that fits much better is undone.
- * - Bone lengths: a person's bones do not stretch. A bone more than `boneTolerance` off its median length marks its
- *   outer joint.
+ * - Bone lengths: a person's bones do not stretch. A bone more than `boneTolerance` off its median length for a
+ *   short while (up to `maxRun` frames) marks its outer joint; a longer stretch is a limb out of the picture or hidden,
+ *   which interpolating over would invent.
  * - Spikes (a Hampel filter): a coordinate further from the median of its neighbours (±3 frames) than `spike` robust
  *   standard deviations (and a floor) marks the joint.
  */
@@ -90,7 +91,7 @@ const BONES: [number, number][] = [
 const HANGING: Record<number, number[]> = { 15: [17, 19, 21], 16: [18, 20, 22], 27: [29, 31], 28: [30, 32] };
 
 /** Per frame, the landmarks judged wrong (bone lengths and spikes). */
-export function findOutliers(frames: Frame[], cuts: number[], boneTolerance: number, spike: number): Set<number>[] {
+export function findOutliers(frames: Frame[], cuts: number[], boneTolerance: number, spike: number, maxRun = 9): Set<number>[] {
   const bad = frames.map(() => new Set<number>());
   const mark = (k: number, i: number) => {
     bad[k].add(i);
@@ -102,7 +103,17 @@ export function findOutliers(frames: Frame[], cuts: number[], boneTolerance: num
     const ok = len.filter(Number.isFinite).sort((a, b) => a - b);
     if (!ok.length) continue;
     const med = ok[ok.length >> 1];
-    len.forEach((l, k) => Number.isFinite(l) && Math.abs(l / med - 1) > boneTolerance && mark(k, j));
+    const off = len.map((l) => Number.isFinite(l) && Math.abs(l / med - 1) > boneTolerance);
+    for (let k = 0; k < off.length; ) {
+      if (!off[k]) {
+        k++;
+        continue;
+      }
+      let e = k;
+      while (e < off.length && off[e]) e++;
+      if (e - k <= maxRun) for (let q = k; q < e; q++) mark(q, j);
+      k = e;
+    }
   }
   // Spikes, within each shot.
   const H = 3;

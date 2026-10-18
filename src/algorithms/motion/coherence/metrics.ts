@@ -8,7 +8,8 @@
  *   an after).
  * - cutSpeed: the hips' fastest speed across a cut (m/s): a jump at the cut.
  * - boneCV: the mean variation of bone lengths (%): a person's bones do not stretch.
- * - fidelity / fidelityPicture: RMS distance from a reference (cm), world landmarks and the picture.
+ * - fidelity / fidelityPicture: RMS distance from a reference (cm), world landmarks and the picture (outside a loop
+ *   blend's tail, which is changed on purpose).
  */
 import { hip, present, TORSO_M, typicalTorso, type Frame } from "./frames";
 import { footAt, SIDES, type Side } from "./contacts";
@@ -30,6 +31,8 @@ export interface MeasureOptions {
   cuts?: number[];
   contacts?: Record<Side, boolean[]>;
   reference?: Frame[];
+  /** Frames from here on are left out of the fidelity (a loop blend changes them on purpose). */
+  fidelityUntil?: number;
 }
 
 export function measure(frames: Frame[], fps: number, aspect: number, o: MeasureOptions = {}): CoherenceMetrics {
@@ -85,7 +88,7 @@ export function measure(frames: Frame[], fps: number, aspect: number, o: Measure
     let w = 0, wn = 0, p = 0, pn = 0;
     o.reference.forEach((r, k) => {
       const f = frames[k];
-      if (!present(r) || !present(f)) return;
+      if (!present(r) || !present(f) || k >= (o.fidelityUntil ?? Infinity)) return;
       for (let i = 0; i < 33; i++) {
         if (r.world[i][3] < 0.5) continue;
         w += (f.world[i][0] - r.world[i][0]) ** 2 + (f.world[i][1] - r.world[i][1]) ** 2 + (f.world[i][2] - r.world[i][2]) ** 2;
