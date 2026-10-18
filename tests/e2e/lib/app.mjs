@@ -7,12 +7,13 @@ import { decodePng, diffMask, maskCoverage, foregroundFraction, yellowBlob } fro
 const INSTRUMENT = readFileSync(new URL("./instrument.js", import.meta.url), "utf8");
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Mode labels from src/contracts.ts (Mode). */
-export const MODES = { play: "捏捏奶蛙", camera: "跟着我跳", video: "视频模仿", dance: "舞蹈库" };
+/** The motion sources' labels in the Motion panel (src/ui/copy.ts motion.sources), per store.mode. */
+export const MODES = { play: "自由", camera: "摄像头", video: "上传视频", dance: "预设动作" };
 export const POSE_BONES = ["hips", "upperarm_L", "upperarm_R", "forearm_L", "forearm_R", "thigh_L", "thigh_R", "spine", "head"];
 
-/** A fresh page with the watchers: console errors, page errors, failed or 4xx/5xx requests, anything off-origin. */
-export async function openPage(browser, url, { viewport, userAgent, lang = "zh-CN" }) {
+/** A fresh page with the watchers: console errors, page errors, failed or 4xx/5xx requests, anything off-origin.
+ *  Requests to labUrl (the local Lab server the page looks for, not running here) go to log.lab instead. */
+export async function openPage(browser, url, { viewport, userAgent, lang = "zh-CN", labUrl = null }) {
   const page = await browser.newPage();
   if (userAgent) await page.setUserAgent(userAgent);
   await page.setViewport(viewport);
@@ -23,19 +24,22 @@ export async function openPage(browser, url, { viewport, userAgent, lang = "zh-C
   }, lang);
   await page.evaluateOnNewDocument(INSTRUMENT);
   const origin = new URL(url).origin;
-  const log = { errors: [], failed: [], bad: [], external: [], requests: [], console: [], covered: [], step: "load" };
+  const log = { errors: [], failed: [], bad: [], external: [], requests: [], console: [], covered: [], lab: [], step: "load" };
+  const isLab = (u) => !!labUrl && !!u && u.startsWith(labUrl);
   page.__e2eLog = log;
   const at = (m) => `[${log.step}] ${m}`;
   page.on("console", (m) => {
     const where = m.location()?.url ? ` (${m.location().url.replace(origin, "")}${m.location().lineNumber != null ? `:${m.location().lineNumber + 1}` : ""})` : "";
     log.console.push(at(`console.${m.type()}: ${m.text()}`));
+    if (isLab(m.location()?.url)) return; // the Lab probe's "Failed to load resource"
     if (m.type() === "error" || m.type() === "assert") log.errors.push(at(`console.${m.type()}: ${m.text()}${where}`));
   });
   page.on("pageerror", (e) => log.errors.push(at(`uncaught: ${e.message}`)));
   page.on("request", (r) => {
     const u = r.url();
     if (/^(data|blob):/.test(u)) return;
-    if (!u.startsWith(origin)) log.external.push(at(`${r.method()} ${u}`));
+    if (isLab(u)) log.lab.push(at(`${r.method()} ${u}`));
+    else if (!u.startsWith(origin)) log.external.push(at(`${r.method()} ${u}`));
     else log.requests.push(u.slice(origin.length));
   });
   page.on("requestfailed", (r) => {
@@ -100,7 +104,9 @@ export async function locateFrog(page, outDir, name) {
     const m = diffMask(img, without, crect);
     const bbox = m.bbox && { x: m.bbox.x / img.dpr, y: m.bbox.y / img.dpr, w: m.bbox.w / img.dpr, h: m.bbox.h / img.dpr };
     const target = point ?? (m.centroid && { x: m.centroid.x / img.dpr, y: m.centroid.y / img.dpr });
-    return { how: point ? "hook: projected centre + frog mask" : "hook: frog mask", img, rect, target, bbox, centreCoverage: maskCoverage(img, m.mask, centre), areaFraction: m.count / (crect.w * crect.h), yellow: yellowBlob(img, toPx(img, bbox ?? rect)).fraction };
+    // The stage frames the frog in the part of the window the panels leave free, so look at its own centre.
+    const own = target ? { x: target.x * img.dpr - side / 2, y: target.y * img.dpr - side / 2, w: side, h: side } : centre;
+    return { how: point ? "hook: projected centre + frog mask" : "hook: frog mask", img, rect, target, bbox, centreCoverage: maskCoverage(img, m.mask, own), areaFraction: m.count / (crect.w * crect.h), yellow: yellowBlob(img, toPx(img, bbox ?? rect)).fraction };
   }
   const fg = foregroundFraction(img, crect, centre);
   const y = yellowBlob(img, crect);

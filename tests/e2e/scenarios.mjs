@@ -8,7 +8,7 @@ import { followScore, histogram, meanHistogram, splitLayout } from "./lib/follow
 import { mb } from "./lib/deploy.mjs";
 import {
   sleep, MODES, waitReady, shot, toPx, locateFrog, frogRegion, findControl, findMode, describe, appState, enterMode,
-  uploadVideo, poseRange, sampleBones, measureFrames, counts, since, mouseThrow, touchThrow, press,
+  uploadVideo, poseRange, sampleBones, measureFrames, counts, since, mouseThrow, touchThrow, press, selected,
 } from "./lib/app.mjs";
 
 // Targets. This machine is far faster than "an ordinary laptop", so the frame rate here must be near the display's.
@@ -28,6 +28,17 @@ const PENETRATION_TOL_M = 0.01; // limb flesh deeper than this inside the Body c
 const HEAD_RMS_MAX_M = 0.01; // the head's shape change once its motion is taken out
 const HEAD_MAX_M = 0.025;
 const ARM_BONES = ["hand_L", "hand_R", "upperarm_L", "upperarm_R", "forearm_L", "forearm_R", "chest", "hips"];
+const DENT_MIN_M = 0.01; // a poke dents the surface at least this much
+const STAND_MIN = 0.9; // standing: the head at least this fraction of its rest height…
+const STAND_AFTER_MS = 6000; // …this long after a switch or a disturbance
+const FREE_DRIFT_MAX_M = 0.05; // left alone for 10 s, the hips move at most this far
+const FOOT_SLIDE_MAX = 0.05; // m/s: how fast a standing foot (heel or toe on the floor) may slide with planted feet
+const TONGUE_GAP_MAX_M = 0.03; // every tongue vertex within a few cm of the Body surface
+const SIMULATORS_BUILTIN = ["cpu-constraints", "gpu-mpm"];
+const SIMULATORS_LIBRARY = ["mass-spring", "pbd", "xpbd", "shape-matching", "projective-dynamics", "implicit-fem", "fem-tethers"];
+const RETARGETERS = ["direction-copy", "planted-feet", "kalman-planted", "savgol-planted", "ccd-ik", "fabrik-ik", "dls-ik", "constrained-opt"];
+const DEFAULT_RETARGETER = "planted-feet";
+const GOUXIONG = "gouxiong"; // 狗熊哆嗦毛
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
 const fmt = (f) => `${f.fps.toFixed(0)} fps, main-thread work p50 ${f.workP50.toFixed(1)} ms / p95 ${f.workP95.toFixed(1)} ms, ${f.longTasks} long tasks` + (f.physicsP95 != null ? `, physics p50 ${f.physicsP50.toFixed(2)} ms / p95 ${f.physicsP95.toFixed(2)} ms` : "");
 
@@ -56,13 +67,19 @@ async function boot(T, group, page, log) {
   return ready;
 }
 
-/** The frog is on screen: with the hook its own pixels cover the canvas centre; without, the centre is not the
- *  background seen at the canvas border. */
+/** The frog is on screen: with the hook its own pixels cover its projected centre, it is in the canvas and the
+ *  panels do not cover it (the stage frames it in the part of the window they leave free); without the hook, the
+ *  centre is not the background seen at the canvas border. */
 async function frogVisible(T, group, page, name) {
   const frog = await locateFrog(page, T.out, name);
   if (frog.centreCoverage != null) {
-    T.check(group, "frog visible at the canvas centre", frog.centreCoverage >= 0.5 ? "PASS" : "FAIL",
-      `frog covers ${pct(frog.centreCoverage)} of the centre, ${pct(frog.areaFraction)} of the canvas; ${pct(frog.yellow)} of its box is 奶蛙-yellow (${frog.how}); ${name}.png`);
+    const b = frog.bbox;
+    const panels = await page.evaluate(() => window.__e2e.panelRects());
+    const overlap = (r) => Math.max(0, Math.min(b.x + b.w, r.x + r.w) - Math.max(b.x, r.x)) * Math.max(0, Math.min(b.y + b.h, r.y + r.h) - Math.max(b.y, r.y));
+    const covered = b ? panels.reduce((s, r) => s + overlap(r), 0) / (b.w * b.h) : 0;
+    const inCanvas = b && b.x >= frog.rect.x - 1 && b.y >= frog.rect.y - 1 && b.x + b.w <= frog.rect.x + frog.rect.w + 1 && b.y + b.h <= frog.rect.y + frog.rect.h + 1;
+    T.check(group, "frog visible, framed beside the panels", frog.centreCoverage >= 0.5 && inCanvas && covered <= 0.05 ? "PASS" : "FAIL",
+      `frog covers ${pct(frog.centreCoverage)} of the box at its projected centre, ${pct(frog.areaFraction)} of the canvas, ${inCanvas ? "wholly in the canvas" : "cut by the canvas edge"}, ${pct(covered)} of it under ${panels.length} panel(s); ${pct(frog.yellow)} of its box is 奶蛙-yellow (${frog.how}); ${name}.png`);
   } else {
     T.check(group, "frog visible at the canvas centre", frog.centreForeground >= 0.5 ? "PASS" : "FAIL",
       `${pct(frog.centreForeground)} of the centre differs from the background; yellow ${pct(frog.yellow)} (${frog.how}); ${name}.png`);
@@ -79,9 +96,13 @@ async function idleChange(page, frog) {
   return { region: diffFraction(a, b, toPx(a, frogRegion(frog)), ex), canvas: diffFraction(a, b, toPx(a, frog.rect), ex) };
 }
 
-function verdictPicture(T, group, what, diff, idle, file) {
+/** A gesture shows: enough pixels change, or (with the hook) the simulated surface dents by DENT_MIN_M or more —
+ *  a poke on firm flesh is a small picture change but a clear dent. */
+function verdictPicture(T, group, what, diff, idle, file, dent = null) {
   const need = Math.max(DIFF_MIN, DIFF_OVER_IDLE * idle);
-  T.check(group, `${what} changes the picture`, diff >= need ? "PASS" : "FAIL", `${pct(diff)} of pixels changed (idle ${pct(idle)}, needs ${pct(need)}); ${file}`);
+  const ok = diff >= need || (dent != null && dent >= DENT_MIN_M);
+  T.check(group, `${what} changes the picture`, ok ? "PASS" : "FAIL", `${pct(diff)} of pixels changed (idle ${pct(idle)}, needs ${pct(need)})` +
+    (dent != null ? `; the surface moved up to ${(dent * 100).toFixed(1)} cm (needs ${DENT_MIN_M * 100} cm, or the pixels)` : "") + `; ${file}`);
 }
 
 /** A gesture did what it should in the simulation (the event, with the hook), played a sound if sound is on, and
@@ -144,6 +165,12 @@ async function sampleInterpenetration(page, frames, everyMs) {
     const r = await page.evaluate((tol) => window.__e2e.penetration(tol), PENETRATION_TOL_M);
     if (!r) return null;
     agg.frames++;
+    if (r.nonFinite) {
+      agg.nonFinite ??= {};
+      for (const [k, v] of Object.entries(r.nonFinite)) if (v) agg.nonFinite[k] = Math.max(agg.nonFinite[k] ?? 0, v);
+      await sleep(everyMs);
+      continue;
+    }
     // The simulation's own quality numbers, worst over the frames (docs/soft-binding.md).
     const m = await page.evaluate(() => window.__e2e.simMetrics());
     if (m) {
@@ -167,8 +194,20 @@ async function sampleInterpenetration(page, frames, everyMs) {
   }
   return agg;
 }
+const nonFiniteText = (agg) => Object.entries(agg.nonFinite).map(([k, v]) => `${k} ${v}`).join(", ");
+/** One line for a table: limbs inside the body and the head's shape, or the NaN parts. */
+function penSummary(pen) {
+  if (!pen) return "";
+  if (pen.nonFinite) return `; NON-FINITE vertices (${nonFiniteText(pen)})`;
+  const per = Object.values(pen.per);
+  if (!per.length) return "";
+  return `; limbs inside the body ${Math.max(...per.map((v) => v.inside))} vertices (deepest ${(Math.max(...per.map((v) => v.maxDepth)) * 100).toFixed(1)} cm), head rms ${(pen.head.rms * 100).toFixed(1)} cm`;
+}
+
 function verdictInterpenetration(T, group, what, agg) {
   if (!agg) return T.check(group, `${what}: no limb inside the body`, "MISSING", "needs the test hook (sim.readBody/readLimbs, character.spec)");
+  if (agg.nonFinite) T.check(group, `${what}: positions stay finite`, "FAIL", `non-finite (NaN) vertices: ${nonFiniteText(agg)}`);
+  if (agg.nonFinite && !Object.keys(agg.per).length) return;
   const parts = Object.entries(agg.per).map(([k, v]) => `${k} ${v.inside}/${v.vertices} vertices${v.inside ? ` up to ${(v.maxDepth * 100).toFixed(1)} cm deep` : ""}`);
   const through = Object.values(agg.per).some((v) => v.inside > 0);
   T.check(group, `${what}: no limb inside the body`, through ? "FAIL" : "PASS", `worst of ${agg.frames} frames: ${parts.join(", ")} (vertices outside the Body in the rest pose that are now more than ${PENETRATION_TOL_M * 100} cm inside it)`);
@@ -180,6 +219,45 @@ function verdictInterpenetration(T, group, what, agg) {
   const h = agg.head;
   T.check(group, `${what}: the head keeps its shape`, h.rms <= HEAD_RMS_MAX_M && h.max <= HEAD_MAX_M ? "PASS" : "FAIL",
     `head vertices off their rest shape after the best rigid fit: rms ${(h.rms * 100).toFixed(1)} cm, p95 ${(h.p95 * 100).toFixed(1)} cm, max ${(h.max * 100).toFixed(1)} cm (allowed rms ${HEAD_RMS_MAX_M * 100}, max ${HEAD_MAX_M * 100} cm)`);
+}
+
+/** The page is cross-origin isolated (COOP same-origin + COEP require-corp), so SharedArrayBuffer exists for the
+ *  simulators' CPU-parallel fallback. */
+async function isolation(T, group, page) {
+  const iso = await page.evaluate(() => ({ coi: self.crossOriginIsolated, sab: typeof SharedArrayBuffer === "function", workers: navigator.hardwareConcurrency }));
+  T.check(group, "cross-origin isolated", iso.coi && iso.sab ? "PASS" : "FAIL", `crossOriginIsolated = ${iso.coi}, SharedArrayBuffer ${iso.sab ? "present" : "absent"}, ${iso.workers} hardware threads`);
+  return iso;
+}
+
+/** The head's height against its rest height, and the hips' ground position (null without the hook). */
+const stance = (page) => page.evaluate(() => window.__e2e.stance());
+const standText = (s) => s ? `head ${s.head.toFixed(2)} m (${pct(s.head / s.rest)} of its rest ${s.rest.toFixed(2)} m)` : "no pose (hook)";
+const stands = (s) => !!s && s.finite && s.head >= STAND_MIN * s.rest;
+
+/** Open (true) or close the Lab with the top bar's 实验室 / Lab button; returns whether it is open after. */
+async function setLab(page, open) {
+  const isOpen = () => page.evaluate(() => document.getElementById("ui")?.dataset.lab === "open");
+  if ((await isOpen()) === open) return open;
+  const btn = await page.$("[data-lab-toggle]");
+  if (btn && (await btn.isVisible())) await press(btn);
+  else await page.keyboard.press("l");
+  await sleep(400);
+  return isOpen();
+}
+
+/** Pick a simulator or retargeter by pressing its row in the Lab (section "sim" or "retarget"), as a visitor does. */
+async function pickPlugin(page, section, id, name) {
+  const row = await page.evaluateHandle((sec, n) => {
+    const lists = [...document.querySelectorAll("#ui .nw-sims")];
+    // the simulator section comes first in the Lab, the retargeter second
+    const list = lists[sec === "sim" ? 0 : 1];
+    return [...(list?.querySelectorAll(".nw-sim") ?? [])].find((b) => b.querySelector(".nw-sim-name")?.textContent === n) ?? null;
+  }, section, name);
+  const el = row.asElement();
+  if (!el) return null;
+  await el.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await press(el);
+  return el;
 }
 
 /** Record with the app's own controls; returns the probed file, or null after reporting why. */
@@ -339,6 +417,7 @@ export async function play(T, page, log) {
   T.check("play", "test hook window.__naiwa", ready?.hooks?.hook ? "PASS" : "INFO",
     ready?.hooks?.hook ? Object.entries(ready.hooks).filter(([k]) => k !== "hook").map(([k, v]) => `${k}${v ? "" : " (absent)"}`).join(", ") : "absent: checks use the DOM and pixels only (see the top of run.mjs)");
   if (!ready) return;
+  await isolation(T, "play", page);
   log.step = "frog visible";
   const frog = await frogVisible(T, "play", page, "play-start");
   log.step = "frame rate";
@@ -357,13 +436,14 @@ export async function play(T, page, log) {
   const region = toPx(frog.img, frogRegion(frog));
   const c0 = await counts(page);
   const before = await shot(page);
+  const dentP = ready.hooks.sim ? page.evaluate(() => window.__e2e.peakDisp(800)) : null;
   await page.mouse.click(frog.target.x, frog.target.y);
   await sleep(150);
   const t1 = await shot(page, T.out, "play-tap");
   await sleep(300);
   const t2 = await shot(page);
   await sleep(500);
-  verdictPicture(T, "play", "tap on the belly", Math.max(diffFraction(before, t1, region), diffFraction(before, t2, region)), idle.region, "play-tap.png");
+  verdictPicture(T, "play", "tap on the belly", Math.max(diffFraction(before, t1, region), diffFraction(before, t2, region)), idle.region, "play-tap.png", await dentP);
   await verdictEffects(T, "play", page, "tap on the belly", since(c0, await counts(page)), ready.hooks, ["poke", "slap", "squish"]);
   const hit = await page.evaluate(() => window.__e2e.events.find((e) => e.kind === "poke" || e.kind === "slap")?.region ?? null);
   if (ready.hooks.sim && hit && hit !== "belly") T.check("play", "tap at the frog's centre hits the belly", "WARN", `hit region "${hit}" at ${Math.round(frog.target.x)},${Math.round(frog.target.y)}`);
@@ -609,7 +689,11 @@ export async function video(T, page, log, which) {
       `frog's ${fs.swap ? "left answers the person's right" : "left answers the person's left"}; preview ${mus.shown ? (mus.mirrored ? "mirrored" : "not mirrored") : `hidden, store.mirror = ${st.mirror}`}`);
   }
   await frameRate(T, g, page, "frame rate while playing");
-  if (which === "portrait") await playbackChecks(T, g, page, log, true);
+  if (which === "portrait") {
+    await setLab(page, true);
+    await playbackChecks(T, g, page, log, true);
+    await setLab(page, false);
+  }
 
   if (which === "portrait") await saveDance(T, g, page, log);
   else await sideBySide(T, g, page, log, clip);
@@ -618,8 +702,8 @@ export async function video(T, page, log, which) {
 async function saveDance(T, g, page, log) {
   log.step = "save as 我的舞蹈";
   const st = await appState(page);
-  const keep = await findControl(page, { re: "存为我的舞蹈|存为|保存这支" });
-  if (!keep) return T.check(g, "save as 我的舞蹈", st.canSaveDance ? "FAIL" : "FAIL", `no visible 存为我的舞蹈 control (store.canSaveDance = ${st.canSaveDance})`);
+  const keep = await findControl(page, { re: "保存为我的动作|存为我的|Save as my motion" });
+  if (!keep) return T.check(g, "save as 我的动作", "FAIL", `no visible 保存为我的动作 control (store.canSaveDance = ${st.canSaveDance})`);
   await press(keep);
   await sleep(400);
   const name = `测试舞${Date.now() % 1000}`;
@@ -795,80 +879,496 @@ export async function playback(T, page, log) {
   log.step = "enter dance";
   if (!(await enter(T, "playback", page, "dance"))) return T.check("playback", "enter dance mode", "MISSING", `no control labelled "${MODES.dance}"`);
   await sleep(1500);
+  // pause, step and the speeds are Lab controls
+  await setLab(page, true);
   await playbackChecks(T, "playback", page, log, false);
   await shot(page, T.out, "playback");
 }
 
-/** Every simulator the page offers (solver × cell model × resolution): switching rebuilds it; each must run, stand
- *  the frog up, dance, and its step time and frame rate are recorded. */
-export async function simulators(T, page, log) {
-  const ready = await boot(T, "simulators", page, log);
+/** Wait for the dance list, then pick a dance in 预设动作 by pressing its row (else through the store). */
+async function pickDance(page, id) {
+  let d = null;
+  for (let i = 0; i < 40 && !d; i++) {
+    d = ((await appState(page))?.dances ?? []).find((x) => x.id === id) ?? null;
+    if (!d) await sleep(250);
+  }
+  if (!d) return { found: false, how: `no dance "${id}" in store.dances` };
+  if ((await appState(page)).mode !== "dance") await enterMode(page, "dance", null, true);
+  const el = await findControl(page, { label: d.name, skip: "删除|Delete" });
+  if (el) await press(el);
+  else await page.evaluate((i) => window.__naiwa.store.set({ mode: "dance", dance: i }), id);
+  await sleep(600);
+  return { found: true, name: d.name, how: el ? `picked "${d.name}" in ${MODES.dance}` : `store.dance = ${id} (no visible row)` };
+}
+
+const textOf = (t) => (t == null ? "" : typeof t === "string" ? t : t.zh ?? t.en ?? "");
+
+/** The simulators the Lab lists, with what each row shows (its backend line). */
+async function listedPlugins(page, section) {
+  return page.evaluate((sec) => {
+    const s = window.__naiwa.store.get();
+    const infos = sec === "sim" ? s.simulators : s.retargeters;
+    const list = [...document.querySelectorAll("#ui .nw-sims")][sec === "sim" ? 0 : 1];
+    const rows = [...(list?.querySelectorAll(".nw-sim") ?? [])].map((b) => ({
+      name: b.querySelector(".nw-sim-name")?.textContent ?? "",
+      backend: b.querySelector(".nw-sim-backend")?.textContent ?? null,
+      why: b.querySelector(".nw-sim-why")?.textContent ?? null,
+      checked: b.getAttribute("aria-checked") === "true",
+      disabled: b.disabled,
+    }));
+    const t = (x) => (x == null ? null : typeof x === "string" ? x : x.zh);
+    return infos.map((x) => ({ id: x.id, name: t(x.name), device: x.device, origin: x.origin, backend: t(x.backend), unavailable: t(x.unavailable), row: rows.find((r) => r.name === t(x.name)) ?? null }));
+  }, section);
+}
+
+/** Every simulator the Lab offers: pressing its row rebuilds the simulation; each must run without errors, have the
+ *  frog standing (head ≥ 90% of its rest height) 6 s after the switch, dent when poked, dance, and its physics time
+ *  and frame rate are recorded. `opts.only` limits the list and `opts.backend` is the backend line gpu-mpm must show
+ *  (WebGPU here; the CPU-parallel fallback in a browser without WebGPU). */
+export async function simulators(T, page, log, opts = {}) {
+  const g = opts.group ?? "simulators";
+  const ready = await boot(T, g, page, log);
   if (!ready) return;
-  if (!ready.hooks.store) return T.check("simulators", "every simulator", "MISSING", "needs the test hook (store.simulator)");
-  const restY = await page.evaluate(() => {
-    const p = window.__naiwa.character.spec.body.positions;
-    let y = 0;
-    for (let i = 1; i < p.length; i += 3) y += p[i];
-    return y / (p.length / 3);
-  });
-  await page.evaluate(() => { window.__e2e.firstSim = window.__naiwa.sim; });
+  if (!ready.hooks.store || !ready.hooks.sim) return T.check(g, "every simulator", "MISSING", "needs the test hook (store.simulators, sim)");
+  if (opts.webgpu !== undefined) {
+    const gpu = await page.evaluate(async () => {
+      if (!navigator.gpu) return "navigator.gpu absent";
+      const a = await navigator.gpu.requestAdapter().catch(() => null);
+      return a ? `adapter ${a.info?.vendor ?? "?"} ${a.info?.architecture ?? ""}` : "no adapter";
+    });
+    T.check(g, opts.webgpu ? "WebGPU available" : "browser without WebGPU", /adapter /.test(gpu) === opts.webgpu ? "PASS" : "FAIL", gpu);
+    await isolation(T, g, page);
+  }
+  log.step = "open the Lab";
+  const open = await setLab(page, true);
+  if (!open) T.check(g, "Lab opens", "FAIL", "the 实验室 button did not open the Lab (#ui data-lab)");
+  const listed = await listedPlugins(page, "sim");
+  if (!opts.only) {
+    const want = [...SIMULATORS_BUILTIN, ...SIMULATORS_LIBRARY];
+    const absent = want.filter((id) => !listed.some((x) => x.id === id));
+    const noRow = listed.filter((x) => !x.row).map((x) => x.id);
+    T.check(g, "simulators listed in the Lab", !absent.length && !noRow.length ? "PASS" : "FAIL",
+      `${listed.length}: ${listed.map((x) => `${x.id} (${x.device}${x.unavailable ? `, unavailable: ${x.unavailable}` : ""})`).join(", ")}` +
+        (absent.length ? `; missing ${absent.join(", ")}` : "") + (noRow.length ? `; no row in the Lab for ${noRow.join(", ")}` : ""));
+    const def = (await appState(page)).simulator;
+    T.check(g, "default simulator", def.id === "cpu-constraints" ? "PASS" : "FAIL", `store.simulator.id = ${def.id}`);
+  }
+  const mpm = listed.find((x) => x.id === "gpu-mpm");
+  if (opts.backend) {
+    const shown = mpm?.row?.backend ?? null;
+    T.check(g, "gpu-mpm shows its backend", mpm && !mpm.unavailable && shown && opts.backend.test(shown) ? "PASS" : "FAIL",
+      mpm ? `row shows "${shown ?? "(no backend line)"}"${mpm.row?.why ? `, "${mpm.row.why}"` : ""}; SimulatorInfo.backend = ${mpm.backend}; want ${opts.backend}` : "gpu-mpm is not registered");
+  }
+  await shot(page, T.out, `${g}-lab`);
+  const restY = (await stance(page))?.rest;
+  // gpu-mpm last: a simulation that goes non-finite can leave the view broken for the next ones (reported below)
+  const ids = (opts.only ?? ["cpu-constraints", ...SIMULATORS_LIBRARY, "gpu-mpm"]).filter((id) => listed.some((x) => x.id === id));
   const rows = [];
-  let staleReported = false;
-  for (const solver of ["constraints", "fem"]) for (const cellModel of ["volume", "corotational", "neohookean"]) for (const resolution of ["low", "medium", "high"]) {
-    const name = `${solver}/${cellModel}/${resolution}`;
-    log.step = `simulator ${name}`;
+  for (const id of ids) try {
+    const info = listed.find((x) => x.id === id);
+    log.step = `simulator ${id}`;
     const errors0 = log.errors.length;
-    let thrown = null;
-    try {
-      await page.evaluate((sim) => window.__naiwa.store.set({ simulator: sim, mode: "play", playback: { paused: false, timeScale: 1 } }), { solver, cellModel, resolution });
-      await page.evaluate(() => window.__naiwa.commands.resetFrog());
-    } catch (e) {
-      thrown = e.message.split("\n")[0];
-    }
-    await sleep(2500);
-    if (thrown) {
-      T.check("simulators", name, "FAIL", `switching to it throws "${thrown}" (store.set({ simulator }) → the rebuild)`);
-      rows.push({ name, particles: null, cells: null, stepMs: null, fps: null, volume: null });
-      // Start the next one from a fresh page so one broken rebuild does not spoil the rest.
+    await page.evaluate(() => { window.__e2e.prevSim = window.__naiwa.sim; });
+    // pressing the row of the simulator already in use keeps it (and its settings): no rebuild expected then
+    const already = (await appState(page)).simulator.id === id;
+    const el = await pickPlugin(page, "sim", id, info.name);
+    if (!el) await page.evaluate((i) => window.__naiwa.store.set({ simulator: { id: i, settings: {} } }), id);
+    await sleep(500);
+    await page.evaluate(() => {
+      const n = window.__naiwa;
+      if (n.store.get().mode !== "play") n.store.set({ mode: "play" });
+      n.commands.resetFrog();
+    });
+    const t0 = Date.now();
+    const st0 = await appState(page);
+    const fresh = already || (await page.evaluate(() => !!window.__naiwa.sim && window.__naiwa.sim !== window.__e2e.prevSim));
+    await page.evaluate(() => window.__e2e.attachHooks());
+    await sleep(Math.max(0, STAND_AFTER_MS - (Date.now() - t0)));
+    const s = await stance(page);
+    await shot(page, T.out, `sim-${id}`);
+    const f = await measureFrames(page, 2000);
+    // poke the belly: the flesh must dent and come back finite
+    const frog = await locateFrog(page, T.out, null);
+    const dentP = page.evaluate(() => window.__e2e.peakDisp(800));
+    if (frog?.target) await page.mouse.click(frog.target.x, frog.target.y);
+    const dent = await dentP;
+    await page.evaluate(() => window.__naiwa.store.set({ mode: "dance", dance: "gouxiong" }));
+    await sleep(800);
+    const m = await poseMoves(T, g, page, frog, 2500, `sim-${id}-dance`);
+    const penDance = await sampleInterpenetration(page, 3, 200);
+    // and back to free mode: still finite and standing
+    await page.evaluate(() => window.__naiwa.store.set({ mode: "play" }));
+    await sleep(2000);
+    const penFree = await sampleInterpenetration(page, 2, 300);
+    const pen = penDance?.nonFinite ? penDance : penFree?.nonFinite ? { ...penFree, nonFinite: Object.fromEntries(Object.entries(penFree.nonFinite).map(([k, v]) => [`${k} (after the dance, free)`, v])) } : penDance;
+    const st = await appState(page);
+    const errs = log.errors.slice(errors0);
+    const standing = stands(s);
+    const view = await page.evaluate(() => { const c = window.__naiwa.stage.camera; return [...c.position.toArray(), ...c.quaternion.toArray()].every(Number.isFinite); });
+    const ok = !errs.length && fresh && st.simulator.id === id && standing && dent >= DENT_MIN_M && Number.isFinite(dent) && m.ok && !pen?.nonFinite && view;
+    const physics = f.physicsP95 ?? st.stats.stepMs;
+    rows.push({ id, particles: st.stats.particles, cells: st.stats.cells, stepMs: st.stats.stepMs, physicsP95: f.physicsP95, fps: Math.round(f.fps), head: s ? s.head / s.rest : null, backend: info.backend });
+    const penText = penSummary(pen);
+    T.check(g, id, ok ? (physics > PHYSICS_P95_MAX_MS ? "WARN" : "PASS") : "FAIL",
+      `${errs.length ? `errors: ${errs.slice(0, 2).join(" | ")}; ` : ""}${el ? "picked in the Lab" : "no row: store.simulator"}${fresh ? "" : ", the simulation was NOT rebuilt"}${view ? "" : ", the camera went NON-FINITE (black view)"}${info.backend ? ` (${info.backend})` : ""}; ` +
+        `after ${STAND_AFTER_MS / 1000} s ${standing ? "stands" : "does NOT stand"}: ${standText(s)}; poke dents ${(dent * 100).toFixed(1)} cm; dances: ${m.detail}; ` +
+        `${st.stats.particles} particles, ${st.stats.cells} cells, step ${st.stats.stepMs} ms (sim.step p95 ${f.physicsP95?.toFixed(2) ?? "?"} ms, budget ${PHYSICS_P95_MAX_MS}), ${Math.round(f.fps)} fps, volume ×${st.stats.volumeRatio}${penText}; sim-${id}.png`);
+    if (pen?.nonFinite || !view) {
+      // judge the next simulator on a fresh page
       await page.reload({ waitUntil: "load" });
       await waitReady(page);
-      await page.evaluate(() => { window.__e2e.attachHooks(); window.__e2e.firstSim = window.__naiwa?.sim; });
-      continue;
+      await setLab(page, true);
     }
-    const standing = await page.evaluate(() => {
-      const c = window.__naiwa.character.center(new (window.__naiwa.stage.camera.position.constructor)());
-      return { y: c.y, x: c.x, z: c.z, ok: Number.isFinite(c.y) };
-    });
-    const st0 = await appState(page);
-    const fresh = await page.evaluate(() => window.__naiwa.sim !== window.__e2e.firstSim);
-    if (!fresh && !staleReported && rows.length) {
-      T.check("simulators", "test hook sees the rebuilt simulation", "FAIL", "window.__naiwa.sim still is the first simulation after a rebuild (src/main.ts: expose it as a getter, get sim() { return sim; })");
-      staleReported = true;
-    }
-    await page.evaluate(() => window.__naiwa.store.set({ mode: "dance" }));
-    await sleep(800);
-    const frog = await locateFrog(page, T.out, null);
-    const m = await poseMoves(T, "simulators", page, frog, 2000, `sim-${solver}-${cellModel}-${resolution}`);
-    const f = await measureFrames(page, 2000);
-    const st = await appState(page);
-    const pen = fresh || !rows.length ? await sampleInterpenetration(page, 4, 200) : null;
+  } catch (e) {
+    // One broken simulator must not hide the others: report it and go on from a fresh page.
+    T.check(g, id, "FAIL", `the checks broke at "${log.step}": ${e.message.split("\n")[0]}; page errors: ${log.errors.slice(-2).join(" | ") || "none"}`);
+    await shot(page, T.out, `sim-${id}-broken`).catch(() => {});
+    rows.push({ id, particles: null, cells: null, stepMs: null, physicsP95: null, fps: null, head: null });
+    await page.reload({ waitUntil: "load" });
+    await waitReady(page);
+    await setLab(page, true);
+  }
+  T.shared[`${g}Table`] = rows;
+  T.check(g, "physics time and frame rate per simulator", "INFO", rows.map((r) => `${r.id} ${r.stepMs} ms (p95 ${r.physicsP95?.toFixed(2) ?? "?"}) ${r.fps} fps, ${r.particles} p / ${r.cells} c, head ${r.head == null ? "?" : pct(r.head)}`).join("; ") + (restY ? `; head rest height ${restY.toFixed(2)} m` : ""));
+  if (!opts.only) await page.evaluate(() => window.__naiwa.store.set({ simulator: { id: "cpu-constraints", settings: {} } }));
+}
+
+/** Every retargeter the Lab offers, on 狗熊哆嗦毛: picking its row switches the motion transfer; each must keep the
+ *  frog dancing; the default (planted feet) must keep the standing feet from sliding. Foot slide is measured from
+ *  the rendered feet (horizontal speed while a foot is within 2 cm of its lowest) and also read from the
+ *  retargeter's own metrics. */
+export async function retargeters(T, page, log) {
+  const g = "retargeters";
+  const ready = await boot(T, g, page, log);
+  if (!ready) return;
+  if (!ready.hooks.store) return T.check(g, "every retargeter", "MISSING", "needs the test hook (store.retargeters)");
+  log.step = "open the Lab";
+  await setLab(page, true);
+  const listed = await listedPlugins(page, "retarget");
+  const absent = RETARGETERS.filter((id) => !listed.some((x) => x.id === id));
+  T.check(g, "retargeters listed in the Lab", !absent.length && listed.every((x) => x.row) ? "PASS" : "FAIL",
+    `${listed.length}: ${listed.map((x) => x.id).join(", ")}${absent.length ? `; missing ${absent.join(", ")}` : ""}`);
+  const def = await page.evaluate(() => window.__naiwa.store.get().retargeter.id);
+  const defRow = listed.find((x) => x.id === def)?.row;
+  T.check(g, "default retargeter", def === DEFAULT_RETARGETER && defRow?.checked ? "PASS" : "FAIL", `store.retargeter.id = ${def}; its row ${defRow?.checked ? "is" : "is NOT"} shown as chosen`);
+  log.step = "dance 狗熊哆嗦毛";
+  const pick = await pickDance(page, GOUXIONG);
+  if (!pick.found) return T.check(g, "狗熊哆嗦毛", "FAIL", pick.how);
+  const frog = await locateFrog(page, T.out, null);
+  const rows = [];
+  for (const id of RETARGETERS.filter((x) => listed.some((y) => y.id === x))) {
+    const info = listed.find((x) => x.id === id);
+    log.step = `retargeter ${id}`;
+    const errors0 = log.errors.length;
+    const el = await pickPlugin(page, "retarget", id, info.name);
+    if (!el) await page.evaluate((i) => window.__naiwa.store.set({ retargeter: { id: i, settings: {} } }), id);
+    await sleep(1500);
+    const slide = await page.evaluate(() => window.__e2e.footSlide(3000));
+    const own = await page.evaluate(() => window.__naiwa.motion.metrics?.() ?? null);
+    const m = await poseMoves(T, g, page, frog, 2000, `retarget-${id}`);
+    const st = await page.evaluate(() => window.__naiwa.store.get().retargeter.id);
     const errs = log.errors.slice(errors0);
-    const stands = standing.ok && standing.y > restY * 0.75 && standing.y < restY * 1.4;
-    const ok = !errs.length && st0.stats.particles > 0 && stands && m.ok && st.simulator.solver === solver && st.simulator.cellModel === cellModel && st.simulator.resolution === resolution;
-    const penText = pen ? `; worst limb penetration ${Math.max(...Object.values(pen.per).map((v) => v.inside))} vertices, ${(Math.max(...Object.values(pen.per).map((v) => v.maxDepth)) * 100).toFixed(1)} cm, head rms ${(pen.head.rms * 100).toFixed(1)} cm` : "";
-    rows.push({ name, particles: st.stats.particles, cells: st.stats.cells, stepMs: st.stats.stepMs, fps: Math.round(f.fps), volume: st.stats.volumeRatio });
-    T.check("simulators", name, ok ? (st.stats.stepMs > PHYSICS_P95_MAX_MS ? "WARN" : "PASS") : "FAIL",
-      `${errs.length ? `errors: ${errs.slice(0, 2).join(" | ")}; ` : ""}${st0.stats.particles} particles, ${st0.stats.cells} cells; ` +
-        `${stands ? "stands" : "does not stand"} (body centre ${standing.y.toFixed(2)} m high, rest ${restY.toFixed(2)} m); dances: ${m.detail}; ` +
-        `step ${st.stats.stepMs} ms, ${Math.round(f.fps)} fps (main-thread p95 ${f.workP95.toFixed(1)} ms), volume ×${st.stats.volumeRatio}${penText}`);
-  }
-  // Resolution must change the particle budget.
-  for (const solver of ["constraints", "fem"]) for (const cellModel of ["volume", "corotational", "neohookean"]) {
-    const [lo, me, hi] = ["low", "medium", "high"].map((r) => rows.find((x) => x.name === `${solver}/${cellModel}/${r}`));
-    if (lo?.particles && me?.particles && hi?.particles && !(lo.particles < me.particles && me.particles < hi.particles)) {
-      T.check("simulators", `${solver}/${cellModel}: resolution changes the particle count`, "FAIL", `low ${lo.particles}, medium ${me.particles}, high ${hi.particles} particles`);
+    const ok = !errs.length && st === id && m.ok && slide;
+    rows.push({ id, slide: slide?.speed, own });
+    const ownText = own ? `its own metrics: foot slide ${(own.footSlide * 100).toFixed(1)} cm/s, direction error ${own.fidelity.toFixed(1)}°, jerk ${own.jerk.toFixed(0)} m/s³, limb penetration ${(own.penetration * 1000).toFixed(1)} mm` : "no metrics";
+    const slideText = slide ? `standing feet slide ${(slide.speed * 100).toFixed(1)} cm/s (feet down ${pct(slide.standing)} of the time)` : "no feet";
+    if (id === DEFAULT_RETARGETER) {
+      T.check(g, `${id} (default): feet stay planted`, ok && slide.speed <= FOOT_SLIDE_MAX ? "PASS" : "FAIL", `${slideText}, allowed ${FOOT_SLIDE_MAX * 100} cm/s; ${ownText}; ${m.detail}`);
+    } else {
+      T.check(g, id, ok ? "PASS" : "FAIL", `${errs.length ? `errors: ${errs.slice(0, 2).join(" | ")}; ` : ""}${el ? "picked in the Lab" : "store.retargeter"}, store says ${st}; ${slideText}; ${ownText}; ${m.detail}`);
     }
   }
-  T.shared.simulatorTable = rows;
-  T.check("simulators", "step time and frame rate per simulator", "INFO", rows.map((r) => r.stepMs == null ? `${r.name} —` : `${r.name} ${r.stepMs} ms ${r.fps} fps (${r.particles} p, ${r.cells} c)`).join("; "));
+  const base = rows.find((r) => r.id === "direction-copy"), planted = rows.find((r) => r.id === DEFAULT_RETARGETER);
+  if (base?.slide != null && planted?.slide != null) {
+    T.check(g, "planting the feet reduces foot slide", planted.slide <= base.slide + 0.002 ? "PASS" : "WARN", `planted-feet ${(planted.slide * 100).toFixed(1)} cm/s vs direction-copy ${(base.slide * 100).toFixed(1)} cm/s on 狗熊哆嗦毛`);
+  }
+  await page.evaluate((d) => window.__naiwa.store.set({ retargeter: { id: d, settings: {} } }), DEFAULT_RETARGETER);
+}
+
+/** The first view: the Lab collapsed, the 手感 / Feel panel there; its chips, sliders, 慢动作, 月球重力 and 恢复默认
+ *  write the same store state the Lab's exact knobs show. */
+export async function feel(T, page, log) {
+  const g = "feel";
+  const ready = await boot(T, g, page, log);
+  if (!ready) return;
+  if (!ready.hooks.store) return T.check(g, "the Feel panel", "MISSING", "needs the test hook (store.params)");
+  log.step = "first view";
+  const view = await page.evaluate(() => {
+    const ui = document.getElementById("ui");
+    const vis = (el) => !!el && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getBoundingClientRect().width > 0;
+    const labOnly = [...document.querySelectorAll("#ui [data-lab-only]")].filter(vis).map((e) => e.className.split(" ")[0] || e.tagName);
+    return {
+      lab: ui?.dataset.lab,
+      labOnly,
+      sims: vis(document.querySelector("#ui .nw-sims")),
+      feelSliders: [...document.querySelectorAll("#ui .nw-feel-slider input[type=range]")].filter(vis).map((i) => i.getAttribute("aria-label")),
+      switches: [...document.querySelectorAll("#ui .nw-feel-toggles [role=switch]")].filter(vis).map((s) => s.getAttribute("aria-label")),
+      chips: [...document.querySelectorAll("#ui .nw-feel-sliders")].length,
+    };
+  });
+  await shot(page, T.out, "feel-first-view");
+  T.check(g, "Lab collapsed by default", view.lab === "closed" && !view.labOnly.length && !view.sims ? "PASS" : "FAIL",
+    `#ui data-lab = ${view.lab}; ${view.labOnly.length ? `Lab parts in view: ${view.labOnly.join(", ")}` : "no Lab part (simulator, parameters, readouts, playback) in view"}; feel-first-view.png`);
+  T.check(g, "手感 panel shown with the Lab closed", view.feelSliders.length === 3 && view.switches.length === 2 ? "PASS" : "FAIL",
+    `sliders [${view.feelSliders.join(", ")}], switches [${view.switches.join(", ")}]`);
+
+  log.step = "sliders";
+  const params = () => page.evaluate(() => ({ ...window.__naiwa.store.get().params, preset: window.__naiwa.store.get().preset, playback: window.__naiwa.store.get().playback }));
+  // what each slider writes (src/ui/feel.ts FEEL_SLIDERS): firm = 1 − softness, settle = 1 − bounciness, belly 0.8…1.5
+  const sliders = [
+    { label: "软硬", param: "softness", at: 0.8, want: (x) => 1 - x },
+    { label: "晃动", param: "bounciness", at: 0.75, want: (x) => 1 - x },
+    { label: "肚子", param: "bellySize", at: 0.85, want: (x) => 0.8 + x * 0.7 },
+  ];
+  for (const s of sliders) {
+    const input = await page.$(`#ui .nw-feel-slider input[aria-label="${s.label}"]`);
+    if (!input) { T.check(g, `slider ${s.label}`, "FAIL", "not found"); continue; }
+    const before = (await params())[s.param];
+    const box = await input.boundingBox();
+    // a person clicks the track at that point (the thumb jumps there and the input event fires)
+    await page.mouse.click(box.x + box.width * s.at, box.y + box.height / 2);
+    await sleep(300);
+    const x = Number(await input.evaluate((e) => e.value));
+    const after = (await params())[s.param];
+    const ok = Math.abs(after - s.want(x)) < 0.011 && Math.abs(after - before) > 0.1;
+    T.check(g, `slider ${s.label} drives store.params.${s.param}`, ok ? "PASS" : "FAIL", `clicked at ${pct(s.at)} of the track: slider ${x.toFixed(2)}, ${s.param} ${before} → ${after} (expected ${s.want(x).toFixed(3)})`);
+  }
+  // the Lab's exact knobs show the same state
+  await setLab(page, true);
+  const knobs = await page.evaluate(() => {
+    const get = (id) => { const el = document.getElementById(id); return el ? Number(el.value) : null; };
+    return { softness: get("nw-k-softness"), volume: get("nw-k-volume") };
+  });
+  const p1 = await params();
+  T.check(g, "the Lab's knobs show the Feel panel's values", knobs.softness != null && Math.abs(knobs.softness - p1.softness) < 0.011 ? "PASS" : "FAIL",
+    `Lab softness knob ${knobs.softness} vs store.params.softness ${p1.softness}`);
+  await setLab(page, false);
+
+  log.step = "material chip";
+  const mochi = await findControl(page, { label: "麻薯" });
+  if (mochi) {
+    await press(mochi);
+    await sleep(300);
+    const p = await params();
+    T.check(g, "material chip 麻薯", p.preset === "mochi" && p.softness === 0.95 && (await selected(mochi)) ? "PASS" : "FAIL", `preset ${p.preset}, softness ${p.softness}, bounciness ${p.bounciness}, chip pressed ${await selected(mochi)}`);
+  } else T.check(g, "material chip 麻薯", "FAIL", "no visible 麻薯 chip");
+
+  log.step = "slow motion";
+  const slowSw = await page.$('#ui .nw-feel-toggles [role=switch][aria-label="慢动作"]');
+
+  if (slowSw) {
+    await press(slowSw);
+    await sleep(400);
+    const p = await params();
+    T.check(g, "慢动作 slows the simulation", p.playback.timeScale === 0.25 && !p.playback.paused && (await selected(slowSw)) ? "PASS" : "FAIL",
+      `store.playback ${JSON.stringify(p.playback)}, switch on ${await selected(slowSw)}`);
+    await shot(page, T.out, "feel-slow");
+  } else T.check(g, "慢动作 slows the simulation", "FAIL", "no 慢动作 switch");
+
+  log.step = "moon gravity";
+  const moonSw = await page.$('#ui .nw-feel-toggles [role=switch][aria-label="月球重力"]');
+  if (moonSw) {
+    await press(moonSw);
+    await sleep(400);
+    const p = await params();
+    T.check(g, "月球重力 sets the Moon's gravity", Math.abs(p.gravity - 1 / 6) < 1e-3 && (await selected(moonSw)) ? "PASS" : "FAIL", `store.params.gravity ${p.gravity} (want ${(1 / 6).toFixed(4)}), switch on ${await selected(moonSw)}`);
+  } else T.check(g, "月球重力 sets the Moon's gravity", "FAIL", "no 月球重力 switch");
+
+  log.step = "back to default";
+  const reset = await findControl(page, { label: "恢复默认" });
+  if (reset) {
+    await press(reset);
+    await sleep(400);
+    const p = await params();
+    const disabled = await reset.evaluate((e) => e.disabled);
+    const jelly = { softness: 0.85, bounciness: 0.65, gravity: 1, bellySize: 1, stubbornness: 0.7 };
+    const same = Object.entries(jelly).every(([k, v]) => p[k] === v);
+    T.check(g, "恢复默认 restores the defaults", p.preset === "jelly" && same && p.playback.timeScale === 1 && !p.playback.paused && disabled ? "PASS" : "FAIL",
+      `preset ${p.preset}, ${Object.keys(jelly).map((k) => `${k} ${p[k]}`).join(", ")}, playback ${JSON.stringify(p.playback)}; the button is ${disabled ? "disabled" : "still enabled"} at the defaults`);
+  } else T.check(g, "恢复默认 restores the defaults", "FAIL", "no visible 恢复默认 control");
+  await shot(page, T.out, "feel-after");
+
+}
+
+/** The Lab behind its button: the code lab opens from 编辑代码; the local Lab's Codex entry points stay hidden when
+ *  no Lab server answers (the page as the public site serves it). */
+export async function lab(T, page, log) {
+  const g = "lab";
+  const ready = await boot(T, g, page, log);
+  if (!ready) return;
+  const codex = () => page.evaluate(() => {
+    const vis = (el) => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getBoundingClientRect().width > 0;
+    const btns = [...document.querySelectorAll(".nw-codex-btn")].filter(vis).map((b) => b.textContent.trim() || b.getAttribute("aria-label"));
+    const notes = [...document.querySelectorAll(".nw-codex-note")].filter(vis).map((n) => n.textContent.trim());
+    const text = document.body.innerText.match(/[^\n]*Codex[^\n]*/g) ?? [];
+    return { btns, notes, text };
+  });
+  log.step = "Codex entry points with the Lab closed";
+  const closed = await codex();
+  log.step = "open the Lab";
+  const open = await setLab(page, true);
+  await sleep(600);
+  await shot(page, T.out, "lab-open");
+  T.check(g, "实验室 opens the Lab", open ? "PASS" : "FAIL", `#ui data-lab = ${open ? "open" : "closed"} after pressing 实验室; lab-open.png`);
+  const opened = await codex();
+  const all = [...closed.btns, ...opened.btns, ...closed.notes, ...opened.notes, ...closed.text, ...opened.text];
+  T.check(g, "local Lab entry points hidden without a Lab server", all.length ? "FAIL" : "PASS",
+    all.length ? `visible: ${[...new Set(all)].slice(0, 6).join(" | ")}` : `no 用 Codex 优化 button, note or "Codex" text with the Lab closed or open; the page asked the (absent) Lab server ${log.lab.length} time(s) (${[...new Set(log.lab.map((l) => l.replace(/^\[[^\]]*\] /, "").replace(/\?.*/, "")))].join(", ")})`);
+
+  log.step = "code lab";
+  for (const [i, kind] of [[0, "simulator"], [1, "retargeter"]]) {
+    const edits = await page.$$("#ui .nw-section-actions button");
+    const edit = (await Promise.all(edits.map(async (b) => ((await b.evaluate((e) => e.textContent.trim())) === "编辑代码" && (await b.isVisible()) ? b : null)))).filter(Boolean)[i];
+    if (!edit) { T.check(g, `编辑代码 opens the code lab (${kind})`, "FAIL", `no visible 编辑代码 button #${i + 1} in the Lab`); continue; }
+    await press(edit);
+    let cl = null;
+    for (let k = 0; k < 20; k++) {
+      await sleep(250);
+      cl = await page.evaluate(() => {
+        const el = document.querySelector(".nw-cl");
+        if (!el || el.hidden || !el.checkVisibility()) return null;
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), slots: [...el.querySelectorAll(".nw-cl-slots [role=tab]")].map((t) => t.textContent.trim()).slice(0, 10), editor: el.querySelector(".nw-cl-editor")?.textContent.length ?? 0, head: el.querySelector(".nw-cl-head")?.textContent.trim().slice(0, 80) };
+      });
+      if (cl && cl.editor > 50) break;
+    }
+    await shot(page, T.out, `lab-code-${kind}`);
+    T.check(g, `编辑代码 opens the code lab (${kind})`, cl && cl.editor > 50 ? "PASS" : "FAIL",
+      cl ? `${cl.w}×${cl.h} px, "${cl.head}", slots [${cl.slots.join(", ")}], ${cl.editor} characters of code shown; lab-code-${kind}.png` : "no .nw-cl dialog shown within 5 s");
+    const after = await codex();
+    if (after.btns.length) T.check(g, `no Codex entry in the code lab (${kind})`, "FAIL", after.btns.join(" | "));
+    const close = await page.$(".nw-cl .nw-cl-close");
+    if (close) await press(close);
+    else await page.keyboard.press("Escape");
+    await sleep(400);
+    const hidden = await page.evaluate(() => { const el = document.querySelector(".nw-cl"); return !el || el.hidden || !el.checkVisibility(); });
+    if (!hidden) T.check(g, `the code lab closes (${kind})`, "FAIL", "still shown after its close button");
+  }
+  log.step = "close the Lab";
+  const shut = await setLab(page, false);
+  const leftover = await page.evaluate(() => [...document.querySelectorAll("#ui [data-lab-only]")].filter((e) => e.checkVisibility() && e.getBoundingClientRect().width > 0).length);
+  T.check(g, "实验室 closes the Lab again", !shut && !leftover ? "PASS" : "FAIL", `data-lab ${shut ? "open" : "closed"}, ${leftover} Lab part(s) still in view`);
+}
+
+/** The tongue stays attached: with the tongue out (forced), every tongue vertex of MouthInside stays within a few cm
+ *  of the rendered Body surface, at rest and while the head shakes in 狗熊哆嗦毛; a front and a side view. */
+export async function tongue(T, page, log) {
+  const g = "tongue";
+  const ready = await boot(T, g, page, log);
+  if (!ready) return;
+  if (!ready.hooks.character) return T.check(g, "tongue stays attached", "MISSING", "needs the test hook (character)");
+  log.step = "tongue out";
+  const forced = await page.evaluate(() => {
+    const c = window.__naiwa.character;
+    if (!c?.setExpressions) return false;
+    const orig = c.setExpressions.bind(c);
+    c.setExpressions = (w) => orig({ ...(w ?? {}), tongue: 1, laugh: 0, surprise: 0 });
+    return true;
+  });
+  if (!forced) return T.check(g, "tongue stays attached", "FAIL", "character.setExpressions not found");
+  await sleep(1500);
+  const sample = async (n, every) => {
+    let worst = null;
+    for (let i = 0; i < n; i++) {
+      const r = await page.evaluate(() => window.__e2e.tongueGap());
+      if (r && (!worst || r.max > worst.max)) worst = r;
+      await sleep(every);
+    }
+    return worst;
+  };
+  const rest = await sample(4, 200);
+  const frog = await locateFrog(page, T.out, "tongue-front");
+  if (!rest?.vertices) return T.check(g, "tongue stays attached", "FAIL", "no tongue vertices (MouthInside coloured tongue-red) found");
+  T.check(g, "tongue stays attached at rest", rest.max <= TONGUE_GAP_MAX_M ? "PASS" : "FAIL",
+    `${rest.vertices} tongue vertices, farthest ${(rest.max * 100).toFixed(1)} cm from the Body surface (mean ${(rest.mean * 100).toFixed(1)} cm; allowed ${TONGUE_GAP_MAX_M * 100} cm); tongue-front.png`);
+  // side view: drag the background (orbit), away from the frog
+  log.step = "side view";
+  const r = frog.rect;
+  const y = r.y + r.h * 0.9;
+  await page.mouse.move(r.x + r.w - 40, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) { await page.mouse.move(r.x + r.w - 40 - i * 18, y); await sleep(16); }
+  await page.mouse.up();
+  await sleep(800);
+  await shot(page, T.out, "tongue-side");
+  log.step = "dance with the tongue out";
+  await pickDance(page, GOUXIONG);
+  await sleep(500);
+  const dancing = await sample(12, 250);
+  await shot(page, T.out, "tongue-dance");
+  T.check(g, "tongue stays attached while dancing (狗熊哆嗦毛)", dancing && dancing.max <= TONGUE_GAP_MAX_M ? "PASS" : "FAIL",
+    dancing ? `worst of 12 frames: farthest tongue vertex ${(dancing.max * 100).toFixed(1)} cm from the Body (mean ${(dancing.mean * 100).toFixed(1)} cm; allowed ${TONGUE_GAP_MAX_M * 100} cm); tongue-side.png, tongue-dance.png` : "no measure");
+}
+
+/** Robustness in free mode and around it: left alone 10 s it stands where it is; a dance, a burst of pokes and a
+ *  throw leave it standing again (upright recovery) with nothing non-finite. */
+export async function robust(T, page, log) {
+  const g = "robust";
+  const ready = await boot(T, g, page, log);
+  if (!ready) return;
+  if (!ready.hooks.sim) return T.check(g, "robustness", "MISSING", "needs the test hook (sim, character)");
+  log.step = "free 10 s";
+  const s0 = await stance(page);
+  let minHead = Infinity, drift = 0, finite = true;
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const s = await stance(page);
+    finite &&= !!s?.finite;
+    if (!s) continue;
+    minHead = Math.min(minHead, s.head / s.rest);
+    drift = Math.max(drift, Math.hypot(s.hips[0] - s0.hips[0], s.hips[2] - s0.hips[2]));
+  }
+  await shot(page, T.out, "robust-free");
+  T.check(g, "free mode, 10 s untouched", finite && minHead >= STAND_MIN && drift <= FREE_DRIFT_MAX_M ? "PASS" : "FAIL",
+    `head never below ${pct(minHead)} of its rest height (needs ${pct(STAND_MIN)}), hips drifted ${(drift * 100).toFixed(1)} cm (allowed ${FREE_DRIFT_MAX_M * 100} cm)${finite ? "" : ", NON-FINITE positions"}; robust-free.png`);
+
+  log.step = "dance";
+  await pickDance(page, "kemusan");
+  let minDance = Infinity, maxRoot = 0;
+  const d0 = await stance(page);
+  for (let i = 0; i < 16; i++) {
+    await sleep(500);
+    const s = await stance(page);
+    if (!s?.finite) { finite = false; continue; }
+    minDance = Math.min(minDance, s.head / s.rest);
+    maxRoot = Math.max(maxRoot, Math.hypot(s.hips[0] - d0.hips[0], s.hips[2] - d0.hips[2]));
+  }
+  await shot(page, T.out, "robust-dance");
+  const pen = await sampleInterpenetration(page, 4, 250);
+  T.check(g, "a dance (科目三, 8 s)", finite && !pen?.nonFinite && minDance >= 0.75 ? "PASS" : "FAIL", `head never below ${pct(minDance)} of its rest height while dancing (needs 75%), hips moved up to ${(maxRoot * 100).toFixed(0)} cm${penSummary(pen).replace(/^; /, ", ")}; robust-dance.png`);
+  await enterMode(page, "play", null, true);
+  await sleep(STAND_AFTER_MS);
+  const afterDance = await stance(page);
+  T.check(g, "stands after the dance", stands(afterDance) ? "PASS" : "FAIL", `${STAND_AFTER_MS / 1000} s back in ${MODES.play}: ${standText(afterDance)}`);
+
+  log.step = "pokes";
+  const frog = await locateFrog(page, T.out, null);
+  const b = frog.bbox ?? { x: frog.target.x - 50, y: frog.target.y - 100, w: 100, h: 200 };
+  const spots = [[0.5, 0.15], [0.5, 0.55], [0.3, 0.45], [0.7, 0.45], [0.5, 0.35], [0.4, 0.65], [0.6, 0.25], [0.5, 0.5]];
+  const c0 = await counts(page);
+  const t0 = await page.evaluate(() => performance.now());
+  for (const [u, v] of spots) {
+    await page.mouse.click(b.x + b.w * u, b.y + b.h * v);
+    await sleep(250);
+  }
+  const t1 = await page.evaluate(() => performance.now());
+  const fs = await page.evaluate((a, z) => window.__e2e.frameStats(a, z), t0, t1);
+  const pokes = since(c0, await counts(page)).events.filter((k) => k === "poke" || k === "slap").length;
+  await sleep(STAND_AFTER_MS);
+  const afterPokes = await stance(page);
+  await shot(page, T.out, "robust-pokes");
+  T.check(g, `${spots.length} quick pokes`, pokes >= spots.length / 2 && stands(afterPokes) ? "PASS" : "FAIL",
+    `${pokes} poke events; physics during the pokes p95 ${fs.physicsP95?.toFixed(2) ?? "?"} ms, ${fs.fps.toFixed(0)} fps; ${STAND_AFTER_MS / 1000} s later: ${standText(afterPokes)}; robust-pokes.png`);
+
+  log.step = "throw";
+  const f2 = await locateFrog(page, T.out, null);
+  const c1 = await counts(page);
+  await mouseThrow(page, f2.target, { x: f2.target.x - 160, y: f2.target.y - 260 });
+  for (let i = 0; i < 28 && !(await counts(page)).events.slice(c1.events.length).includes("land"); i++) await sleep(250);
+  const ev = since(c1, await counts(page)).events;
+  await sleep(STAND_AFTER_MS);
+  const afterThrow = await stance(page);
+  const seen = await locateFrog(page, T.out, "robust-throw");
+  T.check(g, "a throw: it lands and stands up again", ev.includes("land") && stands(afterThrow) && (seen.areaFraction ?? 1) > 0.01 ? "PASS" : "FAIL",
+    `events [${[...new Set(ev)].join(", ")}]; ${STAND_AFTER_MS / 1000} s after landing: ${standText(afterThrow)}, hips at (${afterThrow?.hips.map((x) => x.toFixed(2)).join(", ")}) m, frog covers ${pct(seen.areaFraction ?? 0)} of the canvas; robust-throw.png`);
 }

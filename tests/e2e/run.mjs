@@ -12,13 +12,20 @@
 //     --quick             skip the 65 s camera soak that catches MediaPipe's periodic usage logging
 //     --allow-missing     exit 0 when nothing fails even if parts of the app are not there yet
 //
-// Scenarios: play, modes, dances, camera, video-portrait, video-landscape, playback, simulators, record, phone, lang,
-// lang-phone.
+// Scenarios: play, feel, lab, modes, dances, camera, video-portrait, video-landscape, playback, simulators,
+// gpu-fallback (a second Chrome without WebGPU), retargeters, tongue, robust, record, phone, lang, lang-phone.
+//
+// The page is opened with ?lab=<a free port>, so it finds no local Lab server (lab/server.mjs) even when one runs on
+// this machine: the checks are of the page as the public site serves it.
+//
+// ffmpeg/ffprobe: FFMPEG / FFPROBE, else PATH, else (Windows) winget's install (lib/media.mjs). Chrome: CHROME, else
+// the usual install places (tests/tools/chrome.mjs).
 //
 // The app exposes window.__naiwa = { store, sim, character, stage, motion, commands } (src/main.ts). Everything also
 // works without it from the DOM, the pixels and the browser APIs, but with it the checks are exact (the frog's pixels
 // and centre, simulation events, effects, physics time, motion state, the pose).
 import { spawnSync } from "node:child_process";
+import { createServer as createNetServer } from "node:net";
 import { mkdirSync, rmSync, writeFileSync, readdirSync, existsSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,7 +121,17 @@ server = await serve(existsSync(join(DIST, "index.html")) ? DIST : join(CACHE, "
   "/__e2e/vision_bundle.mjs": join(ROOT, "node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"),
 });
 appBase ??= server.url;
-const appUrl = appBase + (appBase.includes("?") ? "&" : "?") + "e2e";
+// The page looks for the local Lab server (lab/server.mjs, default 127.0.0.1:5170) and shows its Codex entry points
+// when it answers. The checks are of the page as visitors get it, with no Lab server: point it (?lab=) at a port
+// nothing listens on, whether or not someone runs a Lab server on this machine.
+const labPort = await new Promise((resolve) => {
+  const s = createNetServer().listen(0, "127.0.0.1", () => {
+    const p = s.address().port;
+    s.close(() => resolve(p));
+  });
+});
+const labUrl = `http://127.0.0.1:${labPort}`;
+const appUrl = appBase + (appBase.includes("?") ? "&" : "?") + `e2e&lab=${labPort}`;
 
 /* ---------------------------------------------------------------- browser -------------------------------------- */
 const camClip = join(MEDIA, "dance-naenae.mp4");
@@ -135,6 +152,23 @@ const browser = await puppeteer.launch({
     `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1${opt("url") ? `, EXCLUDE ${new URL(opt("url")).hostname}` : ""}`,
   ],
 });
+
+/** A second Chrome with no WebGPU at all (as on a machine without a usable GPU), started when a scenario needs it:
+ *  the GPU simulator must fall back to CPU workers there. */
+let noGpu = null;
+const noWebgpuBrowser = async () => (noGpu ??= await puppeteer.launch({
+  executablePath: chromePath(),
+  headless: "new",
+  args: [
+    "--no-sandbox",
+    ...gpuArgs().filter((a) => a !== "--enable-unsafe-webgpu"),
+    "--disable-features=WebGPU,WebGPUService",
+    "--disable-blink-features=WebGPU",
+    "--autoplay-policy=no-user-gesture-required",
+    "--mute-audio",
+    `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1${opt("url") ? `, EXCLUDE ${new URL(opt("url")).hostname}` : ""}`,
+  ],
+}));
 
 /** The uploaded clips and the person's pose in them (the ground truth for "the frog follows"). */
 const model = ["pose_landmarker_full.task", "pose_landmarker_lite.task"].find((m) => existsSync(join(ROOT, "public/mediapipe", m)));
@@ -158,14 +192,14 @@ const externalAll = [];
 const T = { check, out: OUT, cache: CACHE, clips, flag, shared: {} };
 
 /** One scenario in its own browser context (fresh cache and storage), with its console and network verdict. */
-async function scenario(name, viewport, body, { timeoutMs = 150000, userAgent, lang } = {}) {
+async function scenario(name, viewport, body, { timeoutMs = 150000, userAgent, lang, inBrowser } = {}) {
   if (only && !only.includes(name)) return;
-  const ctx = await browser.createBrowserContext();
+  const ctx = await (inBrowser ? await inBrowser() : browser).createBrowserContext();
   let opened = null, timer;
   const t0 = Date.now();
   const served0 = server.served.length;
   try {
-    opened = await openPage(ctx, appUrl, { viewport, userAgent, lang });
+    opened = await openPage(ctx, appUrl, { viewport, userAgent, lang, labUrl });
     await Promise.race([
       body(opened.page, opened.log).finally(() => clearTimeout(timer)),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs / 1000} s`)), timeoutMs); }),
@@ -193,12 +227,18 @@ async function scenario(name, viewport, body, { timeoutMs = 150000, userAgent, l
 }
 
 await scenario("play", DESKTOP, (p, l) => S.play(T, p, l));
+await scenario("feel", DESKTOP, (p, l) => S.feel(T, p, l));
+await scenario("lab", DESKTOP, (p, l) => S.lab(T, p, l));
 await scenario("modes", DESKTOP, (p, l) => S.modes(T, p, l));
 await scenario("dances", DESKTOP, (p, l) => S.dances(T, p, l));
 await scenario("camera", DESKTOP, (p, l) => S.camera(T, p, l), { timeoutMs: 200000 });
 for (const which of Object.keys(clips)) await scenario(`video-${which}`, DESKTOP, (p, l) => S.video(T, p, l, which), { timeoutMs: 240000 });
 await scenario("playback", DESKTOP, (p, l) => S.playback(T, p, l));
-await scenario("simulators", DESKTOP, (p, l) => S.simulators(T, p, l), { timeoutMs: 480000 });
+await scenario("simulators", DESKTOP, (p, l) => S.simulators(T, p, l, { webgpu: true, backend: /^运行于 WebGPU · \S/ }), { timeoutMs: 480000 });
+await scenario("gpu-fallback", DESKTOP, (p, l) => S.simulators(T, p, l, { group: "gpu-fallback", only: ["gpu-mpm"], webgpu: false, backend: /^运行于 CPU 并行 · \d+ 线程$/ }), { timeoutMs: 180000, inBrowser: noWebgpuBrowser });
+await scenario("retargeters", DESKTOP, (p, l) => S.retargeters(T, p, l), { timeoutMs: 240000 });
+await scenario("tongue", DESKTOP, (p, l) => S.tongue(T, p, l));
+await scenario("robust", DESKTOP, (p, l) => S.robust(T, p, l), { timeoutMs: 180000 });
 await scenario("record", DESKTOP, (p, l) => S.record(T, p, l));
 await scenario("phone", PHONE, (p, l) => S.phone(T, p, l), { userAgent: PHONE_UA });
 await scenario("lang", DESKTOP, (p, l) => S.languages(T, p, l, "lang"));
@@ -211,6 +251,7 @@ check("network", "nothing loaded from outside the site", externalAll.length ? "F
     (externalAll.some((u) => u.includes(MEDIAPIPE_TELEMETRY)) ? ` (${MEDIAPIPE_TELEMETRY} is @mediapipe/tasks-vision's built-in usage logging: src/motion must keep it from being sent)` : "")
     : "no request left the site in any scenario");
 await browser.close();
+await noGpu?.close();
 finish();
 
 function finish() {

@@ -194,7 +194,7 @@
 
   e2e.state = () => {
     const s = window.__naiwa?.store?.get();
-    return s ? { sound: s.sound, playback: s.playback, lang: s.lang, mode: s.mode, tool: s.tool, dance: s.dance, dances: s.dances, mirror: s.mirror, canSaveDance: s.canSaveDance, recordLayout: s.recordLayout, motion: s.motion, recording: s.recording, stats: s.stats, loading: s.loading, lastRecording: s.lastRecording ? { mimeType: s.lastRecording.mimeType, durationMs: s.lastRecording.durationMs, fileName: s.lastRecording.fileName, size: s.lastRecording.blob?.size } : null } : null;
+    return s ? { sound: s.sound, playback: s.playback, lang: s.lang, mode: s.mode, tool: s.tool, dance: s.dance, dances: s.dances, mirror: s.mirror, canSaveDance: s.canSaveDance, recordLayout: s.recordLayout, simulator: s.simulator, retargeter: s.retargeter, motion: s.motion, recording: s.recording, stats: s.stats, loading: s.loading, lastRecording: s.lastRecording ? { mimeType: s.lastRecording.mimeType, durationMs: s.lastRecording.durationMs, fileName: s.lastRecording.fileName, size: s.lastRecording.blob?.size } : null } : null;
   };
 
   e2e.videos = () =>
@@ -473,10 +473,15 @@
       });
     }
     const body = n.sim.readBody();
-    const tester = insideTester(body, spec.body.indices);
-    const dist = distanceTester(body, spec.body.indices);
     const limbs = new Map();
     n.sim.readLimbs(limbs);
+    // Non-finite positions (a simulation that blew up): count them instead of measuring.
+    const bad = (a) => { let k = 0; for (const v of a) if (!Number.isFinite(v)) k++; return k / 3; };
+    const nonFinite = { body: bad(body) };
+    for (const [k, v] of limbs) if (bad(v)) nonFinite[k] = bad(v);
+    if (Object.values(nonFinite).some((x) => x > 0)) return { per: {}, head: null, nonFinite };
+    const tester = insideTester(body, spec.body.indices);
+    const dist = distanceTester(body, spec.body.indices);
     const per = {};
     spec.limbs.forEach((l, li) => {
       const p = limbs.get(l.name);
@@ -543,6 +548,122 @@
       physicsP95: pq(0.95),
       physicsSteps: phys.length,
     };
+  };
+
+  /** The head bone's height (m) as rendered and in the rest pose, and the hips' ground position: does it stand? */
+  e2e.stance = () => {
+    const n = window.__naiwa;
+    const bones = n?.character?.rig?.bones;
+    const head = bones?.get("head")?.matrixWorld.elements;
+    const hips = bones?.get("hips")?.matrixWorld.elements;
+    const rest = n?.character?.spec?.bones.find((b) => b.name === "head")?.restWorld.elements;
+    if (!head || !rest || !hips) return null;
+    return { head: head[13], rest: rest[13], hips: [hips[12], hips[13], hips[14]], finite: [head[13], hips[12], hips[14]].every(Number.isFinite) };
+  };
+
+  /** The UI's floating panels (to see that the frog is framed beside them, not under them). */
+  e2e.panelRects = () => [...document.querySelectorAll("#ui .nw-panel")].filter(visible).map(rectOf);
+
+  /** Largest distance (m) any sampled surface vertex is from where it was in a snapshot. */
+  e2e.maxDisp = (a, b) => {
+    const A = e2e.snaps[a], B = e2e.snaps[b];
+    let m = 0;
+    for (let i = 0; i < A.length; i += 3) m = Math.max(m, Math.hypot(B[i] - A[i], B[i + 1] - A[i + 1], B[i + 2] - A[i + 2]));
+    return m;
+  };
+  /** The body surface now, then the largest distance any of its vertices gets from there over `ms` (every frame,
+   *  every vertex: a poke's dent is local). */
+  e2e.peakDisp = async (ms) => {
+    const read = () => window.__naiwa?.sim?.readBody();
+    const a = read() && Float32Array.from(read());
+    if (!a) return null;
+    let m = 0;
+    const t0 = performance.now();
+    while (performance.now() - t0 < ms) {
+      await new Promise((r) => raf(r));
+      const b = read();
+      if (b.length !== a.length) return null;
+      for (let i = 0; i < a.length; i += 3) m = Math.max(m, Math.hypot(b[i] - a[i], b[i + 1] - a[i + 1], b[i + 2] - a[i + 2]));
+    }
+    return m;
+  };
+
+  /** The tongue (MouthInside vertices coloured tongue-red) against the rendered Body surface: for each tongue vertex
+   *  the distance to the nearest Body vertex (m). A tongue left behind when the head moves shows as a large gap. */
+  e2e.tongueGap = () => {
+    const obj = window.__naiwa?.character?.object;
+    const mouth = obj?.getObjectByName("MouthInside");
+    const body = obj?.getObjectByName("Body");
+    const col = mouth?.geometry?.attributes?.color;
+    if (!mouth?.getVertexPosition || !body || !col) return null;
+    const V = window.__naiwa.stage.camera.position.constructor;
+    const tongue = [];
+    for (let i = 0; i < col.count; i++) if (col.getX(i) > 0.35 && col.getX(i) > 1.8 * col.getY(i)) tongue.push(i);
+    if (!tongue.length) return { vertices: 0 };
+    mouth.updateMatrixWorld(true);
+    body.updateMatrixWorld(true);
+    // The Body's positions are the simulated surface; read them as rendered (world).
+    const bp = body.geometry.attributes.position;
+    const bw = new Float32Array(bp.count * 3);
+    const v = new V();
+    for (let j = 0; j < bp.count; j++) {
+      body.getVertexPosition ? body.getVertexPosition(j, v) : v.fromBufferAttribute(bp, j);
+      v.applyMatrix4(body.matrixWorld);
+      bw[j * 3] = v.x; bw[j * 3 + 1] = v.y; bw[j * 3 + 2] = v.z;
+    }
+    let max = 0, sum = 0;
+    for (const i of tongue) {
+      mouth.getVertexPosition(i, v).applyMatrix4(mouth.matrixWorld);
+      let d = Infinity;
+      for (let j = 0; j < bp.count; j++) d = Math.min(d, (bw[j * 3] - v.x) ** 2 + (bw[j * 3 + 1] - v.y) ** 2 + (bw[j * 3 + 2] - v.z) ** 2);
+      d = Math.sqrt(d);
+      max = Math.max(max, d);
+      sum += d;
+    }
+    return { vertices: tongue.length, max, mean: sum / tongue.length };
+  };
+
+  /** Each foot's heel (ankle) and toe (the foot bone's tail) as rendered, every frame for `ms`: how fast each moves
+   *  sideways while it is down on the floor (within 1.5 cm of its lowest). */
+  e2e.footSlide = async (ms) => {
+    const n = window.__naiwa;
+    const bones = n?.character?.rig?.bones;
+    if (!bones?.get("foot_L")) return null;
+    const V = n.stage.camera.position.constructor;
+    const feet = ["foot_L", "foot_R"].map((k) => {
+      const b = n.character.spec.bones.find((x) => x.name === k);
+      // the toe in the foot bone's own frame
+      return { k, toe: b.tail.clone().applyMatrix4(b.restWorld.clone().invert()), s: [] };
+    });
+    const t0 = performance.now();
+    while (performance.now() - t0 < ms) {
+      await new Promise((r) => raf(r));
+      const t = performance.now();
+      for (const f of feet) {
+        const m = bones.get(f.k).matrixWorld;
+        const ankle = new V().setFromMatrixPosition(m), toe = f.toe.clone().applyMatrix4(m);
+        f.s.push([t, ankle.x, ankle.y, ankle.z, toe.x, toe.y, toe.z]);
+      }
+    }
+    // The heel (ankle) and the toe each count while they are down, so a foot rolling over its toe does not slide.
+    // Each stretch of contact counts by how far the point ends up from where it touched down (not the frame-to-frame
+    // path, which would count the flesh's jitter as sliding).
+    let dist = 0, time = 0;
+    for (const { s } of feet) for (const o of [1, 4]) {
+      const low = Math.min(...s.map((x) => x[o + 1]));
+      const down = (i) => s[i][o + 1] <= low + 0.015;
+      for (let i = 0; i < s.length; ) {
+        if (!down(i)) { i++; continue; }
+        let j = i;
+        while (j + 1 < s.length && down(j + 1)) j++;
+        if (j > i) {
+          dist += Math.hypot(s[j][o] - s[i][o], s[j][o + 2] - s[i][o + 2]);
+          time += (s[j][0] - s[i][0]) / 1000;
+        }
+        i = j + 1;
+      }
+    }
+    return { speed: time ? dist / time : 0, standing: time / 4 / (ms / 1000) };
   };
 
   /** The newest recorded video blob, as base64 (the Blob is kept, so a revoked URL does not matter). */
