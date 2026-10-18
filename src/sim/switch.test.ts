@@ -80,7 +80,7 @@ class Page {
     for (let k = 0; k < Math.round(seconds / dt); k++) {
       const pose = this.source ? this.source.update(0, dt) : null;
       character!.targetsFromPose(pose, this.targets);
-      this.sim.setTargets(this.targets);
+      this.sim.setTargets(this.targets, pose?.contacts);
       this.sim.step(dt);
       this.steps++;
       if (this.steps % 3 === 0) {

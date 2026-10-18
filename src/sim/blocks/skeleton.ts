@@ -8,7 +8,7 @@
  */
 import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
-import { CORE_BONES, type BodyMode, type BoneName, type CoreBone, type HitRegion, type PhysicsParams, type RigBone, type RigSpec } from "../../contracts";
+import { CORE_BONES, type BodyMode, type BoneName, type CoreBone, type FootContacts, type HitRegion, type PhysicsParams, type RigBone, type RigSpec } from "../../contracts";
 import type { BlockDefinition, BoneShape, Scene, SimBone, SkeletonBlock } from "../api";
 import { TriMesh, segmentDistance } from "../geometry";
 
@@ -38,6 +38,10 @@ const JOINTS: Record<string, Joint> = {
 };
 const jointOf = (name: CoreBone) => JOINTS[name.replace(/_[LR]$/, "")];
 
+/** A planted foot's hold (pinFeet): N/m and N·s/m against moving, N·m/rad against turning. */
+const PIN_STIFFNESS = 6000;
+const PIN_DAMPING = 2 * Math.sqrt(PIN_STIFFNESS * 2);
+const PIN_TURN = 300;
 /** How far (m) a leg's flesh must be outside the Body at rest to belong to its contact shape (see addColliders). */
 const LEG_CLEARANCE = 0.01;
 /** Lean (rad) the frog may stand at by itself before the upright pull engages. */
@@ -108,6 +112,9 @@ export class Skeleton {
   readonly bones = new Map<CoreBone, Bone>();
   readonly byCollider = new Map<number, Bone>();
   private uprightJoint: RAPIER.ImpulseJoint;
+  private world0: RAPIER.RigidBody;
+  /** Feet held where they touched down while the motion has them planted. */
+  private pins = new Map<CoreBone, RAPIER.ImpulseJoint>();
   private uprightStiffness = -1;
   private raw: RAPIER.World["impulseJoints"]["raw"];
 
@@ -150,7 +157,7 @@ export class Skeleton {
     }
     const hips = this.bone("hips");
     // The upright pull: a joint from the world to the hips that only acts through its tilt motors (no locked axes).
-    const world0 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    const world0 = (this.world0 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed()));
     const zero = { x: 0, y: 0, z: 0 };
     this.uprightJoint = world.createImpulseJoint(
       RAPIER.JointData.generic(zero, zero, { x: 1, y: 0, z: 0 }, 0 as RAPIER.JointAxesMask), world0, hips.body, true,
@@ -158,6 +165,38 @@ export class Skeleton {
     this.uprightJoint.setLocalFrame2(zero, q4(hips.restRot.clone().invert()));
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {
       this.raw.jointConfigureMotorModel(this.uprightJoint.handle, axis as number, RAPIER.MotorModel.ForceBased as number);
+    }
+  }
+
+  /** Driven mode: a foot the motion has planted is held at its pose when it touched down, by a stiff spring joint to
+   *  the world (stiff against the leg's motors, soft enough that a target out of reach does not fight the kinematic
+   *  hips); it lets go when the motion lifts it. The leg's motors alone let the planted foot skid 4-5 cm at each
+   *  lift-off and overshoot on landing. */
+  pinFeet(contacts: FootContacts | null) {
+    for (const name of ["foot_L", "foot_R"] as const) {
+      const want = !!contacts?.[name], pin = this.pins.get(name);
+      if (want && !pin) {
+        const foot = this.bones.get(name);
+        if (!foot) continue;
+        const t = foot.body.translation(), r = foot.body.rotation();
+        const zero = { x: 0, y: 0, z: 0 };
+        const joint = this.world.createImpulseJoint(
+          RAPIER.JointData.generic(v3(t), zero, { x: 1, y: 0, z: 0 }, 0 as RAPIER.JointAxesMask), this.world0, foot.body, true,
+        );
+        joint.setLocalFrame1(v3(t), { x: r.x, y: r.y, z: r.z, w: r.w });
+        for (const axis of [RAPIER.JointAxis.LinX, RAPIER.JointAxis.LinY, RAPIER.JointAxis.LinZ]) {
+          this.raw.jointConfigureMotorModel(joint.handle, axis as number, RAPIER.MotorModel.ForceBased as number);
+          this.raw.jointConfigureMotorPosition(joint.handle, axis as number, 0, PIN_STIFFNESS, PIN_DAMPING);
+        }
+        for (const axis of ANG_AXES) {
+          this.raw.jointConfigureMotorModel(joint.handle, axis as number, RAPIER.MotorModel.ForceBased as number);
+          this.raw.jointConfigureMotorPosition(joint.handle, axis as number, 0, PIN_TURN, 0.2 * Math.sqrt(PIN_TURN));
+        }
+        this.pins.set(name, joint);
+      } else if (!want && pin) {
+        this.world.removeImpulseJoint(pin, true);
+        this.pins.delete(name);
+      }
     }
   }
 
@@ -439,6 +478,7 @@ export class Skeleton {
   }
 
   reset() {
+    this.pinFeet(null);
     for (const b of this.bones.values()) {
       b.body.setTranslation(v3(b.restPos), true);
       b.body.setRotation(q4(b.restRot), true);
@@ -548,6 +588,8 @@ class RigidSkeleton implements SkeletonBlock {
   private params: PhysicsParams;
   private driveBlend = 1;
   private relaxBlend = 1;
+  /** Feet the motion has planted (driven mode). */
+  private contacts: FootContacts | null = null;
   /** Time since the frog was knocked about (landing, throw). */
   private sinceKnock = 10;
   private rootFromHips: THREE.Matrix4;
@@ -588,7 +630,8 @@ class RigidSkeleton implements SkeletonBlock {
     this.driveBlend = 0;
   }
 
-  setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>) {
+  setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>, contacts?: FootContacts) {
+    this.contacts = contacts ?? null;
     const s = new THREE.Vector3();
     for (const [name, m] of boneWorld) {
       const b = this.skeleton.bones.get(name as CoreBone);
@@ -614,6 +657,8 @@ class RigidSkeleton implements SkeletonBlock {
   }
 
   beforeStep(scene: Scene) {
+    // Feet are held only once the blend into a motion is done (a new motion starts from where the bones are).
+    this.skeleton.pinFeet(this.mode === "driven" && this.driveBlend >= 1 ? this.contacts : null);
     if (this.mode === "driven") {
       this.driveBlend = Math.min(1, this.driveBlend + scene.dt / DRIVE_BLEND);
       this.skeleton.drive(THREE.MathUtils.smoothstep(this.driveBlend, 0, 1), scene.dt);
