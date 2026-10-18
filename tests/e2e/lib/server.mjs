@@ -14,7 +14,8 @@ export function serve(dist, port, mounts = {}) {
   const server = createServer((req, res) => {
     const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
     const mount = Object.keys(mounts).sort((a, b) => b.length - a.length).find((m) => path.startsWith(m));
-    const base = mount ? mounts[mount] : dist;
+    // normalised like the file path (on Windows a base given with forward slashes would never match)
+    const base = normalize(mount ? mounts[mount] : dist);
     let file = mount ? normalize(join(base, path.slice(mount.length))) : normalize(join(dist, path === "/" ? "index.html" : path));
     let status = 200;
     if (!file.startsWith(base) || !existsSync(file) || statSync(file).isDirectory()) {

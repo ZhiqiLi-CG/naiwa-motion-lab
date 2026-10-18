@@ -124,7 +124,8 @@
     const skip = spec.skip ? new RegExp(spec.skip) : null;
     const sel = "button, [role=button], [role=tab], [role=radio], [role=menuitem], [role=option], [role=switch], a[href], label, input[type=button], input[type=submit], [data-mode]";
     let hits = [...document.querySelectorAll(sel)].filter((el) => {
-      if (spec.mode && el.dataset.mode === spec.mode) return true;
+      // a control marked with its mode (not a container such as #ui, which carries the current mode)
+      if (spec.mode && el.dataset.mode === spec.mode && el.matches("button, [role=button], [role=tab], [role=radio]")) return true;
       const t = label(el);
       if (skip && skip.test(t)) return false;
       if (t.length > 60) return false; // a container of many controls, not one
@@ -249,7 +250,9 @@
     const okWords = /^(naiwa|motion|lab|vs|fps|gpu|cpu|fem|webgl|mediapipe|ok|ios|android|mp4|webm|mb|kb|ms|cm|mm|px|hz|kg)$/i;
     // The language switch names the other language in that language; a cited source keeps its own title.
     const langNames = /^(EN|En|English|中|中文|Switch to English|切换到中文|Language|语言)(\s+\S)?$/;
-    const credits = (window.__naiwa?.store?.get().dances ?? []).map((d) => d.credit).filter(Boolean);
+    const dances = window.__naiwa?.store?.get().dances ?? [];
+    // a cited source keeps its title; a dance whose name is the same in both languages ("Nae Nae") is a name
+    const credits = [...dances.map((d) => d.credit), ...dances.filter((d) => d.nameEn && d.name === d.nameEn).map((d) => d.name)].filter(Boolean);
     const found = new Map();
     const test = (text, el, where) => {
       const t = text.replace(/\s+/g, " ").trim();
@@ -303,18 +306,23 @@
     for (let i = 0; i < A.length; i += 3) s += Math.hypot(B[i] - A[i], B[i + 1] - A[i + 1], B[i + 2] - A[i + 2]);
     return s / (A.length / 3);
   };
-  /** How fast the surface moves (m/s: path length of the mean vertex) over `ms`, sampled every frame. */
+  /** How fast the surface moves (m/s: path length of the mean vertex) over `ms`, measured between snapshots every
+   *  100 ms (frame-to-frame differences would count the flesh's jitter, which does not slow with the motion); also
+   *  the frames drawn meanwhile. */
   e2e.surfaceSpeed = async (ms) => {
     const t0 = performance.now();
-    let path = 0, k = 0;
+    let path = 0, k = 0, n = 0, last = t0;
     e2e.snap("speed0");
     while (performance.now() - t0 < ms) {
       await new Promise((r) => raf(r));
-      e2e.snap(`speed${(k + 1) % 2}`);
-      path += e2e.delta(`speed${k % 2}`, `speed${(k + 1) % 2}`);
       k++;
+      if (performance.now() - last < 100) continue;
+      last = performance.now();
+      e2e.snap(`speed${(n + 1) % 2}`);
+      path += e2e.delta(`speed${n % 2}`, `speed${(n + 1) % 2}`);
+      n++;
     }
-    return { speed: path / ((performance.now() - t0) / 1000), frames: k };
+    return { speed: path / ((last - t0) / 1000), frames: k };
   };
 
   /* ---- Interpenetration: limb flesh inside the Body, and the head's shape ---- */
@@ -673,7 +681,8 @@
     if (!b) return null;
     const data = await new Promise((resolve) => {
       const fr = new FileReader();
-      fr.onload = () => resolve(String(fr.result).split(",")[1]);
+      // after "base64,": the type itself may hold commas (video/mp4;codecs=avc1.4d0020,mp4a.40.2)
+      fr.onload = () => { const s = String(fr.result); resolve(s.slice(s.indexOf(";base64,") + 8)); };
       fr.readAsDataURL(b.blob);
     });
     return { type: b.type, size: b.size, data };

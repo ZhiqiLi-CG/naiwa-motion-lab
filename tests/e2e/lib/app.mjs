@@ -133,12 +133,23 @@ export async function findControl(page, spec) {
   if (!el) await h.dispose();
   return el;
 }
-export const findMode = (page, mode) => findControl(page, { mode, label: MODES[mode] });
+/** A motion source's control; on a phone they are in the bottom sheet's 动作 tab, which is opened first. */
+export async function findMode(page, mode) {
+  const el = await findControl(page, { mode, label: MODES[mode] });
+  if (el) return el;
+  const tab = await page.$("#ui .nw-tab[data-tab=motion]");
+  if (!tab || !(await tab.isVisible())) return null;
+  await press(tab);
+  await sleep(500);
+  return findControl(page, { mode, label: MODES[mode] });
+}
 
 /** Click a control the way a person does (at its centre); a control another element covers is noted in the
  *  page's log (log.covered) and clicked anyway, so the rest of the scenario still runs. */
 export async function press(el) {
   const page = el.frame.page();
+  // a control further down a panel's list is scrolled to first, as a person does
+  await el.evaluate((e) => e.scrollIntoView({ block: "nearest" }));
   const cover = await el.evaluate((e) => window.__e2e.coveredBy(e));
   if (cover) {
     const d = await describe(el);

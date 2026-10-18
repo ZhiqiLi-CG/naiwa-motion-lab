@@ -778,6 +778,15 @@ export async function phone(T, page, log) {
   log.step = "layout";
   const lay = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, ih: innerHeight }));
   T.check("phone", "no sideways scrolling", lay.sw <= lay.iw + 1 ? "PASS" : "FAIL", `page ${lay.sw} px wide in a ${lay.iw} px screen`);
+  await shot(page, T.out, "phone-first-view");
+  // on a phone the panels are tabs of a bottom sheet: open 动作 as a person would
+  log.step = "open the 动作 sheet";
+  const tab = await page.$("#ui .nw-tab[data-tab=motion]");
+  if (tab && (await tab.isVisible())) {
+    await press(tab);
+    await sleep(600);
+  }
+  await shot(page, T.out, "phone-motion-sheet");
   const missing = [], outside = [];
   for (const mode of Object.keys(MODES)) {
     const el = await findMode(page, mode);
@@ -788,6 +797,11 @@ export async function phone(T, page, log) {
   T.check("phone", "mode controls on screen", missing.length ? "MISSING" : outside.length ? "FAIL" : "PASS", missing.length ? `not found: ${missing.join(", ")}` : outside.length ? `off screen: ${outside.join(", ")}` : "all four within the screen");
   const small = (await page.evaluate(() => window.__e2e.controls())).filter((c) => c.rect.w < 32 || c.rect.h < 32);
   if (small.length) T.check("phone", "touch targets at least 32 px", "WARN", small.slice(0, 8).map((c) => `"${c.text || c.tag}" ${Math.round(c.rect.w)}×${Math.round(c.rect.h)}`).join(", ") + (small.length > 8 ? ` … (${small.length})` : ""));
+  // close the sheet again (tapping the open tab) to have the viewport to touch
+  if (tab && (await page.evaluate(() => document.getElementById("ui")?.dataset.sheet === "open"))) {
+    await press(tab);
+    await sleep(600);
+  }
   const frog = await frogVisible(T, "phone", page, "phone-start");
 
   log.step = "touch tap";
@@ -795,13 +809,14 @@ export async function phone(T, page, log) {
   const region = toPx(frog.img, frogRegion(frog));
   const c0 = await counts(page);
   const before = await shot(page);
+  const dentP = ready.hooks.sim ? page.evaluate(() => window.__e2e.peakDisp(800)) : null;
   await page.touchscreen.tap(frog.target.x, frog.target.y);
   await sleep(150);
   const t1 = await shot(page, T.out, "phone-tap");
   await sleep(300);
   const t2 = await shot(page);
   await sleep(500);
-  verdictPicture(T, "phone", "touch tap", Math.max(diffFraction(before, t1, region), diffFraction(before, t2, region)), idle.region, "phone-tap.png");
+  verdictPicture(T, "phone", "touch tap", Math.max(diffFraction(before, t1, region), diffFraction(before, t2, region)), idle.region, "phone-tap.png", await dentP);
   await verdictEffects(T, "phone", page, "touch tap", since(c0, await counts(page)), ready.hooks, ["poke", "slap", "squish"]);
 
   log.step = "touch throw";
