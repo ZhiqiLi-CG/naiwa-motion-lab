@@ -23,6 +23,7 @@ import { mkdirSync, rmSync, writeFileSync, readdirSync, existsSync, symlinkSync 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { chromePath, gpuArgs } from "../tools/chrome.mjs";
 import { checkBuild, mb, isGoogleHost, MEDIAPIPE_TELEMETRY } from "./lib/deploy.mjs";
 import { serve } from "./lib/server.mjs";
 import { ensureY4m } from "./lib/media.mjs";
@@ -109,14 +110,11 @@ const appUrl = appBase + (appBase.includes("?") ? "&" : "?") + "e2e";
 const camClip = join(MEDIA, "dance-naenae.mp4");
 const y4m = ensureY4m(camClip, join(CACHE, "dance-naenae.y4m"));
 const browser = await puppeteer.launch({
-  executablePath: process.env.CHROME || "/usr/bin/google-chrome",
+  executablePath: chromePath(),
   headless: "new",
   args: [
     "--no-sandbox",
-    "--enable-gpu",
-    "--ignore-gpu-blocklist",
-    "--use-angle=vulkan",
-    "--enable-features=Vulkan",
+    ...gpuArgs(),
     "--autoplay-policy=no-user-gesture-required",
     "--mute-audio",
     "--use-fake-ui-for-media-stream",

@@ -4,6 +4,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
+import { chromePath } from "../../tests/tools/chrome.mjs";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const PORT = 5198;
@@ -29,7 +30,7 @@ export async function openSession({ framesDir, model }) {
   });
   await new Promise((ok, fail) => server.once("error", fail).listen(PORT, "127.0.0.1", ok));
   const browser = await puppeteer.launch({
-    executablePath: process.env.CHROME || "/usr/bin/google-chrome",
+    executablePath: chromePath(),
     headless: "new",
     args: ["--no-sandbox"],
     protocolTimeout: 3_600_000,

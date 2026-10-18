@@ -6,6 +6,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import puppeteer from 'puppeteer-core';
+import { chromePath } from '../../tests/tools/chrome.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
@@ -67,7 +68,7 @@ const server=createServer(async(req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 let browser;
 try {
-  browser=await puppeteer.launch({executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',headless:true,
+  browser=await puppeteer.launch({executablePath:chromePath(),headless:true,
     args:['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   const page=await browser.newPage();await page.setViewport({width:720,height:800});
   await page.goto('http://127.0.0.1:'+server.address().port,{waitUntil:'networkidle0'});

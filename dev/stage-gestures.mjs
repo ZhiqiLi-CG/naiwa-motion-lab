@@ -1,11 +1,12 @@
 // Real input through Chrome (mouse, touch, two-finger pinch) on dev/stage.html; prints what the handler saw.
 // usage: node dev/stage-gestures.mjs [url]   (needs the stage dev server on :5194)
 import puppeteer from "puppeteer-core";
+import { chromePath, gpuArgs } from "../tests/tools/chrome.mjs";
 const url = process.argv[2] ?? "http://127.0.0.1:5194/dev/stage.html?clean";
 const browser = await puppeteer.launch({
-  executablePath: "/usr/bin/google-chrome",
+  executablePath: chromePath(),
   headless: "new",
-  args: ["--no-sandbox", "--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=vulkan", "--enable-features=Vulkan"],
+  args: ["--no-sandbox", ...gpuArgs()],
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const result = {};

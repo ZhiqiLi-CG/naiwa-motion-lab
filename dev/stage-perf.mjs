@@ -1,11 +1,12 @@
 // Frame cost of the stage on dev/stage.html: desktop and phone-sized, with and without the frog, CPU throttled.
 // usage: node dev/stage-perf.mjs [url]   (needs the stage dev server on :5194)
 import puppeteer from "puppeteer-core";
+import { chromePath, gpuArgs } from "../tests/tools/chrome.mjs";
 const base = process.argv[2] ?? "http://127.0.0.1:5194/dev/stage.html?clean";
 const browser = await puppeteer.launch({
-  executablePath: "/usr/bin/google-chrome",
+  executablePath: chromePath(),
   headless: "new",
-  args: ["--no-sandbox", "--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=vulkan", "--enable-features=Vulkan"],
+  args: ["--no-sandbox", ...gpuArgs()],
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cases = [
