@@ -28,7 +28,7 @@ export function reachGoal(): Goal {
 
 /**
  * An IK solver block: from the rest pose (hint 0, nothing before) it brings the wrists onto the targets the goal's
- * directions give, and on dances it keeps the limbs out of the body within the time budget.
+ * directions give, and on dances it keeps the limbs out of the body within a loose time guard (tests run in parallel; bench.test.ts times the budget).
  */
 export async function checkSolver(id: string, prefix: string) {
   const b = await setup();
@@ -47,6 +47,6 @@ export async function checkSolver(id: string, prefix: string) {
     const r = measureRetargeter(b, { id: "direction-copy", blocks: { solver: id } }, loadTrack(d));
     expect(r.penetration).toBeLessThan(0.003);
     expect(r.fidelity).toBeLessThan(25);
-    expect(r.solveMs).toBeLessThan(2);
+    expect(r.solveMs).toBeLessThan(5);
   }
 }

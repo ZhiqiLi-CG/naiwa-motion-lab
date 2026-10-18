@@ -170,6 +170,15 @@ export abstract class ChainSolver implements SolverBlock {
     return this.s[`${this.prefix}Tolerance`] as number;
   }
 
+  /** Whether to iterate on: the end is not yet within tolerance of its target, and the last iteration still brought
+   *  it closer by a tenth of the tolerance (a target the body keeps out of reach stalls). */
+  protected goOn(c: Chain, end: V3, last: { err: number }): boolean {
+    const err = end.distanceTo(c.target);
+    const on = err > this.tolerance && last.err - err > this.tolerance / 10;
+    last.err = err;
+    return on;
+  }
+
   /** The chain's directions, starting from `start`. */
   protected abstract solveChain(c: Chain, start: Dirs): Dirs;
 

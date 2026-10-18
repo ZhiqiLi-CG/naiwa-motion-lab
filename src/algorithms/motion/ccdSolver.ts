@@ -16,8 +16,8 @@ class CcdSolver extends ChainSolver {
 
   protected solveChain(c: Chain, start: Dirs): Dirs {
     let p = joints(c, project(this.body, c, start, true));
-    const q = new THREE.Quaternion();
-    for (let it = 0; it < this.iterations && p[2].distanceTo(c.target) > this.tolerance; it++) {
+    const q = new THREE.Quaternion(), last = { err: Infinity };
+    for (let it = 0; it < this.iterations && this.goOn(c, p[2], last); it++) {
       for (const j of [1, 0]) {
         const toEnd = p[2].clone().sub(p[j]), toTarget = c.target.clone().sub(p[j]);
         if (toEnd.lengthSq() < 1e-12 || toTarget.lengthSq() < 1e-12) continue;

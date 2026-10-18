@@ -29,10 +29,11 @@ class DlsSolver extends ChainSolver {
   protected solveChain(c: Chain, start: Dirs): Dirs {
     const lambda = this.s.dlsDamping as number, maxStep = this.s.dlsMaxStep as number;
     let d = project(this.body, c, start, true);
+    const last = { err: Infinity };
     for (let it = 0; it < this.iterations; it++) {
       const p = joints(c, d);
+      if (!this.goOn(c, p[2], last)) break;
       const e = c.target.clone().sub(p[2]);
-      if (e.length() <= this.tolerance) break;
       if (e.length() > maxStep) e.setLength(maxStep);
       const r = [p[2].clone().sub(p[0]), p[2].clone().sub(p[1])];
       // J Jᵀ + λ² I, symmetric 3 × 3.

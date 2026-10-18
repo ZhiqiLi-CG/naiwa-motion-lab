@@ -24,7 +24,8 @@ class FabrikSolver extends ChainSolver {
 
   protected solveChain(c: Chain, start: Dirs): Dirs {
     let p = joints(c, project(this.body, c, start, true));
-    for (let it = 0; it < this.iterations && p[2].distanceTo(c.target) > this.tolerance; it++) {
+    const last = { err: Infinity };
+    for (let it = 0; it < this.iterations && this.goOn(c, p[2], last); it++) {
       // Backward: the end on the target, each joint towards its successor.
       p[2].copy(c.target);
       for (let j = 1; j >= 0; j--) reach(p[j], p[j + 1], c.len[j]);

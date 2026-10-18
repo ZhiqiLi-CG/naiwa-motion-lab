@@ -30,13 +30,13 @@ it("keeps the person's directions where they are free, and moves an arm through 
   expect(f.angleTo(goal.arm.L.fore.clone().applyQuaternion(chest()))).toBeLessThan(Math.PI / 2);
 });
 
-it("on dances: as faithful as the built-in projection or more, limbs out of the body, within budget", async () => {
+it("on dances: as faithful as the built-in projection or more, limbs out of the body, within a loose time guard (the budget is checked by bench.test.ts on its own)", async () => {
   const b = await setup();
   for (const d of ["naenae", "kemusan"]) {
     const opt = measureRetargeter(b, { id: "direction-copy", blocks: { solver: "penalty-opt" } }, loadTrack(d));
     const base = measureRetargeter(b, { id: "direction-copy" }, loadTrack(d));
     expect(opt.fidelity).toBeLessThan(base.fidelity + 0.5);
     expect(opt.penetration).toBeLessThan(0.003);
-    expect(opt.solveMs).toBeLessThan(2);
+    expect(opt.solveMs).toBeLessThan(5);
   }
 }, 30000);
