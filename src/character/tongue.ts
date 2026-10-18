@@ -65,9 +65,10 @@ export function cutProfile(pos: Float32Array, indices: Uint32Array, x: number, m
   // Segments of triangles crossing the plane, keyed by the crossed edges so they chain.
   const point = new Map<number, [number, number]>();
   const link = new Map<number, number[]>();
-  const segN = new Map<string, [number, number]>();
+  const segN = new Map<number, [number, number]>();
   const n = pos.length / 3;
   const ek = (a: number, b: number) => (a < b ? a * n + b : b * n + a);
+  const pk = (a: number, b: number) => (a < b ? a * n * n + b : b * n * n + a);
   const cross = (a: number, b: number) => {
     const k = ek(a, b);
     if (!point.has(k)) {
@@ -77,24 +78,26 @@ export function cutProfile(pos: Float32Array, indices: Uint32Array, x: number, m
     }
     return k;
   };
+  const yLo = mouthY - below - 0.03, yHi = mouthY + 0.12;
   const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), fn = new THREE.Vector3();
+  const v = [0, 0, 0], s = [false, false, false], ks = [0, 0];
   for (let t = 0; t < indices.length; t += 3) {
-    const v = [indices[t], indices[t + 1], indices[t + 2]];
-    const s = v.map((i) => pos[3 * i] - x >= 0);
-    if (s[0] === s[1] && s[1] === s[2]) continue;
-    let ylo = Infinity, yhi = -Infinity;
-    for (const i of v) (ylo = Math.min(ylo, pos[3 * i + 1])), (yhi = Math.max(yhi, pos[3 * i + 1]));
-    if (yhi < mouthY - below - 0.03 || ylo > mouthY + 0.12) continue;
-    const ks: number[] = [];
-    for (let j = 0; j < 3; j++) if (s[j] !== s[(j + 1) % 3]) ks.push(cross(v[j], v[(j + 1) % 3]));
-    const [a, b] = ks;
+    const i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
+    const s0 = pos[3 * i0] >= x, s1 = pos[3 * i1] >= x, s2 = pos[3 * i2] >= x;
+    if (s0 === s1 && s1 === s2) continue;
+    const y0 = pos[3 * i0 + 1], y1 = pos[3 * i1 + 1], y2 = pos[3 * i2 + 1];
+    if (Math.max(y0, y1, y2) < yLo || Math.min(y0, y1, y2) > yHi) continue;
+    (v[0] = i0), (v[1] = i1), (v[2] = i2), (s[0] = s0), (s[1] = s1), (s[2] = s2);
+    let m = 0;
+    for (let j = 0; j < 3; j++) if (s[j] !== s[(j + 1) % 3]) ks[m++] = cross(v[j], v[(j + 1) % 3]);
+    const a = ks[0], b = ks[1];
     (link.get(a) ?? link.set(a, []).get(a)!).push(b);
     (link.get(b) ?? link.set(b, []).get(b)!).push(a);
-    e1.fromArray(pos, 3 * v[1]).sub(fn.fromArray(pos, 3 * v[0]));
-    e2.fromArray(pos, 3 * v[2]).sub(fn);
+    e1.fromArray(pos, 3 * i1).sub(fn.fromArray(pos, 3 * i0));
+    e2.fromArray(pos, 3 * i2).sub(fn);
     fn.crossVectors(e1, e2);
     const l = Math.hypot(fn.y, fn.z) || 1;
-    segN.set(a < b ? `${a},${b}` : `${b},${a}`, [fn.y / l, fn.z / l]);
+    segN.set(pk(a, b), [fn.y / l, fn.z / l]);
   }
   // Start: the front-most point at the chin height.
   let start = -1, best = -Infinity;
@@ -141,7 +144,7 @@ export function cutProfile(pos: Float32Array, indices: Uint32Array, x: number, m
   for (let i = 0; i < m; i++) arc[i] -= c0;
   for (let i = 0; i + 1 < m; i++) {
     const a = chain[i], b = chain[i + 1];
-    const s = segN.get(a < b ? `${a},${b}` : `${b},${a}`) ?? [0, 0];
+    const s = segN.get(pk(a, b)) ?? [0, 0];
     ny[i] += s[0]; nz[i] += s[1]; ny[i + 1] += s[0]; nz[i + 1] += s[1];
   }
   // The chin faces forward; a Body wound inwards flips every normal.
@@ -218,9 +221,11 @@ function components(pos: THREE.BufferAttribute | THREE.InterleavedBufferAttribut
   const parent = Int32Array.from({ length: n }, (_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   const join = (a: number, b: number) => (parent[find(a)] = find(b));
-  const at = new Map<string, number>();
+  const at = new Map<number, number>();
+  // Positions to 0.1 mm within ±3 m: 16 bits each, the key stays an exact integer.
+  const q = (x: number) => Math.round(x * 1e4) + 2 ** 15;
   for (let i = 0; i < n; i++) {
-    const k = `${pos.getX(i).toFixed(5)},${pos.getY(i).toFixed(5)},${pos.getZ(i).toFixed(5)}`;
+    const k = (q(pos.getX(i)) * 2 ** 16 + q(pos.getY(i))) * 2 ** 16 + q(pos.getZ(i));
     const j = at.get(k);
     if (j === undefined) at.set(k, i);
     else join(i, j);
@@ -283,10 +288,15 @@ export function seatTongue(mouth: Part[], body: BodyShapes, mouthY: number): str
     };
 
     // Seated already? The nearest Body point to the tongue in the `tongue` shape.
+    const out = verts.map((_, k) => shaped("tongue", k).clone());
+    const reach = new THREE.Box3().setFromPoints(out).expandByScalar(0.08);
+    const near: number[] = [];
+    for (let j = 0; j < bodyTongue.length; j += 3) {
+      if (reach.containsPoint(v.fromArray(bodyTongue, j))) near.push(j);
+    }
     let gap = Infinity;
-    for (let k = 0; k < verts.length; k++) {
-      const p = shaped("tongue", k);
-      for (let j = 0; j < bodyTongue.length; j += 3) {
+    for (const p of out) {
+      for (const j of near) {
         const dx = bodyTongue[j] - p.x, dy = bodyTongue[j + 1] - p.y, dz = bodyTongue[j + 2] - p.z;
         gap = Math.min(gap, dx * dx + dy * dy + dz * dz);
       }
@@ -311,11 +321,19 @@ export function seatTongue(mouth: Part[], body: BodyShapes, mouthY: number): str
       const lay = LAYS[e], slot = dict[e], bs = body.shapes.get(e);
       if (!lay || slot === undefined || !bs) continue;
       const bodyPos = body.rest.map((x, i) => x + bs[i]);
+      const band: number[] = [];
+      for (let t = 0; t < body.indices.length; t += 3) {
+        const y0 = bodyPos[3 * body.indices[t] + 1], y1 = bodyPos[3 * body.indices[t + 1] + 1], y2 = bodyPos[3 * body.indices[t + 2] + 1];
+        if (Math.max(y0, y1, y2) >= mouthY - 0.18 && Math.min(y0, y1, y2) <= mouthY + 0.12) {
+          band.push(body.indices[t], body.indices[t + 1], body.indices[t + 2]);
+        }
+      }
+      const bandIdx = Uint32Array.from(band);
       // Cuts across the tongue's width.
       const K = 9;
       const cuts: Profile[] = [];
       for (let c = 0; c < K; c++) {
-        const p = cutProfile(bodyPos, body.indices, ((2 * c) / (K - 1) - 1) * lay.width * 1.05, mouthY);
+        const p = cutProfile(bodyPos, bandIdx, ((2 * c) / (K - 1) - 1) * lay.width * 1.05, mouthY);
         if (p) cuts.push(p);
       }
       if (cuts.length < 2) continue;

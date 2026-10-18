@@ -1,7 +1,7 @@
 /**
  * Dev page for the character (dev/character.html): the frog on a neutral studio floor like the references, driven
  * by the real simulation. Hover: the eyes follow; click: poke; drag: grab and throw.
- * URL: ?view=front|three|side|back|laugh|upper|face|faceside, ?placeholder, ?nosim (rest surface), ?mode=free, ?pose=wave|peace,
+ * URL: ?view=front|three|side|back|laugh|upper|face|faceside, ?placeholder, ?nosim (rest surface), ?mode=free, ?pose=wave|peace|bend,
  * ?fake=bend|squash|dent (a known deformation instead of the simulation, ?fakeAt=s holds its phase), ?compare (the simulation's raw surface beside it), ?clean, ?still (no life), ?preset=jelly|mochi|…, ?stage (the app's stage instead of the studio), ?raw (the GLB as three.js
  * loads it, without this module).
  * window.dev drives it from scripts (tests/tools/shot.mjs --eval).
@@ -171,6 +171,11 @@ const POSES: Record<string, (t: number) => PoseFrame> = {
       upperarm_L: turn("upperarm_L", 0, 0, 1.9), forearm_L: turn("forearm_L", 0, 0, 0.6),
       upperarm_R: turn("upperarm_R", 0, 0, -1.9), forearm_R: turn("forearm_R", 0, 0, -0.6),
     },
+    expressions: { tongue: 1 },
+  }),
+  /** A deep forward bend of the upper body (about 50°) with the tongue out: the head flesh hangs and swings. */
+  bend: (t) => ({
+    bones: { spine: turn("spine", 0.42 + 0.08 * Math.sin(t * 3), 0, 0), chest: turn("chest", 0.45, 0, 0) },
     expressions: { tongue: 1 },
   }),
   wave: (t) => ({
