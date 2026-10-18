@@ -163,17 +163,6 @@ function get(url, timeoutMs = 2000) {
   });
 }
 
-/** Is a Naiwa Lab server already answering on this port? */
-async function labAt(port) {
-  const r = await get(`http://127.0.0.1:${port}/api/status`, 1500);
-  if (!r || r.status !== 200) return false;
-  try {
-    return typeof JSON.parse(r.body).codex === "object";
-  } catch {
-    return false;
-  }
-}
-
 function lanAddresses() {
   const out = [];
   for (const list of Object.values(os.networkInterfaces())) for (const a of list ?? []) if (a.family === "IPv4" && !a.internal) out.push(a.address);
@@ -237,17 +226,14 @@ let labPort = null;
 if (opts.lab) {
   const c = await codexStatus();
   if (c.installed && c.loggedIn) {
-    if (await labAt(5170)) {
-      labPort = 5170;
-      log("本机 Lab 服务已在运行 / the local Lab server is already running on 127.0.0.1:5170, reusing it");
-    } else {
-      labPort = await freePort(5170, "127.0.0.1");
-      log(`Codex CLI ${c.version} 已登录，启动本机 Lab / logged in, starting the local Lab server on 127.0.0.1:${labPort}`);
-      const lab = run(process.execPath, [path.join(REPO, "lab", "server.mjs"), "--port", String(labPort)]);
-      lab.on("exit", (code) => {
-        if (!stopping) log(`本机 Lab 服务已退出 (exit ${code}) / the local Lab server exited; 页面照常可用 / the page keeps working without it`);
-      });
-    }
+    // Always this checkout's own server (one already on 5170 may belong to another checkout): the next free port
+    // from 5170, handed to the page as ?lab=<port> when it isn't the default.
+    labPort = await freePort(5170, "127.0.0.1");
+    log(`Codex CLI ${c.version} 已登录，启动本机 Lab / logged in, starting the local Lab server on 127.0.0.1:${labPort}`);
+    const lab = run(process.execPath, [path.join(REPO, "lab", "server.mjs"), "--port", String(labPort)]);
+    lab.on("exit", (code) => {
+      if (!stopping) log(`本机 Lab 服务已退出 (exit ${code}) / the local Lab server exited; 页面照常可用 / the page keeps working without it`);
+    });
   } else if (c.installed) log(`Codex CLI ${c.version} 未登录：本机 Lab 入口保持隐藏 / not logged in: the local Lab entry points stay hidden (codex login, then restart)`);
   else log("未找到 Codex CLI：本机 Lab 入口保持隐藏 / Codex CLI not found: the local Lab entry points stay hidden (optional)");
 } else log("--no-lab：不启动本机 Lab / not starting the local Lab");
@@ -280,6 +266,12 @@ if (stopping) await new Promise(() => {});
 if (!ok) {
   log("页面 120 秒内没有响应 / the page didn't answer within 120 s");
   await stopAll(1);
+}
+
+// …and the Lab server, so the page finds it on its first look.
+if (labPort) {
+  const labDeadline = Date.now() + 15000;
+  while (!stopping && Date.now() < labDeadline && (await get(`http://127.0.0.1:${labPort}/api/status`, 3000))?.status !== 200) await sleep(300);
 }
 
 const pageUrl = labPort && labPort !== 5170 ? `${local}?lab=${labPort}` : local;
