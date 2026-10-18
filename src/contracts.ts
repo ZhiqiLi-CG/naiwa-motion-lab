@@ -187,6 +187,11 @@ export interface DanceTrack {
   /** Per frame: 33 MediaPipe world landmarks [x, y, z, visibility] (meters, hip-centred) and 33 image landmarks
    *  [x, y, z, visibility] (normalised to the video frame, for hops, squats and travel). */
   frames: { world: number[][]; image: number[][] }[];
+  /** For a track analysed from a video: the camera's motion per frame, estimated from the background (shift in
+   *  picture fractions and zoom, both against the first frame of its shot), and the frames where a new shot starts.
+   *  A moving camera otherwise reads as the person travelling, turning or hopping. */
+  camera?: { shift: [number, number]; scale: number }[];
+  cuts?: number[];
 }
 export interface DanceIndexEntry {
   id: string;
