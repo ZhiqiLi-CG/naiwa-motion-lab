@@ -38,6 +38,8 @@ const JOINTS: Record<string, Joint> = {
 };
 const jointOf = (name: CoreBone) => JOINTS[name.replace(/_[LR]$/, "")];
 
+/** Lean (rad) the frog may stand at by itself before the upright pull engages. */
+const TILT_FREE = 0.08;
 /** Smallest radius of gyration of a bone (m). */
 const GYRATION = 0.15;
 const ANG_AXES = [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngY, RAPIER.JointAxis.AngZ] as const;
@@ -276,6 +278,13 @@ export class Skeleton {
    *  however light the hips are against that stiffness. */
   balance(tone: number, k: number, c: number) {
     for (const b of this.bones.values()) this.setMotors(b, jointOf(b.name).hold * tone);
+    // Standing on its feet the frog keeps its balance by itself and comes to rest (Rapier lets it sleep); the pull
+    // only engages once it leans further than that (a steady pull at rest pushes the feet along the floor).
+    const r = this.bone("hips").body.rotation();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(r.x, r.y, r.z, r.w).multiply(this.bone("hips").restRot.clone().invert()));
+    const engage = THREE.MathUtils.smoothstep(Math.acos(Math.min(1, up.y)), TILT_FREE, 2.5 * TILT_FREE);
+    k *= engage;
+    c *= engage;
     if (Math.abs(k - this.uprightStiffness) < 1e-3 * (k + 1)) return;
     this.uprightStiffness = k;
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {

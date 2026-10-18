@@ -1,24 +1,19 @@
 /**
  * Dev page for the simulation: the flesh surfaces, particles (red = riding a bone), bones and collision skins of the
- * simulated frog, with pokes (click), grabs and throws (drag), slaps (shift-drag), balls (B), a driven test dance (D),
- * the physics sliders and the build options to compare (URL: ?rig=test|glb&bp=400&lp=60&model=volume|neo|corot
- * &sm=0|1&vp=0|1&pgs=3&show=particles,bones,skin).
+ * simulated frog, with pokes (click), grabs and throws (drag), slaps (shift-drag), balls (B), and driven test poses:
+ * a hop with the hands on the belly (D) and a forward bend (F). The physics sliders and the simulator's settings
+ * come from the URL: ?rig=test|glb&pose=free|dance|bend&bend=50&show=particles,bones,skin,xray, plus any block
+ * setting by its key (bodyParticles=250&cellModel=corotational&carried=1…).
  */
-import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { BoneName, FrogEvent, GrabHandle, PhysicsParams, RigSpec } from "../src/contracts";
-import { createFrogSim, initPhysics, type DebugFrogSim, type SimTuning } from "../src/sim";
+import { createFrogSim, initPhysics, listSimulators, type LabFrogSim, type Settings } from "../src/sim";
 import { createTestRigSpec } from "../src/sim/testRig";
 
 const url = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (url.has(k) ? Number(url.get(k)) : d);
 const show = new Set((url.get("show") ?? "particles,bones").split(","));
-const MODELS: Record<string, RAPIER.SoftBodyCellModel> = {
-  volume: RAPIER.SoftBodyCellModel.Volume,
-  neo: RAPIER.SoftBodyCellModel.NeoHookean,
-  corot: RAPIER.SoftBodyCellModel.Corotational,
-};
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -35,8 +30,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a7a, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 sun.position.set(2, 4, 3);
 scene.add(sun);
-const grid = new THREE.GridHelper(6, 30, 0x8899aa, 0xb8c2cc);
-scene.add(grid);
+scene.add(new THREE.GridHelper(6, 30, 0x8899aa, 0xb8c2cc));
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -44,22 +38,12 @@ addEventListener("resize", () => {
 });
 
 const params: PhysicsParams = {
-  softness: num("soft", 0.5), bounciness: num("bounce", 0.5), gravity: num("g", 1), bellySize: num("belly", 1),
-  stubbornness: num("stub", 0.8),
-};
-const tuning: Partial<SimTuning> = {
-  body: {
-    particles: num("bp", 400), cellModel: MODELS[url.get("model") ?? "volume"], shapeMatching: url.get("sm") === "1",
-    volumePreservation: url.get("vp") !== "0", pgsIterations: num("pgs", 3),
-  },
-  limb: {
-    particles: num("lp", 60), cellModel: MODELS[url.get("model") ?? "volume"], shapeMatching: url.get("sm") === "1",
-    volumePreservation: url.get("vp") !== "0", pgsIterations: num("pgs", 3),
-  },
+  softness: num("soft", 0.85), bounciness: num("bounce", 0.65), gravity: num("g", 1), bellySize: num("belly", 1),
+  stubbornness: num("stub", 0.7),
 };
 
 async function loadSpec(): Promise<RigSpec> {
-  if (url.get("rig") === "glb") {
+  if (url.get("rig") !== "test") {
     const { loadCharacter } = await import("../src/character");
     return (await loadCharacter("/models/naiwa.glb")).spec;
   }
@@ -68,66 +52,69 @@ async function loadSpec(): Promise<RigSpec> {
 
 await initPhysics();
 const spec = await loadSpec();
-let sim: DebugFrogSim = createFrogSim(spec, params, tuning);
+/** The simulator's settings: every declared parameter found in the URL. */
+const settings: Settings = {};
+for (const p of listSimulators().find((s) => s.id === "cpu-constraints")?.parameters ?? []) {
+  const v = url.get(p.key);
+  if (v !== null) settings[p.key] = p.kind === "number" ? Number(v) : p.kind === "boolean" ? v === "1" : v;
+}
 const events: string[] = [];
 const onEvent = (e: FrogEvent) => {
   events.unshift(`${e.kind} ${e.strength.toFixed(2)}${e.region ? " " + e.region : ""}`);
-  events.length = Math.min(events.length, 8);
+  events.length = Math.min(events.length, 6);
 };
+let sim: LabFrogSim = createFrogSim(spec, params, { id: "cpu-constraints", settings });
 sim.onEvent(onEvent);
+await sim.ready;
 
 /* Drawing ---------------------------------------------------------------------------------------------------- */
 
 const COLORS: Record<string, number> = { body: 0xf2c94c, arm_L: 0xe0b53c, arm_R: 0xe0b53c, leg_L: 0xd9ab35, leg_R: 0xd9ab35 };
 interface PartView {
-  name: string;
   mesh: THREE.Mesh;
   points: THREE.Points;
-  skin: THREE.LineSegments;
-  skinMesh: number;
+  skin: THREE.LineSegments | null;
 }
 const views: PartView[] = [];
-const surfaces: { name: string; positions: Float32Array; indices: Uint32Array }[] = [
-  { name: spec.body.name ?? "body", positions: spec.body.positions, indices: spec.body.indices },
-  ...(spec.limbs ?? []),
-];
+
 function buildViews() {
-  for (const v of views) scene.remove(v.mesh, v.points, v.skin);
+  for (const v of views) scene.remove(v.mesh, v.points, ...(v.skin ? [v.skin] : []));
   views.length = 0;
-  sim.flesh.forEach((f, k) => {
-    const s = surfaces[k];
+  for (const part of sim.scene.parts) {
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(s.positions.slice(), 3));
-    g.setIndex(new THREE.BufferAttribute(s.indices, 1));
+    g.setAttribute("position", new THREE.BufferAttribute(part.positions.slice(), 3));
+    g.setIndex(new THREE.BufferAttribute(part.indices, 1));
     g.computeVertexNormals();
     const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      color: COLORS[s.name] ?? 0xe0b53c, roughness: 0.5, transparent: show.has("xray"), opacity: show.has("xray") ? 0.45 : 1,
+      color: COLORS[part.name] ?? 0xe0b53c, roughness: 0.5, transparent: show.has("xray"), opacity: show.has("xray") ? 0.45 : 1,
     }));
     scene.add(mesh);
-    const n = f.soft.numParticles();
+    const view = sim.scene.flesh.particles(part);
     const pg = new THREE.BufferGeometry();
-    pg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
-    const col = new Float32Array(n * 3);
-    const free = new Set(f.free);
-    for (let i = 0; i < n; i++) col.set(free.has(i) ? [0.15, 0.35, 1] : [1, 0.15, 0.1], i * 3);
+    pg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(view.count * 3), 3));
+    const col = new Float32Array(view.count * 3);
+    for (let i = 0; i < view.count; i++) col.set(view.attachedTo(i) ? [1, 0.15, 0.1] : [0.15, 0.35, 1], i * 3);
     pg.setAttribute("color", new THREE.BufferAttribute(col, 3));
     const points = new THREE.Points(pg, new THREE.PointsMaterial({ size: 0.018, vertexColors: true, depthTest: false }));
     points.renderOrder = 2;
     points.visible = show.has("particles");
     scene.add(points);
-    let skinMesh = 0;
-    for (let m = 0; m < f.soft.numMeshes(); m++) if (f.soft.meshCollisionEnabled(m)) skinMesh = m;
-    const tri = f.soft.meshIndices(skinMesh);
-    const edges: number[] = [];
-    for (let t = 0; t < tri.length; t += 3) edges.push(tri[t], tri[t + 1], tri[t + 1], tri[t + 2], tri[t + 2], tri[t]);
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute("position", new THREE.BufferAttribute(f.soft.meshVertices(skinMesh), 3));
-    sg.setIndex(edges);
-    const skin = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ color: 0x225522, depthTest: false }));
-    skin.visible = show.has("skin");
-    scene.add(skin);
-    views.push({ name: s.name, mesh, points, skin, skinMesh });
-  });
+    // The collision skin, when the flesh is a Rapier soft body (its last collision mesh).
+    let skin: THREE.LineSegments | null = null;
+    const soft = sim.scene.flesh.rapier?.(part);
+    if (soft && soft.numMeshes() > 0) {
+      const tri = soft.meshIndices(soft.numMeshes() - 1);
+      const edges: number[] = [];
+      for (let t = 0; t < tri.length; t += 3) edges.push(tri[t], tri[t + 1], tri[t + 1], tri[t + 2], tri[t + 2], tri[t]);
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute("position", new THREE.BufferAttribute(soft.meshVertices(soft.numMeshes() - 1), 3));
+      sg.setIndex(edges);
+      skin = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ color: 0x225522, depthTest: false }));
+      skin.visible = show.has("skin");
+      scene.add(skin);
+    }
+    views.push({ mesh, points, skin });
+  }
 }
 buildViews();
 
@@ -148,22 +135,24 @@ const tailLocal = new Map<BoneName, THREE.Vector3>(
 function draw() {
   sim.readLimbs(limbOut);
   const body = sim.readBody();
-  views.forEach((v, k) => {
-    const src = k === 0 ? body : limbOut.get(v.name);
-    if (!src) return;
+  sim.scene.parts.forEach((part, k) => {
+    const v = views[k];
+    const src = part.limb ? limbOut.get(part.name) : body;
+    if (!v || !src) return;
     const attr = v.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
     (attr.array as Float32Array).set(src);
     attr.needsUpdate = true;
     v.mesh.geometry.computeVertexNormals();
-    const f = sim.flesh[k];
     if (v.points.visible) {
       const pa = v.points.geometry.getAttribute("position") as THREE.BufferAttribute;
-      (pa.array as Float32Array).set(f.soft.particlePositions());
+      (pa.array as Float32Array).set(sim.scene.flesh.particles(part).positions());
       pa.needsUpdate = true;
     }
-    if (v.skin.visible) {
+    const soft = sim.scene.flesh.rapier?.(part);
+    if (v.skin && soft) {
+      v.skin.visible = show.has("skin");
       const sa = v.skin.geometry.getAttribute("position") as THREE.BufferAttribute;
-      (sa.array as Float32Array).set(f.soft.meshVertices(v.skinMesh));
+      (sa.array as Float32Array).set(soft.meshVertices(soft.numMeshes() - 1));
       sa.needsUpdate = true;
     }
   });
@@ -193,7 +182,7 @@ function draw() {
   });
 }
 
-/* A driven test dance: hops with the hands on the belly (FK of the rest skeleton) ------------------------------ */
+/* Driven test poses (FK of the rest skeleton) ---------------------------------------------------------------- */
 
 const restWorld = new Map(spec.bones.map((b) => [b.name, b.restWorld]));
 const targets = new Map<BoneName, THREE.Matrix4>();
@@ -205,17 +194,27 @@ function aim(name: BoneName, head: THREE.Vector3, at: THREE.Vector3): THREE.Matr
   const q = new THREE.Quaternion().setFromUnitVectors(restDir, at.clone().sub(head).normalize()).multiply(restRot);
   return new THREE.Matrix4().compose(head, q, new THREE.Vector3(1, 1, 1));
 }
+/** The rest pose with bones turned about world X (degrees, forward positive) in their parent chain. */
+function bendPose(turns: Partial<Record<BoneName, number>>) {
+  for (const b of spec.bones) {
+    const local = b.parent ? restWorld.get(b.parent)!.clone().invert().multiply(b.restWorld) : b.restWorld.clone();
+    const deg = turns[b.name];
+    if (deg) {
+      const restQ = new THREE.Quaternion().setFromRotationMatrix(b.restWorld);
+      const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), (deg * Math.PI) / 180);
+      local.multiply(new THREE.Matrix4().makeRotationFromQuaternion(restQ.clone().invert().multiply(turn).multiply(restQ)));
+    }
+    targets.set(b.name, b.parent ? targets.get(b.parent)!.clone().multiply(local) : local);
+  }
+  return targets;
+}
+/** Hops with the hands on the belly. */
 function dancePose(t: number) {
   const hop = Math.max(0, Math.sin(t * Math.PI * 2 * 1.1)) * 0.11;
   const sway = Math.sin(t * Math.PI * 1.1) * 0.12;
   const lift = new THREE.Matrix4().makeTranslation(0, hop, 0).multiply(new THREE.Matrix4().makeRotationY(sway));
-  // Rest FK, with the whole frog lifted and swayed, then the arms aimed at the belly.
-  for (const b of spec.bones) targets.set(b.name, lift.clone().multiply(restWorld.get(b.name)!));
-  const lean = new THREE.Matrix4().makeRotationX(0.12 + 0.08 * Math.sin(t * 7));
-  for (const name of ["chest", "head"] as BoneName[]) {
-    const spine = targets.get("spine")!, rel = restWorld.get("spine")!.clone().invert().multiply(restWorld.get(name)!);
-    targets.set(name, spine.clone().multiply(lean).multiply(rel));
-  }
+  bendPose({ chest: 7 + 5 * Math.sin(t * 7) });
+  for (const b of spec.bones) targets.set(b.name, lift.clone().multiply(targets.get(b.name)!));
   for (const [s, side] of [[1, "L"], [-1, "R"]] as const) {
     const chest = targets.get("chest")!, restChest = restWorld.get("chest")!;
     const shoulder = new THREE.Vector3().setFromMatrixPosition(restWorld.get(`upperarm_${side}`)!)
@@ -235,11 +234,11 @@ function dancePose(t: number) {
 
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
-let press: { x: number; y: number; hit: ReturnType<DebugFrogSim["raycast"]>; shift: boolean } | null = null;
+let press: { x: number; y: number; hit: NonNullable<ReturnType<LabFrogSim["raycast"]>>; shift: boolean } | null = null;
 let grab: GrabHandle | null = null;
-let grabPlane = new THREE.Plane();
+const grabPlane = new THREE.Plane();
 let last: { p: THREE.Vector3; t: number } | null = null;
-let velocity = new THREE.Vector3();
+const velocity = new THREE.Vector3();
 function rayAt(e: PointerEvent): THREE.Ray {
   ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -265,11 +264,11 @@ addEventListener("pointermove", (e) => {
     press = null;
     return;
   }
-  grab ??= sim.grab(press.hit!);
+  grab ??= sim.grab(press.hit);
   grab.move(p);
 });
 addEventListener("pointerup", (e) => {
-  if (press && !grab) sim.poke(press.hit!, 0.7, rayAt(e).direction);
+  if (press && !grab) sim.poke(press.hit, 0.7, rayAt(e).direction);
   grab?.release(velocity.clone());
   grab = null;
   press = null;
@@ -277,26 +276,29 @@ addEventListener("pointerup", (e) => {
   controls.enabled = true;
 });
 
-let dancing = url.get("dance") === "1";
+type Pose = "free" | "dance" | "bend";
+let pose: Pose = (url.get("pose") as Pose) ?? "free";
 let paused = false;
-let danceTime = 0;
+let poseTime = 0;
 function throwBall() {
   const dir = camera.getWorldDirection(new THREE.Vector3());
   const origin = camera.position.clone().addScaledVector(dir, 0.4);
   const to = new THREE.Vector3(0, 0.5, 0).sub(origin).normalize();
   sim.throwBall(origin, to.multiplyScalar(9), 0.08);
 }
+function setPose(p: Pose) {
+  pose = p;
+  poseTime = 0;
+  sim.setMode(p === "free" ? "free" : "driven");
+}
 addEventListener("keydown", (e) => {
   if (e.key === "b") throwBall();
   if (e.key === "r") sim.reset();
-  if (e.key === "d") setDance(!dancing);
+  if (e.key === "d") setPose(pose === "dance" ? "free" : "dance");
+  if (e.key === "f") setPose(pose === "bend" ? "free" : "bend");
   if (e.key === " ") paused = !paused;
 });
-function setDance(on: boolean) {
-  dancing = on;
-  sim.setMode(on ? "driven" : "free");
-}
-setDance(dancing);
+setPose(pose);
 
 /* Panel -------------------------------------------------------------------------------------------------------- */
 
@@ -323,7 +325,8 @@ slider("stubborn", "stubbornness", 0, 1);
 const buttons = document.createElement("div");
 buttons.className = "row";
 for (const [label, fn] of [
-  ["dance (D)", () => setDance(!dancing)],
+  ["dance (D)", () => setPose(pose === "dance" ? "free" : "dance")],
+  ["bend (F)", () => setPose(pose === "bend" ? "free" : "bend")],
   ["ball (B)", throwBall],
   ["reset (R)", () => sim.reset()],
   ["clear balls", () => sim.clearBalls()],
@@ -352,14 +355,19 @@ panel.append(toggles);
 /* Loop --------------------------------------------------------------------------------------------------------- */
 
 const stepTimes: number[] = [];
+let stats = sim.stats();
+let statsAt = 0;
 let prev = performance.now();
+const f2 = (v: number | undefined, d = 3) => (v ?? 0).toFixed(d);
 function frame(now: number) {
   const dt = Math.min(0.1, (now - prev) / 1000);
   prev = now;
   if (!paused) {
-    if (dancing) {
-      danceTime += dt;
-      sim.setTargets(dancePose(danceTime));
+    poseTime += dt;
+    if (pose === "dance") sim.setTargets(dancePose(poseTime));
+    if (pose === "bend") {
+      const b = num("bend", 50) * Math.min(1, poseTime / 1.5);
+      sim.setTargets(bendPose({ spine: b / 2, chest: b / 2, head: b / 3 }));
     }
     const t0 = performance.now();
     sim.step(dt);
@@ -368,13 +376,18 @@ function frame(now: number) {
   }
   draw();
   renderer.render(scene, camera);
+  if (now - statsAt > 250) {
+    statsAt = now;
+    stats = sim.stats();
+  }
   const sorted = [...stepTimes].sort((a, b) => a - b);
-  const st = sim.stats();
   statsEl.textContent =
     `step ms  avg ${(stepTimes.reduce((a, b) => a + b, 0) / Math.max(1, stepTimes.length)).toFixed(2)}  p95 ${(sorted[Math.floor(sorted.length * 0.95)] ?? 0).toFixed(2)}\n` +
-    `particles ${st.particles} (attached ${st.attached})  cells ${st.cells}\n` +
-    `body volume ${st.volumeRatio.toFixed(3)}  jiggle ${(st.deformation * 100).toFixed(1)} cm\n` +
-    sim.flesh.map((f) => `${f.name} ${f.soft.numParticles()}p cell ${(f.cellSize * 100).toFixed(1)}cm`).join("\n") + "\n" +
+    `particles ${stats.particles}  cells ${stats.cells}\n` +
+    `deviation ${f2(stats.deviation)} (max ${f2(stats.deviationMax)}) m  inverted ${stats.invertedCells ?? 0}\n` +
+    `penetration ${f2(stats.penetration)} m  jitter ${f2(stats.jitter)} m/s\n` +
+    `momentum ${(stats.momentum ?? []).map((v) => v.toFixed(2)).join(" ")}  energy ${f2(stats.energy, 1)} J\n` +
+    `volume ${Object.entries(stats.volume ?? {}).map(([k, v]) => `${k} ${v.toFixed(3)}`).join("  ")}\n` +
     events.join("\n");
   requestAnimationFrame(frame);
 }
@@ -383,19 +396,20 @@ requestAnimationFrame(frame);
 Object.assign(window, {
   __sim: {
     get sim() { return sim; },
-    THREE, params,
+    THREE, params, setPose, throwBall,
     poke(x: number, y: number, z: number, dx = 0, dy = 0, dz = -1, s = 0.8) {
       const ray = new THREE.Ray(new THREE.Vector3(x, y, z), new THREE.Vector3(dx, dy, dz).normalize());
       const hit = sim.raycast(ray);
       if (hit) sim.poke(hit, s, ray.direction);
       return hit?.region ?? null;
     },
-    throwBall, setDance,
-    rebuild() {
+    async rebuild() {
       sim.dispose();
-      sim = createFrogSim(spec, params, tuning);
+      sim = createFrogSim(spec, params, { id: "cpu-constraints", settings });
       sim.onEvent(onEvent);
+      await sim.ready;
       buildViews();
+      setPose(pose);
     },
   },
 });
