@@ -28,12 +28,20 @@ const motion = createMotion();
 registerMotionLibrary();
 const recorder = createRecorder({
   onAutoStop: (rec) => finishRecording(rec),
+  onError: (err) => recordingFailed(err),
 });
 
 let sim: ReturnType<typeof createFrogSim> | null = null;
 let character: Awaited<ReturnType<typeof loadCharacter>> | null = null;
 
 /* ---------------- recording ---------------- */
+
+/** The recorder gave up (no encoder worked): the page leaves the recording state and says so. */
+function recordingFailed(err: unknown) {
+  store.set({ recording: { active: false, startedAt: null } });
+  ui.toast(tr({ zh: "录制失败了，请再试一次", en: "Recording failed. Please try again." }), "error");
+  console.warn("recording failed", err);
+}
 
 function finishRecording(rec: Awaited<ReturnType<typeof recorder.stop>>) {
   store.set({ recording: { active: false, startedAt: null }, lastRecording: rec });
@@ -99,7 +107,11 @@ const commands: UICommands = {
   },
   async stopRecording() {
     if (!recorder.active) return;
-    finishRecording(await recorder.stop());
+    try {
+      finishRecording(await recorder.stop());
+    } catch (err) {
+      recordingFailed(err);
+    }
   },
   loadVideo(file) {
     pendingVideo = file;
