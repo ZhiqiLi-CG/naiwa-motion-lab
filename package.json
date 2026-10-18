@@ -9,6 +9,8 @@
     "node": ">=18.19"
   },
   "scripts": {
+    "start": "node scripts/start.mjs",
+    "start:prod": "node scripts/start.mjs --prod",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
