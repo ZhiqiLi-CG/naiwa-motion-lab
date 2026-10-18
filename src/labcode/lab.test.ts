@@ -177,7 +177,7 @@ describe("lab", () => {
     expect(info.parameters.map((p) => p.key)).toContain("alpha");
     const p = createRetargetPipeline(rig, chosen.retargeter);
     const frame = p.pose(PROCEDURAL_DANCES[0].pose(0.5), 1 / 60);
-    expect(frame.bones.size ?? Object.keys(frame.bones).length).toBeGreaterThan(0);
+    expect(Object.keys(frame.bones).length).toBeGreaterThan(0);
 
     const cmp = await lab.compare(b.key);
     expect(cmp.builtin.id).toBe("one-euro");
