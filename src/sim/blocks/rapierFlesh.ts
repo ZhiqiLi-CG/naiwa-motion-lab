@@ -13,7 +13,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import { FLESH_REGIONS, type FleshRegion, type PhysicsParams } from "../../contracts";
 import type { BlockDefinition, FleshBlock, ParticleView, Scene, Settings, SimBone, SimPart } from "../api";
-import { TriMesh, coarseSkin } from "../geometry";
+import { TriMesh, coarseSkin, segmentDistance } from "../geometry";
 import { REGION_SOFTNESS, nearestBone, particleAttributes } from "../parts";
 import { limbFlesh } from "./skeleton";
 
@@ -21,6 +21,10 @@ import { limbFlesh } from "./skeleton";
 const DENSITY = 190;
 /** Hz: how fast a cell regains its volume (see material). */
 const VOLUME_HZ = 30;
+/** m: how far from a limb joint the carried flesh moves partly with the neighbouring bone (see CarriedPiece). */
+const JOINT_BLEND = 0.03;
+/** Constraint iterations that settle the flesh across a carried limb's joints each step. */
+const JOINT_ITERATIONS = 8;
 /** Lattice particles in fewer cells than this get extra edges, up to BRACE_EDGES in all (see braces). */
 const BRACED = 4;
 const BRACE_EDGES = 8;
@@ -35,7 +39,8 @@ const lerpLog = (a: number, b: number, t: number) => a * Math.pow(b / a, t);
 
 /** Softness sets how fast the flesh springs back (Hz), bounciness how little it is damped. */
 function spring(p: PhysicsParams) {
-  return { f: lerpLog(14, 3, clamp01(p.softness)), z: lerpLog(0.9, 0.06, clamp01(p.bounciness)) };
+  // The softest flesh springs back at 2.75 Hz (the jelly at 0.85: 3.3 Hz), so a poke on the belly rings visibly.
+  return { f: lerpLog(14, 2.75, clamp01(p.softness)), z: lerpLog(0.9, 0.06, clamp01(p.bounciness)) };
 }
 
 function material(p: PhysicsParams): RAPIER.SoftBodyMaterial {
@@ -209,9 +214,16 @@ class CarriedPiece implements FleshPiece {
   readonly rest: Float32Array;
   private lattice: Uint32Array;
   private masses: Float32Array;
-  /** The body carrying each particle, and the particle's offset in that body's frame. */
+  /** The body carrying each particle, and the particle's offset in that body's frame; near a joint also the
+   *  neighbouring bone, its offset there and its share (0..0.5) of the particle's position. */
   private carrier: RAPIER.RigidBody[] = [];
   private offset: Float32Array;
+  private neighbour: (RAPIER.RigidBody | null)[] = [];
+  private offset2: Float32Array;
+  private share: Float32Array;
+  /** The flesh across the joints: cells whose particles ride on different bones, their particles (the rest are held
+   *  by their bones), their edges with rest lengths, and the cells' rest volumes. */
+  private joint: { cells: Uint32Array; free: Uint8Array; edges: Uint32Array; lengths: Float32Array; volumes: Float32Array };
   private P: Float32Array;
   /** Each surface vertex: the 4 particles of the cell holding it, and its barycentric weights there. */
   private embedIds: Uint32Array;
@@ -229,19 +241,36 @@ class CarriedPiece implements FleshPiece {
     this.count = this.rest.length / 3;
     this.P = this.rest.slice();
     this.offset = new Float32Array(this.rest.length);
+    this.offset2 = new Float32Array(this.rest.length);
+    this.share = new Float32Array(this.count);
     this.out = part.positions.slice();
     ({ ids: this.embedIds, w: this.embedW } = embed(part.positions, this.rest, this.lattice));
     this.restVolume = cellsVolume(this.lattice, this.rest);
 
-    // Each particle rides on its nearest bone, and that bone takes on its mass.
-    const p = new THREE.Vector3();
+    // Each particle rides on its nearest bone, and that bone takes on its mass. Within JOINT_BLEND of the joint to a
+    // neighbouring bone it moves partly with that one too (half-way at the joint), so the cells across a bent elbow or
+    // knee bend smoothly instead of folding over where the particles switch from one bone to the other.
+    const p = new THREE.Vector3(), q = new THREE.Vector3();
+    const blend = JOINT_BLEND;
     const byBone = new Map<SimBone, number[]>();
     for (let i = 0; i < this.count; i++) {
-      const bone = nearestBone(part, p.fromArray(this.rest, i * 3)).bone;
+      p.fromArray(this.rest, i * 3);
+      const { bone, distance } = nearestBone(part, p);
       this.carrier.push(bone.body);
-      p.applyMatrix4(bone.restInverse).toArray(this.offset, i * 3);
+      q.copy(p).applyMatrix4(bone.restInverse).toArray(this.offset, i * 3);
       byBone.set(bone, [...(byBone.get(bone) ?? []), i]);
+      let other: SimBone | null = null, d2 = Infinity;
+      for (const b of part.bones) {
+        if (b === bone || (b.parent !== bone && bone.parent !== b)) continue;
+        const d = segmentDistance(p, b.restPos, b.tail);
+        if (d < d2) [other, d2] = [b, d];
+      }
+      const w = other && blend > 0 ? 0.5 * Math.max(0, 1 - (d2 - distance) / blend) : 0;
+      this.neighbour.push(w > 0 ? other!.body : null);
+      if (w > 0) q.copy(p).applyMatrix4(other!.restInverse).toArray(this.offset2, i * 3);
+      this.share[i] = w;
     }
+    this.joint = jointFlesh(this.lattice, this.rest, this.carrier);
     const flesh = limbFlesh(scene.spec);
     for (const [bone, ids] of byBone) this.carry(scene, bone, ids, flesh.get(bone.name)?.points);
   }
@@ -294,6 +323,7 @@ class CarriedPiece implements FleshPiece {
   attach(i: number, body: RAPIER.RigidBody) {
     if (body === this.carrier[i]) return;
     this.carrier[i] = body;
+    this.share[i] = 0;
     const p = new THREE.Vector3().fromArray(this.P, i * 3);
     p.applyMatrix4(poseOf(body, new THREE.Matrix4()).invert()).toArray(this.offset, i * 3);
   }
@@ -305,16 +335,29 @@ class CarriedPiece implements FleshPiece {
   /** Move the particles with their bodies (after the world stepped); the surface follows when it is read. */
   afterStep() {
     const poses = new Map<RAPIER.RigidBody, THREE.Matrix4>();
-    const P = this.P, O = this.offset;
-    for (let i = 0; i < this.count; i++) {
-      const b = this.carrier[i];
+    const pose = (b: RAPIER.RigidBody) => {
       let m = poses.get(b);
       if (!m) poses.set(b, (m = poseOf(b, new THREE.Matrix4())));
-      const e = m.elements, x = O[i * 3], y = O[i * 3 + 1], z = O[i * 3 + 2];
-      P[i * 3] = e[0] * x + e[4] * y + e[8] * z + e[12];
-      P[i * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
-      P[i * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+      return m.elements;
+    };
+    const P = this.P, O = this.offset, O2 = this.offset2;
+    for (let i = 0; i < this.count; i++) {
+      const e = pose(this.carrier[i]), x = O[i * 3], y = O[i * 3 + 1], z = O[i * 3 + 2];
+      let px = e[0] * x + e[4] * y + e[8] * z + e[12];
+      let py = e[1] * x + e[5] * y + e[9] * z + e[13];
+      let pz = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const n = this.neighbour[i], w = this.share[i];
+      if (n && w > 0) {
+        const f = pose(n), a = O2[i * 3], b = O2[i * 3 + 1], c = O2[i * 3 + 2];
+        px += w * (f[0] * a + f[4] * b + f[8] * c + f[12] - px);
+        py += w * (f[1] * a + f[5] * b + f[9] * c + f[13] - py);
+        pz += w * (f[2] * a + f[6] * b + f[10] * c + f[14] - pz);
+      }
+      P[i * 3] = px;
+      P[i * 3 + 1] = py;
+      P[i * 3 + 2] = pz;
     }
+    relaxJoint(this.joint, P, JOINT_ITERATIONS);
     this.surfaceStale = true;
   }
 
@@ -347,6 +390,87 @@ class CarriedPiece implements FleshPiece {
   setParams() {}
   reset() {
     this.afterStep();
+  }
+}
+
+/** The cells of a carried lattice that span a joint (their particles ride on different bones). */
+function jointFlesh(cells: Uint32Array, P: Float32Array, carrier: readonly RAPIER.RigidBody[]) {
+  // The particles of the cells that span a joint (riding on different bones) are free; every cell touching one of them
+  // is kept in shape, and the particles of the bones' own cells around them anchor it.
+  const free = new Uint8Array(P.length / 3);
+  for (let c = 0; c < cells.length; c += 4) {
+    const b = carrier[cells[c]];
+    if ([1, 2, 3].every((k) => carrier[cells[c + k]] === b)) continue;
+    for (let k = 0; k < 4; k++) free[cells[c + k]] = 1;
+  }
+  const picked: number[] = [];
+  for (let c = 0; c < cells.length; c += 4) {
+    if ([0, 1, 2, 3].some((k) => free[cells[c + k]])) picked.push(cells[c], cells[c + 1], cells[c + 2], cells[c + 3]);
+  }
+  const jc = Uint32Array.from(picked);
+  const seen = new Set<string>(), edges: number[] = [], lengths: number[] = [];
+  for (let c = 0; c < jc.length; c += 4) {
+    for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) {
+      const i = jc[c + a], j = jc[c + b], key = i < j ? `${i},${j}` : `${j},${i}`;
+      if (seen.has(key) || (!free[i] && !free[j])) continue;
+      seen.add(key);
+      edges.push(i, j);
+      lengths.push(Math.hypot(P[i * 3] - P[j * 3], P[i * 3 + 1] - P[j * 3 + 1], P[i * 3 + 2] - P[j * 3 + 2]));
+    }
+  }
+  const volumes = new Float32Array(jc.length / 4);
+  for (let c = 0; c < jc.length; c += 4) volumes[c / 4] = signedVolume6(P, jc, c);
+  return { cells: jc, free, edges: Uint32Array.from(edges), lengths: Float32Array.from(lengths), volumes };
+}
+
+function signedVolume6(P: Float32Array, cells: Uint32Array, c: number): number {
+  const a = cells[c] * 3, b = cells[c + 1] * 3, d = cells[c + 2] * 3, e = cells[c + 3] * 3;
+  const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+  const vx = P[d] - P[a], vy = P[d + 1] - P[a + 1], vz = P[d + 2] - P[a + 2];
+  const wx = P[e] - P[a], wy = P[e + 1] - P[a + 1], wz = P[e + 2] - P[a + 2];
+  return ux * (vy * wz - vz * wy) - uy * (vx * wz - vz * wx) + uz * (vx * wy - vy * wx);
+}
+
+/** The flesh across a bent joint settles where its cells keep their edge lengths and volumes (position-based
+ *  constraints, the particles held by their bones fixed): it bulges in the crease instead of folding or shrinking. */
+function relaxJoint(joint: CarriedPiece["joint"], P: Float32Array, iterations: number) {
+  const { cells, free, edges, lengths, volumes } = joint;
+  for (let it = 0; it < iterations; it++) {
+    for (let e = 0; e < edges.length; e += 2) {
+      const i = edges[e] * 3, j = edges[e + 1] * 3, wi = free[edges[e]], wj = free[edges[e + 1]];
+      const dx = P[j] - P[i], dy = P[j + 1] - P[i + 1], dz = P[j + 2] - P[i + 2], d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d < 1e-9) continue;
+      const k = ((d - lengths[e >> 1]) / d) / (wi + wj);
+      P[i] += wi * k * dx;
+      P[i + 1] += wi * k * dy;
+      P[i + 2] += wi * k * dz;
+      P[j] -= wj * k * dx;
+      P[j + 1] -= wj * k * dy;
+      P[j + 2] -= wj * k * dz;
+    }
+    for (let c = 0; c < cells.length; c += 4) {
+      const i0 = cells[c], i1 = cells[c + 1], i2 = cells[c + 2], i3 = cells[c + 3];
+      const f0 = free[i0], f1 = free[i1], f2 = free[i2], f3 = free[i3];
+      if (!(f0 | f1 | f2 | f3)) continue;
+      const a = i0 * 3, b = i1 * 3, d = i2 * 3, e = i3 * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+      const vx = P[d] - P[a], vy = P[d + 1] - P[a + 1], vz = P[d + 2] - P[a + 2];
+      const wx = P[e] - P[a], wy = P[e + 1] - P[a + 1], wz = P[e + 2] - P[a + 2];
+      const C = ux * (vy * wz - vz * wy) - uy * (vx * wz - vz * wx) + uz * (vx * wy - vy * wx) - volumes[c >> 2];
+      // Gradients of 6×volume with respect to corners 1, 2, 3 (corner 0 takes minus their sum).
+      const g1x = vy * wz - vz * wy, g1y = vz * wx - vx * wz, g1z = vx * wy - vy * wx;
+      const g2x = wy * uz - wz * uy, g2y = wz * ux - wx * uz, g2z = wx * uy - wy * ux;
+      const g3x = uy * vz - uz * vy, g3y = uz * vx - ux * vz, g3z = ux * vy - uy * vx;
+      const g0x = -(g1x + g2x + g3x), g0y = -(g1y + g2y + g3y), g0z = -(g1z + g2z + g3z);
+      const sum = f0 * (g0x * g0x + g0y * g0y + g0z * g0z) + f1 * (g1x * g1x + g1y * g1y + g1z * g1z) +
+        f2 * (g2x * g2x + g2y * g2y + g2z * g2z) + f3 * (g3x * g3x + g3y * g3y + g3z * g3z);
+      if (sum < 1e-18) continue;
+      const l = -C / sum;
+      if (f0) { P[a] += l * g0x; P[a + 1] += l * g0y; P[a + 2] += l * g0z; }
+      if (f1) { P[b] += l * g1x; P[b + 1] += l * g1y; P[b + 2] += l * g1z; }
+      if (f2) { P[d] += l * g2x; P[d + 1] += l * g2y; P[d + 2] += l * g2z; }
+      if (f3) { P[e] += l * g3x; P[e + 1] += l * g3y; P[e + 2] += l * g3z; }
+    }
   }
 }
 

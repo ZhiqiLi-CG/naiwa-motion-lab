@@ -186,9 +186,11 @@ describe.skipIf(!process.env.SIM_BENCH || !fs.existsSync(GLB))("benchmark, the r
     for (const v of variants) {
       const t0 = performance.now();
       (globalThis as { __simExp?: unknown }).__simExp = v.pre;
+      Object.assign(globalThis, v.pre ?? {});
       const sim = createFrogSim(spec, PARAMS, { id: "cpu-constraints", settings: v.settings ?? {} });
       await sim.ready;
       delete (globalThis as { __simExp?: unknown }).__simExp;
+      for (const k of Object.keys(v.pre ?? {})) delete (globalThis as Record<string, unknown>)[k];
       if (v.exp) new Function("sim", "RAPIER", v.exp)(sim, RAPIER);
       const s = sim.stats();
       console.log(`${v.name}: built in ${(performance.now() - t0).toFixed(0)} ms, ${s.particles} particles, ${s.cells} cells`);

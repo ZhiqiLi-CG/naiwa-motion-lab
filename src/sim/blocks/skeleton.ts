@@ -38,6 +38,8 @@ const JOINTS: Record<string, Joint> = {
 };
 const jointOf = (name: CoreBone) => JOINTS[name.replace(/_[LR]$/, "")];
 
+/** How far (m) a leg's flesh must be outside the Body at rest to belong to its contact shape (see addColliders). */
+const LEG_CLEARANCE = 0.01;
 /** Lean (rad) the frog may stand at by itself before the upright pull engages. */
 const TILT_FREE = 0.08;
 /** Smallest radius of gyration of a bone (m). */
@@ -171,8 +173,8 @@ export class Skeleton {
 
   /** The core collider carries the bone's mass and meets the floor and balls. Inside soft flesh it is the hard bone:
    *  a capsule half as thick as the flesh around it (torso: half as deep as the Body around it); a foot's is its flesh
-   *  shrunk a little, a flat sole to stand on. A limb bone also gets a contact capsule as thick as its flesh over the
-   *  flesh's length, trimmed to where it is clear of the Body at rest, which presses into the Body's flesh. */
+   *  shrunk a little, a flat sole to stand on. A limb bone also gets a contact shape, its flesh clear of the Body at
+   *  rest, which presses into the Body's flesh. */
   private addColliders(bone: Bone, rb: RigBone, body: TriMesh, flesh: BoneFlesh | undefined) {
     const head = bone.restPos, tail = rb.tail;
     if (bone.torso) {
@@ -187,7 +189,11 @@ export class Skeleton {
     if (flesh && /foot/.test(bone.name)) this.sole(bone, flesh.points);
     else this.capsule(bone, head, tail, flesh ? 0.45 * flesh.radius : rb.radius, "core");
 
-    // The contact capsule spans the flesh along the bone (a hand's reaches the finger tips).
+    // The contact shape: a capsule as thick as the flesh along the bone, trimmed to where it is clear of the Body at
+    // rest. That leaves a thigh with none (it joins the Body along its length), and the belly sagged over the thighs
+    // and swallowed them (up to 10 cm in a squat): a leg's contact shape is the hull of its flesh that is clear of the
+    // Body at rest by LEG_CLEARANCE instead (closer, it rests against the Body's collision skin and tips the frog
+    // back). Solvers that work with capsules (the GPU example, the library's SDF contacts) still get the capsule.
     const r = 0.9 * (flesh?.radius ?? rb.radius);
     const dir = tail.clone().sub(head).normalize();
     let t0 = 0, t1 = head.distanceTo(tail);
@@ -202,6 +208,14 @@ export class Skeleton {
       t0 = Math.max(0, t0 + r);
       t1 = Math.max(t0, t1 - r);
     }
+    const clear: number[] = [];
+    if (flesh && /thigh|shin/.test(bone.name)) {
+      for (let i = 0; i < flesh.points.length; i += 3) {
+        const [x, y, z] = [flesh.points[i], flesh.points[i + 1], flesh.points[i + 2]];
+        if (body.signedDistance(x, y, z) > LEG_CLEARANCE) clear.push(x, y, z);
+      }
+    }
+    const hull = clear.length >= 12 && this.hull(bone, Float32Array.from(clear), "contact");
     const at = (t: number) => head.clone().addScaledVector(dir, t);
     let start = -1;
     for (let s = 16; s >= 0; s--) {
@@ -209,15 +223,19 @@ export class Skeleton {
       if (body.signedDistance(p.x, p.y, p.z) > r + 0.01) start = s;
       else break;
     }
-    if (start >= 0 && start < 16) this.capsule(bone, at(t0 + ((t1 - t0) * start) / 16), at(t1), r, "contact");
+    if (start >= 0 && start < 16) this.capsule(bone, at(t0 + ((t1 - t0) * start) / 16), at(t1), r, "contact", !hull);
   }
 
-  private capsule(bone: Bone, a: THREE.Vector3, b: THREE.Vector3, radius: number, role: "core" | "contact") {
+  private capsule(bone: Bone, a: THREE.Vector3, b: THREE.Vector3, radius: number, role: "core" | "contact", collide = true) {
     const la = a.clone().applyMatrix4(bone.restInverse), lb = b.clone().applyMatrix4(bone.restInverse);
     const len = la.distanceTo(lb);
     const dir = len > 1e-6 ? lb.clone().sub(la).normalize() : new THREE.Vector3(0, 1, 0);
     const rot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     const mid = la.clone().add(lb).multiplyScalar(0.5);
+    if (!collide) {
+      bone.shapes.push({ kind: "capsule", role, a: la, b: lb, radius });
+      return;
+    }
     const c = this.world.createCollider(
       RAPIER.ColliderDesc.capsule(len / 2, radius)
         .setTranslation(mid.x, mid.y, mid.z)
@@ -231,6 +249,21 @@ export class Skeleton {
     );
     this.byCollider.set(c.handle, bone);
     bone.shapes.push({ kind: "capsule", role, a: la, b: lb, radius, collider: c });
+  }
+
+  private hull(bone: Bone, points: Float32Array, role: "core" | "contact"): boolean {
+    const local = new Float32Array(points.length);
+    const p = new THREE.Vector3();
+    for (let i = 0; i < points.length; i += 3) p.fromArray(points, i).applyMatrix4(bone.restInverse).toArray(local, i);
+    const desc = RAPIER.ColliderDesc.convexHull(local);
+    if (!desc) return false;
+    const col = this.world.createCollider(
+      desc.setDensity(0).setFriction(0.9).setCollisionGroups(role === "core" ? this.groups.core : this.groups.contact),
+      bone.body,
+    );
+    this.byCollider.set(col.handle, bone);
+    bone.shapes.push({ kind: "hull", role, points: local, collider: col });
+    return true;
   }
 
   private sole(bone: Bone, points: Float32Array) {

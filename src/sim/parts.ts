@@ -86,3 +86,10 @@ export function nearestBone(part: SimPart, p: THREE.Vector3): { bone: SimBone; d
   }
   return { bone, distance };
 }
+
+/** The bone that carries flesh at a point of a part, given the flesh's region: the head's flesh rides on the skull
+ *  even where it is nearer the chest (the neck below the jaw), so the neck bends below the head, not through it. */
+export function carrierBone(part: SimPart, p: THREE.Vector3, region: number): { bone: SimBone; distance: number } {
+  const head = FLESH_REGIONS[region] === "head" ? part.bones.find((b) => b.name === "head") : undefined;
+  return head ? { bone: head, distance: segmentDistance(p, head.restPos, head.tail) } : nearestBone(part, p);
+}

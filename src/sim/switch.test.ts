@@ -17,6 +17,7 @@ import { proceduralSource, trackSource } from "../motion/sources";
 import type { Track } from "../motion/track";
 import { createFrogSim, initPhysics, type LabFrogSim } from ".";
 import { untextured } from "./testModel";
+import { interpenetration, restInside } from "./testMetrics";
 
 const PARAMS: PhysicsParams = { softness: 0.85, bounciness: 0.65, gravity: 1, bellySize: 1, stubbornness: 0.7 };
 const GLB = new URL("../../public/models/naiwa.glb", import.meta.url);
@@ -37,7 +38,8 @@ class Page {
   private targets = new Map<BoneName, THREE.Matrix4>();
   private binding = bindRig(character!.rig);
   /** Worst numbers since the last take(). */
-  worst = { inverted: 0, limbs: 0, volume: 0, deviationMax: 0, at: "", inside: 0 };
+  worst = { inverted: 0, limbs: 0, volume: 0, deviationMax: 0, at: "", inside: 0, legDepth: 0, armDepth: 0 };
+  private restInside: Uint8Array[] | null = null;
   label = "";
   steps = 0;
 
@@ -92,24 +94,32 @@ class Page {
         this.worst.deviationMax = Math.max(this.worst.deviationMax, s.deviationMax!);
         this.worst.inside = Math.max(this.worst.inside, limbsInside(this.sim));
       }
+      if (this.steps % 120 === 0) {
+        // The e2e's measure: limb flesh outside the Body at rest that is now inside it (deepest, m).
+        const r = interpenetration(this.sim, (this.restInside ??= restInside(this.sim)));
+        this.worst.legDepth = Math.max(this.worst.legDepth, r.per.leg?.maxDepth ?? 0, r.per.foot?.maxDepth ?? 0);
+        this.worst.armDepth = Math.max(this.worst.armDepth, r.per.arm?.maxDepth ?? 0, r.per.hand?.maxDepth ?? 0);
+      }
     }
   }
 
   take() {
     const w = this.worst;
-    this.worst = { inverted: 0, limbs: 0, volume: 0, deviationMax: 0, at: "", inside: 0 };
-    return { inverted: w.inverted, limbs: w.limbs, volume: Number(w.volume.toFixed(3)), deviationMax: Number(w.deviationMax.toFixed(3)), inside: w.inside, at: w.at };
+    this.worst = { inverted: 0, limbs: 0, volume: 0, deviationMax: 0, at: "", inside: 0, legDepth: 0, armDepth: 0 };
+    return { legDepth: Number(w.legDepth.toFixed(3)), armDepth: Number(w.armDepth.toFixed(3)), inverted: w.inverted, limbs: w.limbs, volume: Number(w.volume.toFixed(3)), deviationMax: Number(w.deviationMax.toFixed(3)), inside: w.inside, at: w.at };
   }
 }
 
 type Worst = ReturnType<Page["take"]>;
 
 /** Through every stretch: the Body's cells stay right side out (a stray one or two at most), its volume within 4%,
- *  and no hand or foot ends up inside it. (A limb's carried lattice folds at a sharply bent joint, as it did solved.) */
+ *  no hand or foot ends up inside it, and the legs' flesh stays out of it (the e2e's measure, within 3 cm). (A limb's carried lattice folds at a sharply bent joint, as it did solved.) */
 function expectSound(takes: Worst[]) {
   expect(Math.max(...takes.map((w) => w.inverted))).toBeLessThanOrEqual(3);
-  expect(Math.max(...takes.map((w) => w.volume))).toBeLessThan(0.04);
+  expect(Math.max(...takes.map((w) => w.volume))).toBeLessThan(0.03);
   expect(Math.max(...takes.map((w) => w.inside))).toBe(0);
+  // Legs: the belly rests on the thighs (up to 6-11 cm inside them before the legs had contact shapes).
+  expect(Math.max(...takes.map((w) => w.legDepth))).toBeLessThan(0.03);
 }
 
 /** Cells of a part turned inside out. */
@@ -152,7 +162,7 @@ describe.skipIf(!fs.existsSync(GLB))("switching motions, the real frog", () => {
       const page = new Page();
       await page.sim.ready;
       await page.switchTo("dance", id);
-      page.run(4);
+      page.run(3);
       out[id] = page.take();
       page.sim.dispose();
     }

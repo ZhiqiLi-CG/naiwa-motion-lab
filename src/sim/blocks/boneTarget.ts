@@ -5,7 +5,7 @@
  */
 import * as THREE from "three";
 import type { BlockDefinition, Scene, SimBone, SimPart, TargetBlock } from "../api";
-import { nearestBone } from "../parts";
+import { carrierBone, particleAttributes } from "../parts";
 
 interface Carried {
   bone: SimBone[];
@@ -25,9 +25,10 @@ class BoneTarget implements TargetBlock {
       const rest = scene.flesh.particles(part).rest;
       const n = rest.length / 3;
       const bone: SimBone[] = [], offset = new Float32Array(n * 3);
+      const { region } = particleAttributes(part, rest);
       for (let i = 0; i < n; i++) {
         p.fromArray(rest, i * 3);
-        const b = nearestBone(part, p).bone;
+        const b = carrierBone(part, p, region[i]).bone;
         bone.push(b);
         p.applyMatrix4(b.restInverse).toArray(offset, i * 3);
       }

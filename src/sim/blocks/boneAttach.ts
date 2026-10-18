@@ -11,12 +11,12 @@
  */
 import * as THREE from "three";
 import type { BlockDefinition, CouplingBlock, Scene, Settings, SimBone, SimPart } from "../api";
-import { nearestBone, particleAttributes } from "../parts";
+import { carrierBone, particleAttributes } from "../parts";
 
 /** The part of the Body's thickness around a torso bone that rides on it, for the firmest flesh (softness 0). A limb is
  *  only a lattice step or two thick: its flesh rides whole on its bones and bends in the cells across the joints
  *  (free nodes there hung on soft cells, crumpled when the limbs swung and let the feet shuffle on the floor). */
-const CARRIED: Record<string, number> = { head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55 };
+const CARRIED: Record<string, number> = { head: 1, chest: 0.7, spine: 0.5, hips: 0.55 };
 /** The softest flesh (the belly) keeps this much less on the bone. */
 const SOFT_LOOSENS = 0.35;
 
@@ -25,7 +25,7 @@ function thickness(part: SimPart): Map<SimBone, number> {
   const d = new Map<SimBone, number[]>(part.bones.map((b) => [b, []]));
   const p = new THREE.Vector3();
   for (let v = 0; v < part.positions.length; v += 3) {
-    const { bone, distance } = nearestBone(part, p.fromArray(part.positions, v));
+    const { bone, distance } = carrierBone(part, p.fromArray(part.positions, v), part.regions[v / 3]);
     d.get(bone)!.push(distance);
   }
   return new Map([...d].map(([b, list]) => [b, list.sort((x, y) => x - y)[list.length >> 1] ?? 0]));
@@ -55,10 +55,10 @@ class BoneAttach implements CouplingBlock {
       const view = scene.flesh.particles(part);
       const thick = thickness(part);
       const half = 0.5 * spacing(view.rest);
-      const { softness } = particleAttributes(part, view.rest);
+      const { softness, region } = particleAttributes(part, view.rest);
       const free: number[] = [];
       for (let i = 0; i < view.count; i++) {
-        const { bone, distance } = nearestBone(part, p.fromArray(view.rest, i * 3));
+        const { bone, distance } = carrierBone(part, p.fromArray(view.rest, i * 3), region[i]);
         const carried = CARRIED[bone.name];
         const reach = carried === undefined ? Infinity : scale * carried * (1 - SOFT_LOOSENS * softness[i]) * (thick.get(bone) ?? 0) + half;
         if (distance < reach) view.attach(i, bone.body);
