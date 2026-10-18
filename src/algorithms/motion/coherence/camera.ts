@@ -28,6 +28,32 @@ export function markOffPicture(frames: Frame[]): number {
   return n;
 }
 
+/**
+ * Visibilities eased over time (a centred triangular mean over ±seconds, in place). The detector's confidence in a
+ * joint can drop from 0.99 to 0.1 between two frames, and the retargeting fades a limb to rest by it: unsmoothed, the
+ * frog's arm snapped to rest in one frame (40° at once).
+ */
+export function smoothVisibility(frames: Frame[], fps: number, seconds: number): void {
+  const r = Math.round(seconds * fps);
+  if (r < 1) return;
+  for (const kind of ["world", "image"] as const) {
+    const src = frames.map((f) => (present(f) ? f[kind].map((p) => p[3]) : null));
+    frames.forEach((f, k) => {
+      if (!present(f)) return;
+      for (let i = 0; i < f[kind].length; i++) {
+        let s = 0, w = 0;
+        for (let j = Math.max(0, k - r); j <= Math.min(frames.length - 1, k + r); j++) {
+          const v = src[j];
+          if (!v) continue;
+          const wt = r + 1 - Math.abs(j - k);
+          (s += wt * v[i]), (w += wt);
+        }
+        f[kind][i][3] = s / w;
+      }
+    });
+  }
+}
+
 export interface CameraResult {
   moving: boolean[];
 }

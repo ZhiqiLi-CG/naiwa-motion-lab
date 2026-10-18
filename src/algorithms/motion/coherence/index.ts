@@ -5,7 +5,8 @@
  * MediaPipe sees each frame on its own and in the picture, so a moving camera reads as the person travelling,
  * turning or hopping, a cut as a jump, and detection errors as jitter and flipped legs. In order:
  *
- *   1. off-picture landmarks lose their visibility (the detector guesses them)
+ *   1. off-picture landmarks lose their visibility (the detector guesses them); visibilities eased over time (a limb
+ *      fades to rest instead of snapping when the detector loses confidence)
  *   2. camera: every frame of a moving shot put back into the picture of the shot's first frame (camera.ts)
  *   3. cuts: those of the camera estimate, and (detectCuts) jumps of the person no one could make; each new shot
  *      re-anchored onto the one before, position, size and heading (camera.ts)
@@ -21,7 +22,7 @@ import type { PersonFrame, Settings } from "../../../motion/api";
 import type { Track } from "../../../motion/track";
 import { kalmanFilter } from "../kalmanFilter";
 import { savitzkyGolay } from "../savitzkyGolay";
-import { anchorCuts, compensateCamera, confirmedCuts, landmarkCuts, markOffPicture, stitchCamera } from "./camera";
+import { anchorCuts, compensateCamera, confirmedCuts, landmarkCuts, markOffPicture, smoothVisibility, stitchCamera } from "./camera";
 import { detectContacts, pinFeet, SIDES, type Side } from "./contacts";
 import { aspectOf, copyFrames, hip, present, type Frame } from "./frames";
 import { seamlessLoop } from "./loop";
@@ -53,6 +54,8 @@ export interface CoherenceParams {
   detectCuts: boolean;
   /** Mark landmarks outside the picture as barely visible. */
   offPicture: boolean;
+  /** Seconds over which visibilities are eased (0: as detected). */
+  visibility: number;
   /** Undo left/right flips. */
   flips: boolean;
   /** Replace stretched bones and spikes. */
@@ -79,13 +82,13 @@ export interface CoherenceParams {
 }
 
 export const DEFAULTS: CoherenceParams = {
-  camera: true, minCameraMotion: 0.02, panFov: 0, cuts: true, detectCuts: true, offPicture: true,
+  camera: true, minCameraMotion: 0.02, panFov: 0, cuts: true, detectCuts: true, offPicture: true, visibility: 0.25,
   flips: true, outliers: true, boneTolerance: 0.3, spike: 4,
   smooth: "rts", accel: 30, noise: 0.015, window: 0.3, order: 3,
   contactHeight: 0.15, contactSpeed: 0.4, pin: 0.5, loop: 0.5, segments: [],
 };
 
-/** For uploads as they are analysed: camera, cuts and off-picture landmarks only. Left/right flip repair is left to
+/** For uploads as they are analysed: camera, cuts, off-picture landmarks and eased visibilities only. Left/right flip repair is left to
  *  the job: on fast arm moves (waacking) it also "repaired" arms that crossed, which the frog then copied wrongly. */
 export const AUTO: CoherenceParams = {
   ...DEFAULTS, minCameraMotion: 0.03, detectCuts: false, flips: false, outliers: false, smooth: "none", pin: 0, loop: 0,
@@ -150,6 +153,7 @@ export function coherence(track: Track, params: Partial<CoherenceParams> = {}): 
   const segs = p.segments.filter((s) => s.to > s.from);
 
   const offPicture = p.offPicture ? markOffPicture(frames) : 0;
+  if (p.visibility > 0) smoothVisibility(frames, fps, p.visibility);
   // The estimator's cuts, kept where the person confirms them; the camera stitched across the others.
   const estimated = (track.cuts ?? []).filter((c) => c > 0 && c < n);
   const kept = track.cameraUndone ? estimated : confirmedCuts(frames, estimated, aspect);

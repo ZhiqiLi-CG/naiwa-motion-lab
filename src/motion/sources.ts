@@ -454,14 +454,34 @@ export async function startVideo(
   // it (the page offers to keep the analysed dance once a video source reports tracking).
   let announced = false;
 
-  // Motion time runs on the dt the caller gives (pause, single step, slow motion) and the video follows it: paused at
-  // dt = 0, a single step after a pause is a seek, otherwise it plays at the caller's time scale.
+  // Motion time runs on the dt the caller gives (pause, single step, slow motion) and is the frog's own clock; the video
+  // follows it: paused at dt = 0, a single step after a pause is a seek, otherwise it plays at the caller's time scale,
+  // nudged into step with the motion (or seeked when it is far off). A video that stalls or is refused playing (no
+  // recent tap for sound) can no longer freeze the frog: the motion goes on and the video is brought back to it.
   let clock = 0;
   let fedAt = 0;
   let lastT = -1;
   let lastNow = -1;
   let prevStep = 1;
   let scale = 1;
+  let mt = Math.min(video.currentTime, length - 1e-3);
+  let starting = false;
+  const offset = (a: number, b: number) => {
+    // a − b on the loop, in (−length/2, length/2].
+    let d = a - b;
+    if (d > length / 2) d -= length;
+    if (d <= -length / 2) d += length;
+    return d;
+  };
+  const play = () => {
+    if (starting || !video.paused) return;
+    starting = true;
+    video.play().catch(() => {
+      // Refused (sound without a recent tap): play muted.
+      video.muted = true;
+      return video.play().catch(() => undefined);
+    }).finally(() => (starting = false));
+  };
   let wasLost = false;
   let disposed = false;
   return {
@@ -480,20 +500,27 @@ export async function startVideo(
       const step = Math.min(Math.max(dt, 0), MAX_STEP);
       const wall = lastNow < 0 ? step : (nowMs - lastNow) / 1000;
       lastNow = nowMs;
+      mt = (mt + step) % length;
       if (step === 0) {
         if (!video.paused) video.pause();
       } else if (video.paused && prevStep === 0) {
-        video.currentTime = Math.min(video.currentTime + step, length - 1e-3);
+        video.currentTime = mt;
       } else {
         if (wall > 0) scale += (step / wall - scale) * 0.3;
         const rate = Math.min(4, Math.max(0.0625, Math.round(scale * 20) / 20));
         if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
-        if (video.paused) video.play().catch(() => undefined);
+        play();
+        if (!video.paused && !video.seeking) {
+          const d = offset(video.currentTime, mt);
+          if (Math.abs(d) > 0.3) video.currentTime = mt;
+          // What is seen and what the frog does stay together: the motion leans towards the video's time.
+          else mt = (mt + 0.1 * d + length) % length;
+        }
       }
       prevStep = step;
       clock += step * 1000;
 
-      const t = Math.min(video.currentTime, track.duration - 1e-3);
+      const t = Math.min(mt, track.duration - 1e-3);
       if (t !== lastT) {
         lastT = t;
         const f = track.frames[Math.min(track.frames.length - 1, Math.round(t * fps))];

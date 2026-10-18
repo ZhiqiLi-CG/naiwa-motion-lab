@@ -46,7 +46,7 @@ export function sanitise(raw, DEFAULTS, frames) {
   const out = {};
   const ranges = {
     minCameraMotion: [0, 0.2], panFov: [0, 120], boneTolerance: [0.1, 1], spike: [2, 10], accel: [5, 300], noise: [0.001, 0.1],
-    window: [0.05, 1.5], order: [0, 6], contactHeight: [0.02, 0.5], contactSpeed: [0.05, 2], pin: [0, 1], loop: [0, 2],
+    window: [0.05, 1.5], order: [0, 6], visibility: [0, 1], contactHeight: [0.02, 0.5], contactSpeed: [0.05, 2], pin: [0, 1], loop: [0, 2],
   };
   for (const [k, v] of Object.entries(raw?.params ?? raw ?? {})) {
     if (!(k in DEFAULTS) || k === "segments") continue;
