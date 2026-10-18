@@ -61,7 +61,7 @@ MediaPipe 的 wasm 和姿态模型已自托管在 `public/mediapipe/`（运行�
     第一个动作迁移是**狗熊哆嗦毛**，Nae Nae 等也要。视频只在本地用来提取动作，发布的只有姿态数据。
 13. **语言**：中英文切换（`src/i18n.ts`，所有文案 `{ zh, en }`）。
 14. **渲染**：浏览器实时为主，另加 **Genesis 离线高清版**（导出一段表演，在 Genesis 里重新模拟并渲染成 1080p）。**2026-10-17 用户决定：Genesis 高清版暂时不要**，不进这次发布，代码（`src/session`、`tools/genesis-hd`）留着不动。
-15. **推迟到这一版验收后**：本机 Lab 模式——像 RobotGen 那样的 Codex 对话界面 +“优化手感”“生成新舞蹈”按钮（方案见 `docs/next/lab.md`）。
+15. **本机 Lab 模式（2026-10-17 用户改为这次就做上）**：本机 Lab 模式——像 RobotGen 那样的 Codex 对话界面 +“优化手感”“生成新舞蹈”按钮（方案见 `docs/next/lab.md`）。
 16. **协作规则**：提交信息不加 AI 署名（Co-Authored-By / Generated with）；GitHub 操作（push、remote 等）由用户授权后通过 Codex CLI
     会话执行；向用户汇报用中文；并行要多（“尽量多启动几个subagent”）。
 17. **检测 GPU**（2026-10-17）：页面检测有没有可用的 GPU（非软件 / fallback 的 WebGPU 适配器）。没有 GPU 时 MPM / FEM
