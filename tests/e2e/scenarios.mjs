@@ -724,6 +724,9 @@ async function saveDance(T, g, page, log) {
   if (!mine) return;
   log.step = "dance 我的舞蹈";
   await enterMode(page, "dance", null, true);
+  // the new dance is at the end of a list longer than its panel: scroll to it as a person would
+  await page.evaluate((n) => [...document.querySelectorAll("#ui .nw-row")].find((r) => r.textContent.includes(n))?.scrollIntoView({ block: "center" }), name);
+  await sleep(300);
   const el = await findControl(page, { label: name, skip: "删除" });
   if (!el) return T.check(g, "我的舞蹈 plays in 舞蹈库", "FAIL", `no control named "${name}" in 舞蹈库`);
   await press(el);
@@ -1359,7 +1362,8 @@ export async function robust(T, page, log) {
   log.step = "pokes";
   const frog = await locateFrog(page, T.out, null);
   const b = frog.bbox ?? { x: frog.target.x - 50, y: frog.target.y - 100, w: 100, h: 200 };
-  const spots = [[0.5, 0.15], [0.5, 0.55], [0.3, 0.45], [0.7, 0.45], [0.5, 0.35], [0.4, 0.65], [0.6, 0.25], [0.5, 0.5]];
+  // along the body's middle (head to belly), where a tap meets flesh rather than the gap beside an arm
+  const spots = [[0.5, 0.15], [0.5, 0.55], [0.42, 0.45], [0.58, 0.45], [0.5, 0.35], [0.46, 0.6], [0.54, 0.25], [0.5, 0.5]];
   const c0 = await counts(page);
   const t0 = await page.evaluate(() => performance.now());
   for (const [u, v] of spots) {
