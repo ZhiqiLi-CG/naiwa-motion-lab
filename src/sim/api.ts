@@ -25,7 +25,7 @@
  */
 import type RAPIER from "@dimforge/rapier3d-compat";
 import type * as THREE from "three";
-import type { BodyMode, BoneName, CoreBone, PhysicsParams, RigSpec, SimParameter } from "../contracts";
+import type { BodyMode, BoneName, CoreBone, FootContacts, PhysicsParams, RigSpec, SimParameter } from "../contracts";
 import type { Text } from "../i18n";
 
 export const SLOTS = ["skeleton", "flesh", "target", "coupling", "collision", "interaction", "output", "metrics"] as const;
@@ -40,7 +40,7 @@ export type Settings = Record<string, number | string | boolean>;
  *  limb's flesh, as thick as it is, which presses into the Body's flesh. */
 export type BoneShape = (
   | { kind: "capsule"; role: "core" | "contact"; a: THREE.Vector3; b: THREE.Vector3; radius: number }
-  | { kind: "hull"; role: "core"; points: Float32Array }
+  | { kind: "hull"; role: "core" | "contact"; points: Float32Array }
 ) & {
   /** Its Rapier collider, when the skeleton lives in Rapier. */
   collider?: RAPIER.Collider;
@@ -156,7 +156,7 @@ export interface SkeletonBlock extends Block {
   readonly bones: ReadonlyMap<CoreBone, SimBone>;
   setMode(mode: BodyMode): void;
   /** Driven mode: target world matrices of the bones. */
-  setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>): void;
+  setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>, contacts?: FootContacts): void;
   /** The targets are about to come from another motion: blend to them from where the bones are now. */
   transition(): void;
   /** Free mode: the frog was knocked about (a landing, a throw): it goes floppy and gathers itself again. */

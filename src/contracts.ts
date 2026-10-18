@@ -132,6 +132,12 @@ export interface PoseFrame {
   /** Heading of the whole frog around +Y in radians (0 = facing +Z). */
   rootYaw?: number;
   expressions?: ExpressionWeights;
+  /** Feet the motion has planted on the floor this frame: the simulation may hold them where they touched down. */
+  contacts?: FootContacts;
+}
+export interface FootContacts {
+  foot_L?: boolean;
+  foot_R?: boolean;
 }
 
 export type MotionKind = "camera" | "video" | "dance";
@@ -322,7 +328,7 @@ export interface FrogSim {
   setParams(p: PhysicsParams): void;
   setMode(m: BodyMode): void;
   /** Driven mode: target world matrices for the simulated bones (from the posed skeleton), and the root offset. */
-  setTargets(boneWorld: Map<BoneName, THREE.Matrix4>): void;
+  setTargets(boneWorld: Map<BoneName, THREE.Matrix4>, contacts?: FootContacts): void;
   /** The pose targets are about to come from another motion (a dance, the camera, a video): move to them smoothly
    *  from where the bones are instead of jumping, which would tear the flesh. */
   transition(): void;

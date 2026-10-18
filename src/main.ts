@@ -404,7 +404,7 @@ async function boot() {
     stepRequested = false;
     const pose = source ? source.update(now, dt) : null;
     character.targetsFromPose(pose, targets);
-    sim.setTargets(targets);
+    sim.setTargets(targets, pose?.contacts);
     character.setExpressions(pose?.expressions);
     updatePump(dt);
     if (advance) {

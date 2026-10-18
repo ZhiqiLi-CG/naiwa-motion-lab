@@ -6,7 +6,7 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import type {
-  BodyMode, BoneName, FrogEvent, FrogEventKind, FrogHit, FrogSim, GrabHandle, HitRegion, PhysicsParams, RigSpec,
+  BodyMode, BoneName, FootContacts, FrogEvent, FrogEventKind, FrogHit, FrogSim, GrabHandle, HitRegion, PhysicsParams, RigSpec,
   SimulatorOptions,
 } from "../contracts";
 import { FLESH_REGIONS } from "../contracts";
@@ -172,8 +172,8 @@ class Core implements LabFrogSim {
     if (this.built) this.scene.skeleton.setMode(m);
   }
 
-  setTargets(boneWorld: Map<BoneName, THREE.Matrix4>): void {
-    if (this.built) this.scene.skeleton.setTargets(boneWorld);
+  setTargets(boneWorld: Map<BoneName, THREE.Matrix4>, contacts?: FootContacts): void {
+    if (this.built) this.scene.skeleton.setTargets(boneWorld, contacts);
   }
 
   transition(): void {
