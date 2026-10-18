@@ -57,11 +57,14 @@ export class Bone implements SimBone {
   /** The child's rest orientation in the parent's frame, and the joint's anchor there. */
   readonly restRel = new THREE.Quaternion();
   readonly anchor = new THREE.Vector3();
-  /** Driven-mode target, and the pose the blend into driven mode starts from. */
+  /** Driven-mode target, and the pose a blend to the targets starts from (entering driven mode, a new motion). */
   readonly targetPos: THREE.Vector3;
   readonly targetRot: THREE.Quaternion;
   readonly fromPos = new THREE.Vector3();
   readonly fromRot = new THREE.Quaternion();
+  /** A limb's joint: the motors' goal as last commanded, and where a blend starts (parent frame). */
+  readonly commandRel = new THREE.Quaternion();
+  readonly fromRel = new THREE.Quaternion();
   /** Motor stiffness now set. */
   stiffness = -1;
 
@@ -83,6 +86,8 @@ export class Bone implements SimBone {
       this.restRel.copy(parent.restRot).invert().multiply(restRot);
       this.anchor.copy(restPos).applyMatrix4(parent.restInverse);
     }
+    this.commandRel.copy(this.restRel);
+    this.fromRel.copy(this.restRel);
   }
 
   pose(out: THREE.Matrix4): THREE.Matrix4 {
@@ -297,32 +302,57 @@ export class Skeleton {
     }
   }
 
-  /** Driven mode: the torso moves to its targets, blended in (w 0..1) from where it was when driven mode began; the
-   *  limbs' motors pull them to their targets, clamped to the joint limits. */
-  drive(w: number) {
+  /** Driven mode: the torso moves to its targets, blended in (w 0..1) from where it was when the blend began; the
+   *  limbs' motors pull them to their targets, clamped to the joint limits. Either moves at most MAX_SPEED / MAX_TURN:
+   *  far above any dance, so it only catches a jump in the targets, which would otherwise teleport the bones within
+   *  one step and tear the flesh around them. The torso's bones share one fraction, so it keeps its shape. */
+  drive(w: number, dt: number) {
     const p = new THREE.Vector3(), q = new THREE.Quaternion(), rel = new THREE.Quaternion();
+    const torso = [...this.bones.values()].filter((b) => b.torso).map((b) => ({
+      b,
+      pos: new THREE.Vector3().lerpVectors(b.fromPos, b.targetPos, w),
+      rot: new THREE.Quaternion().slerpQuaternions(b.fromRot, b.targetRot, w),
+    }));
+    let f = 1;
+    for (const { b, pos, rot } of torso) {
+      const t = b.body.translation(), r = b.body.rotation();
+      f = Math.min(f, (MAX_SPEED * dt) / Math.max(1e-9, pos.distanceTo(p.set(t.x, t.y, t.z))));
+      f = Math.min(f, (MAX_TURN * dt) / Math.max(1e-9, rot.angleTo(q.set(r.x, r.y, r.z, r.w))));
+    }
+    for (const { b, pos, rot } of torso) {
+      const t = b.body.translation(), r = b.body.rotation();
+      b.body.setNextKinematicTranslation(v3(p.set(t.x, t.y, t.z).lerp(pos, f)));
+      b.body.setNextKinematicRotation(q4(q.set(r.x, r.y, r.z, r.w).slerp(rot, f)));
+    }
     for (const b of this.bones.values()) {
-      if (b.torso) {
-        p.lerpVectors(b.fromPos, b.targetPos, w);
-        q.slerpQuaternions(b.fromRot, b.targetRot, w);
-        b.body.setNextKinematicTranslation(v3(p));
-        b.body.setNextKinematicRotation(q4(q));
-      } else if (b.joint && b.parent) {
-        rel.copy(b.parent.targetRot).invert().multiply(b.targetRot);
-        const delta = b.restRel.clone().invert().multiply(rel);
-        clampRotation(delta, jointOf(b.name));
-        b.joint.setLocalFrame1(v3(b.anchor), q4(rel.copy(b.restRel).multiply(delta).slerp(b.restRel, 1 - w)));
-        this.setMotors(b, jointOf(b.name).drive);
-      }
+      if (b.torso || !b.joint || !b.parent) continue;
+      rel.copy(b.parent.targetRot).invert().multiply(b.targetRot);
+      const delta = b.restRel.clone().invert().multiply(rel);
+      clampRotation(delta, jointOf(b.name));
+      rel.copy(b.fromRel).slerp(q.copy(b.restRel).multiply(delta), w);
+      b.commandRel.slerp(rel, Math.min(1, (MAX_TURN * dt) / Math.max(1e-9, b.commandRel.angleTo(rel))));
+      b.joint.setLocalFrame1(v3(b.anchor), q4(b.commandRel));
+      this.setMotors(b, jointOf(b.name).drive);
+    }
+  }
+
+  /** Blend from where the bones are now (a new motion, or entering driven mode). */
+  startBlend() {
+    for (const b of this.bones.values()) {
+      const t = b.body.translation(), r = b.body.rotation();
+      b.fromPos.set(t.x, t.y, t.z);
+      b.fromRot.set(r.x, r.y, r.z, r.w);
+      b.fromRel.copy(b.commandRel);
     }
   }
 
   setMode(driven: boolean) {
     for (const b of this.bones.values()) {
-      const t = b.body.translation(), r = b.body.rotation();
-      b.fromPos.set(t.x, t.y, t.z);
-      b.fromRot.set(r.x, r.y, r.z, r.w);
+      b.commandRel.copy(b.restRel);
       if (!b.torso && b.joint) b.joint.setLocalFrame1(v3(b.anchor), q4(b.restRel));
+    }
+    this.startBlend();
+    for (const b of this.bones.values()) {
       if (!b.torso) continue;
       const lv = b.body.linvel(), av = b.body.angvel();
       b.body.setBodyType(driven ? RAPIER.RigidBodyType.KinematicPositionBased : RAPIER.RigidBodyType.Dynamic, true);
@@ -365,6 +395,8 @@ export class Skeleton {
       b.fromRot.copy(b.restRot);
       b.targetPos.copy(b.restPos);
       b.targetRot.copy(b.restRot);
+      b.commandRel.copy(b.restRel);
+      b.fromRel.copy(b.restRel);
       b.joint?.setLocalFrame1(v3(b.anchor), q4(b.restRel));
     }
   }
@@ -449,6 +481,9 @@ function standing(scene: Scene): { mgh: number; inertia: number } {
 
 /** Seconds to blend from where the bones are into driven mode. */
 const DRIVE_BLEND = 0.35;
+/** Fastest the driven bones may move (m/s, rad/s): well above a dance's (狗熊哆嗦毛 turns the hips at ~13 rad/s). */
+const MAX_SPEED = 6;
+const MAX_TURN = 25;
 
 /** Free mode: the frog's tone (stubbornness) holds the rest pose and rights it; a knock makes it floppy for a moment.
  *  Driven mode: the torso follows the targets, the limbs' motors pull them there. */
@@ -460,7 +495,6 @@ class RigidSkeleton implements SkeletonBlock {
   /** Time since the frog was knocked about (landing, throw). */
   private sinceKnock = 10;
   private rootFromHips: THREE.Matrix4;
-  private rootTarget: THREE.Matrix4 | null = null;
   private standing: { mgh: number; inertia: number } | null = null;
 
   constructor(scene: Scene) {
@@ -491,10 +525,15 @@ class RigidSkeleton implements SkeletonBlock {
     this.driveBlend = mode === "driven" ? 0 : 1;
   }
 
+  transition() {
+    if (this.mode !== "driven") return;
+    this.skeleton.startBlend();
+    this.driveBlend = 0;
+  }
+
   setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>) {
     const s = new THREE.Vector3();
     for (const [name, m] of boneWorld) {
-      if (name === "root") (this.rootTarget ??= new THREE.Matrix4()).copy(m);
       const b = this.skeleton.bones.get(name as CoreBone);
       if (b) m.decompose(b.targetPos, b.targetRot, s);
     }
@@ -512,15 +551,15 @@ class RigidSkeleton implements SkeletonBlock {
     this.skeleton.addVelocity(dv);
   }
 
+  /** The root rides with the hips in both modes (in driven mode the hips may still be catching up with a target). */
   root(out: THREE.Matrix4) {
-    if (this.mode === "driven" && this.rootTarget) return out.copy(this.rootTarget);
     return this.skeleton.bone("hips").pose(out).multiply(this.rootFromHips);
   }
 
   beforeStep(scene: Scene) {
     if (this.mode === "driven") {
       this.driveBlend = Math.min(1, this.driveBlend + scene.dt / DRIVE_BLEND);
-      this.skeleton.drive(THREE.MathUtils.smoothstep(this.driveBlend, 0, 1));
+      this.skeleton.drive(THREE.MathUtils.smoothstep(this.driveBlend, 0, 1), scene.dt);
     } else {
       // Stubbornness sets the tone; right after a knock the frog goes floppy and gathers itself again.
       const s = clamp01(this.params.stubbornness);
@@ -535,7 +574,6 @@ class RigidSkeleton implements SkeletonBlock {
 
   reset() {
     this.skeleton.reset();
-    this.rootTarget = null;
     this.sinceKnock = 10;
   }
 }

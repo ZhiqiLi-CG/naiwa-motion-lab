@@ -157,6 +157,8 @@ export interface SkeletonBlock extends Block {
   setMode(mode: BodyMode): void;
   /** Driven mode: target world matrices of the bones. */
   setTargets(boneWorld: ReadonlyMap<BoneName, THREE.Matrix4>): void;
+  /** The targets are about to come from another motion: blend to them from where the bones are now. */
+  transition(): void;
   /** Free mode: the frog was knocked about (a landing, a throw): it goes floppy and gathers itself again. */
   knock(): void;
   /** Mass-weighted velocity of the bones, and adding one to them all (a throw). */

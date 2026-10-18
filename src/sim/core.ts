@@ -176,6 +176,10 @@ class Core implements LabFrogSim {
     if (this.built) this.scene.skeleton.setTargets(boneWorld);
   }
 
+  transition(): void {
+    if (this.built) this.scene.skeleton.transition();
+  }
+
   /* ---------------------------------------------------------------------------------------------------------- */
   /* The loop                                                                                                     */
   /* ---------------------------------------------------------------------------------------------------------- */

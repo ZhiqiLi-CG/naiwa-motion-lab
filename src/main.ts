@@ -49,6 +49,7 @@ let cameraWanted = false;
 function setSource(next: MotionSource | null) {
   source?.dispose();
   source = next;
+  if (next) sim?.transition();
   sfx.attachMusic(next?.kind === "video" ? (next.media ?? null) : null);
   store.set({ canSaveDance: false });
 }

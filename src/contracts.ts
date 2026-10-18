@@ -323,6 +323,9 @@ export interface FrogSim {
   setMode(m: BodyMode): void;
   /** Driven mode: target world matrices for the simulated bones (from the posed skeleton), and the root offset. */
   setTargets(boneWorld: Map<BoneName, THREE.Matrix4>): void;
+  /** The pose targets are about to come from another motion (a dance, the camera, a video): move to them smoothly
+   *  from where the bones are instead of jumping, which would tear the flesh. */
+  transition(): void;
   /** Advance by dt seconds (fixed substeps inside). */
   step(dt: number): void;
   /** Current world matrices of the simulated bones (written into out). */
