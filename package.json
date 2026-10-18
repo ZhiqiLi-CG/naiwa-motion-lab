@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "node tests/e2e/run.mjs"
+    "e2e": "node tests/e2e/run.mjs",
+    "lab": "node lab/server.mjs",
+    "test:lab": "node --test lab/test/*.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "6.2.5",

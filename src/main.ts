@@ -11,6 +11,7 @@ import { registerMotionLibrary } from "./algorithms/motion";
 import { registerSimLibrary } from "./algorithms/sim";
 import { createMotion, metricReadouts } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
+import { mountLab } from "./lab";
 import { mountCodeLab, openCodeLab } from "./labcode";
 import { mountUI, type UICommands } from "./ui";
 
@@ -161,13 +162,26 @@ const codeLab = mountCodeLab({
   binding: () => motion.binding(),
   toast: (m, k) => ui.toast(m, k),
 });
-// Frame the frog in the part of the window the panels and the code lab leave free.
+// The local Lab (node lab/server.mjs + Codex): shows nothing unless its server answers and Codex is logged in.
+const lab = mountLab({
+  store,
+  codeLab,
+  commands,
+  stage,
+  motion,
+  sim: () => sim,
+  presets: MATERIAL_PRESETS,
+  toast: (m, k) => ui.toast(m, k),
+  videoTrack: () => source?.track?.() ?? null,
+});
+// Frame the frog in the part of the window the panels, the code lab and the Lab chat leave free.
 const frameStage = () => {
-  const a = ui.insets(), b = codeLab.insets();
-  stage.setInsets({ ...a, right: Math.max(a.right, b.right) });
+  const a = ui.insets(), b = codeLab.insets(), c = lab.insets();
+  stage.setInsets({ ...a, right: Math.max(a.right, b.right, c.right) });
 };
 ui.onInsets(frameStage);
 codeLab.onInsets(frameStage);
+lab.onInsets(frameStage);
 frameStage();
 sfx.setEnabled(store.get().sound);
 
