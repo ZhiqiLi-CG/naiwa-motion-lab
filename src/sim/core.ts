@@ -15,9 +15,10 @@ import { rayHitMesh } from "./geometry";
 import { resolveParts } from "./parts";
 import { resolve } from "./registry";
 
-/** Fixed physics step; a frame runs as many as its time needs, at most MAX_STEPS (slower frames drop time). */
+/** Fixed physics step; a frame runs as many as its time needs, at most MAX_STEPS (slower frames drop time: on a busy
+ *  machine three steps a frame made the frames slower still, and the page spiralled down to a few frames a second). */
 export const SIM_DT = 1 / 60;
-const MAX_STEPS = 3;
+const MAX_STEPS = 2;
 const MAX_BALLS = 24;
 const MAX_THROW_SPEED = 9;
 
