@@ -2,39 +2,34 @@
 <html>
   <head><meta charset="UTF-8" /><title>e2e pose oracle</title></head>
   <body>
-    <video id="v" muted playsinline></video>
     <script type="module">
       // The person's pose in a test clip, frame by frame, with the app's own self-hosted MediaPipe files: the ground
-      // truth the frog's motion is compared with.
+      // truth the frog's motion is compared with. The frames are images ffmpeg extracted (lib/follow.mjs), each
+      // detected on its own (IMAGE mode): playing the video and tracking (VIDEO mode) depends on how many frames the
+      // browser gets to present, and on a busy machine the result lagged the person by seconds.
       import { FilesetResolver, PoseLandmarker } from "/__e2e/vision_bundle.mjs";
-      window.__oracle = async (url, model) => {
-        const v = document.getElementById("v");
-        v.src = url;
-        await new Promise((r, j) => { v.onloadeddata = r; v.onerror = () => j(new Error(`cannot load ${url}`)); });
+      window.__oracle = async (frameUrls, times, model) => {
         const fileset = await FilesetResolver.forVisionTasks("/__e2e/mediapipe/wasm");
         const lm = await PoseLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: `/__e2e/mediapipe/${model}`, delegate: "GPU" },
-          runningMode: "VIDEO",
+          runningMode: "IMAGE",
           numPoses: 1,
         });
-        // Play it through once and detect on every presented frame, at the frame's own media time.
         const frames = [];
-        let last = -1;
-        await new Promise((resolve) => {
-          const onFrame = (_now, meta) => {
-            if (meta.mediaTime > last) {
-              last = meta.mediaTime;
-              const res = lm.detectForVideo(v, Math.round(meta.mediaTime * 1000) + 1);
-              const w = res.worldLandmarks[0];
-              frames.push({ t: meta.mediaTime, world: w ? w.map((p) => [p.x, p.y, p.z, p.visibility ?? 1]) : null });
-            }
-            if (!v.ended) v.requestVideoFrameCallback(onFrame);
-          };
-          v.onended = resolve;
-          v.requestVideoFrameCallback(onFrame);
-          v.play();
-        });
-        return { duration: v.duration, width: v.videoWidth, height: v.videoHeight, frames };
+        let width = 0, height = 0;
+        for (let i = 0; i < frameUrls.length; i++) {
+          const img = new Image();
+          img.src = frameUrls[i];
+          await img.decode();
+          width = img.naturalWidth;
+          height = img.naturalHeight;
+          const res = lm.detect(img);
+          const w = res.worldLandmarks[0], im = res.landmarks[0];
+          // image: normalised x, y in the video's own (unmirrored) frame, to tell which screen side a hand is on
+          frames.push({ t: times[i], world: w ? w.map((p) => [p.x, p.y, p.z, p.visibility ?? 1]) : null, image: im ? im.map((p) => [p.x, p.y]) : null });
+        }
+        lm.close();
+        return { width, height, frames };
       };
     </script>
   </body>

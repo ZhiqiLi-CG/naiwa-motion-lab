@@ -4,7 +4,7 @@ import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { diffFraction, decodePng, lumaStats } from "./lib/image.mjs";
 import { probeRecording, extractFrame, audioLevel, clipFrames } from "./lib/media.mjs";
-import { followScore, histogram, meanHistogram, splitLayout } from "./lib/follow.mjs";
+import { followScore, screenSides, histogram, meanHistogram, splitLayout } from "./lib/follow.mjs";
 import { mb } from "./lib/deploy.mjs";
 import {
   sleep, MODES, waitReady, shot, toPx, locateFrog, frogRegion, findControl, findMode, describe, appState, enterMode,
@@ -677,16 +677,21 @@ export async function video(T, page, log, which) {
   await sleep(clip.duration * 2000 + 800);
   await shot(page, T.out, `${g}-pose`);
   const samples = await page.evaluate(() => window.__e2e.stopSampler());
+  // the raw series, to look at by hand: video time, hands and shoulders at each stage, hands' screen x
+  writeFileSync(join(T.out, `${g}-follow.json`), JSON.stringify({ clip: clip.name, mirror: st.mirror, samples }));
   const fs = followScore(clip.pose, samples);
+  // where along the way the likeness is lost (or the sides swap): pose targets → simulated bones → rendered rig
+  const stages = Object.fromEntries(["targets", "sim", "pos"].map((k) => [k, followScore(clip.pose, samples, k)]));
+  T.check(g, "follow, stage by stage", "INFO", Object.entries(stages).map(([k, v]) => `${{ targets: "pose targets", sim: "simulated bones", pos: "rendered rig" }[k]}: ${v.error ?? `r ${v.corr.toFixed(2)} at lag ${v.lag.toFixed(2)} s, frog's left answers the person's ${v.swap ? "right" : "left"} (other mapping ${v.otherMapping.toFixed(2)})`}`).join("; ") + `; raw series ${g}-follow.json`);
   if (fs.error) T.check(g, "frog's pose follows the person", "FAIL", fs.error);
   else {
     T.check(g, "frog's pose follows the person", fs.corr >= FOLLOW_MIN ? "PASS" : "FAIL",
-      `arm-raise correlation with the person ${fs.corr.toFixed(2)} (needs ${FOLLOW_MIN}; the other arm mapping gives ${fs.otherMapping.toFixed(2)}), ${fs.samples} samples over ${fs.loops} loop(s); ${g}-pose.png`);
+      `arm-raise correlation with the person ${fs.corr.toFixed(2)} (needs ${FOLLOW_MIN}; the other arm mapping gives ${fs.otherMapping.toFixed(2)}), ${fs.samples} samples over ${fs.loops} loop(s), judged on the ${pct(fs.trusted)} of the clip where the person faces the camera with both wrists visible; ${g}-pose.png`);
     T.check(g, "motion in sync with the video", fs.corr >= 0.3 && Math.abs(fs.lag) <= SYNC_MAX_S ? "PASS" : "FAIL",
       `best match ${fs.lag >= 0 ? "lags" : "leads"} the video by ${Math.abs(fs.lag).toFixed(2)} s (allowed ${SYNC_MAX_S} s)`);
     const mirrored = mus.shown ? mus.mirrored : st.mirror;
-    if (fs.corr >= FOLLOW_MIN) T.check(g, "arms on the same screen side as the person's", fs.swap === mirrored ? "PASS" : "FAIL",
-      `frog's ${fs.swap ? "left answers the person's right" : "left answers the person's left"}; preview ${mus.shown ? (mus.mirrored ? "mirrored" : "not mirrored") : `hidden, store.mirror = ${st.mirror}`}`);
+    const sides = screenSides(clip.pose, samples, mirrored, fs.swap);
+    if (fs.corr >= 0.3) T.check(g, "arms on the same screen side as the person's", sides.error ? "FAIL" : sides.same ? "PASS" : "FAIL", sides.error ?? sides.detail);
   }
   await frameRate(T, g, page, "frame rate while playing");
   if (which === "portrait") {

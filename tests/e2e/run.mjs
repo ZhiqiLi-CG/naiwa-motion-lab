@@ -124,6 +124,7 @@ if (!appBase) {
 server = await serve(existsSync(join(DIST, "index.html")) ? DIST : join(CACHE, "none"), PORT, {
   "/__e2e/": join(ROOT, "tests/e2e/lib"),
   "/__e2e/media/": MEDIA,
+  "/__e2e/cache/": CACHE,
   "/__e2e/mediapipe/": join(ROOT, "public/mediapipe"),
   "/__e2e/vision_bundle.mjs": join(ROOT, "node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"),
 });

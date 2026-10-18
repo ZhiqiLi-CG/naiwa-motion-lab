@@ -73,6 +73,14 @@
       n.sim.onEvent((e) => e2e.events.push({ kind: e.kind, strength: e.strength, region: e.region, t: performance.now() }));
       e2e.hookedSims.add(n.sim);
     }
+    // the pose targets the page hands the simulation each frame (bone world matrices from the motion source)
+    if (n.sim?.setTargets && !n.sim.setTargets.__e2e) {
+      const setTargets = n.sim.setTargets.bind(n.sim);
+      n.sim.setTargets = Object.assign((targets) => {
+        e2e.lastTargets = targets;
+        return setTargets(targets);
+      }, { __e2e: true });
+    }
     if (n.sim?.step && !n.sim.step.__e2e) {
       const step = n.sim.step.bind(n.sim);
       n.sim.step = Object.assign((dt) => {
@@ -224,19 +232,41 @@
     return { routed: e2e.routed.includes(v), muted: v.muted, volume: v.volume, paused: v.paused, rate: v.playbackRate, t: v.currentTime, duration: v.duration, loop: v.loop, mirrored, shown: visible(v) };
   };
 
-  /** Sample the playing video's time and the frog's bone positions every `ms` (for the follow and sync checks). */
+  /** Sample the playing video's time and the frog's bone positions every `ms` (for the follow and sync checks), at
+   *  three stages: the pose targets the motion hands the simulation (targets), the simulated skeleton
+   *  (sim.readBones) and the rendered rig (pos); plus where the rendered hands are on screen (CSS px). The video is
+   *  the one the page routes through its sound mix (the motion source's own), else the first one playing. */
   e2e.startSampler = (names, ms = 100) => {
     e2e.samples = [];
     clearInterval(e2e.sampler);
     e2e.sampler = setInterval(() => {
-      const v = e2e.playingVideo();
-      const bones = window.__naiwa?.character?.rig?.bones;
-      const pos = {};
-      if (bones) for (const k of names) {
-        const e = bones.get(k)?.matrixWorld.elements;
-        if (e) pos[k] = [e[12], e[13], e[14]];
+      const n = window.__naiwa;
+      const v = [...e2e.routed].reverse().find((x) => x.isConnected && x.currentSrc) ?? e2e.playingVideo();
+      const at = (get) => {
+        const out = {};
+        for (const k of names) {
+          const e = get(k)?.elements;
+          if (e) out[k] = [e[12], e[13], e[14]];
+        }
+        return out;
+      };
+      const bones = n?.character?.rig?.bones;
+      const pos = bones ? at((k) => bones.get(k)?.matrixWorld) : {};
+      const targets = e2e.lastTargets ? at((k) => e2e.lastTargets.get(k)) : {};
+      let sim = {};
+      if (n?.sim?.readBones) {
+        const m = new Map();
+        n.sim.readBones(m);
+        sim = at((k) => m.get(k));
       }
-      e2e.samples.push({ t: performance.now(), vt: v && !v.paused ? v.currentTime : null, pos });
+      let screen = null;
+      if (bones && n.stage?.camera) {
+        const r = e2e.mainCanvas().getBoundingClientRect();
+        const V = n.stage.camera.position.constructor;
+        const sx = (k) => { const p = new V().setFromMatrixPosition(bones.get(k).matrixWorld).project(n.stage.camera); return r.left + ((p.x + 1) / 2) * r.width; };
+        screen = { hand_L: sx("hand_L"), hand_R: sx("hand_R") };
+      }
+      e2e.samples.push({ t: performance.now(), vt: v && !v.paused ? v.currentTime : null, pos, targets, sim, screen });
     }, ms);
   };
   e2e.stopSampler = () => {
@@ -633,7 +663,7 @@
   };
 
   /** Each foot's heel (ankle) and toe (the foot bone's tail) as rendered, every frame for `ms`: how fast each moves
-   *  sideways while it is down on the floor (within 1.5 cm of its lowest). */
+   *  sideways while it is down on the floor (within 1.5 cm of its rest-pose height). */
   e2e.footSlide = async (ms) => {
     const n = window.__naiwa;
     const bones = n?.character?.rig?.bones;
@@ -641,8 +671,9 @@
     const V = n.stage.camera.position.constructor;
     const feet = ["foot_L", "foot_R"].map((k) => {
       const b = n.character.spec.bones.find((x) => x.name === k);
-      // the toe in the foot bone's own frame
-      return { k, toe: b.tail.clone().applyMatrix4(b.restWorld.clone().invert()), s: [] };
+      // the toe in the foot bone's own frame; heel and toe heights in the rest pose (standing on the floor)
+      const heelRest = new V().setFromMatrixPosition(b.restWorld).y;
+      return { k, toe: b.tail.clone().applyMatrix4(b.restWorld.clone().invert()), rest: [heelRest, b.tail.y], s: [] };
     });
     const t0 = performance.now();
     while (performance.now() - t0 < ms) {
@@ -657,10 +688,11 @@
     // The heel (ankle) and the toe each count while they are down, so a foot rolling over its toe does not slide.
     // Each stretch of contact counts by how far the point ends up from where it touched down (not the frame-to-frame
     // path, which would count the flesh's jitter as sliding).
+    // A point is down while it is within 1.5 cm of its height in the rest pose, i.e. on the floor (a foot hovering a
+    // couple of centimetres up is not standing).
     let dist = 0, time = 0;
-    for (const { s } of feet) for (const o of [1, 4]) {
-      const low = Math.min(...s.map((x) => x[o + 1]));
-      const down = (i) => s[i][o + 1] <= low + 0.015;
+    for (const { s, rest } of feet) for (const [o, floor] of [[1, rest[0]], [4, rest[1]]]) {
+      const down = (i) => s[i][o + 1] <= floor + 0.015;
       for (let i = 0; i < s.length; ) {
         if (!down(i)) { i++; continue; }
         let j = i;
