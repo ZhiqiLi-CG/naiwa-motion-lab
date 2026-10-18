@@ -13,24 +13,20 @@ import { nearestBone, particleAttributes } from "../parts";
 /** Share of the thickness around each bone that rides on it (Body: as the built-in block; limbs: the core). */
 const CARRIED: Record<string, number> = { head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55 };
 const SOFT_LOOSENS = 0.35;
-/** Particle layers of a limb's sole that stay free. */
-const SOLE = 2.5;
+/** A limb's sole (m above its lowest particle) that stays free: one particle layer at any grid. */
+const SOLE = 0.01;
+
+/** The lattice step: the distance from a particle to its nearest neighbour. */
+function spacing(P: Float32Array): number {
+  let best = Infinity;
+  for (let j = 3; j < P.length; j += 3) best = Math.min(best, Math.hypot(P[j] - P[0], P[j + 1] - P[1], P[j + 2] - P[2]));
+  return best;
+}
 
 function lowest(P: Float32Array): number {
   let y = Infinity;
   for (let i = 1; i < P.length; i += 3) y = Math.min(y, P[i]);
   return y;
-}
-
-/** The particles' spacing: the smallest distance between two (the lattice step). */
-function spacing(P: Float32Array): number {
-  let best = Infinity;
-  for (let i = 0; i < Math.min(64, P.length / 3); i++) {
-    for (let j = 0; j < P.length / 3; j++) {
-      if (j !== i) best = Math.min(best, Math.hypot(P[i * 3] - P[j * 3], P[i * 3 + 1] - P[j * 3 + 1], P[i * 3 + 2] - P[j * 3 + 2]));
-    }
-  }
-  return best;
 }
 
 /** How thick the flesh is around each bone of a part: the median distance of its surface vertices to the bone. */
@@ -53,13 +49,15 @@ class SoftLimbs implements CouplingBlock {
     for (const part of scene.parts) {
       const view = scene.flesh.particles(part), thick = thickness(part);
       const { softness } = particleAttributes(part, view.rest);
-      // A limb's sole: its lowest layers of flesh stay free at any resolution, so the feet stand on soft pads.
-      const sole = part.limb ? lowest(view.rest) + SOLE * spacing(view.rest) : -Infinity;
+      // A limb's sole: its lowest layer of flesh stays free, so the feet stand on soft pads — where the lattice
+      // resolves the foot (a layer under half its thickness); on a coarser one that layer would be the whole foot.
+      const sole = part.limb ? lowest(view.rest) + SOLE : -Infinity, step = spacing(view.rest);
       const free: number[] = [];
       for (let i = 0; i < view.count; i++) {
         const { bone, distance } = nearestBone(part, p.fromArray(view.rest, i * 3));
         const share = part.limb ? limb : body * (CARRIED[bone.name] ?? 1) * (1 - SOFT_LOOSENS * softness[i]);
-        if (distance < share * (thick.get(bone) ?? 0) && view.rest[i * 3 + 1] > sole) view.attach(i, bone.body);
+        const t = thick.get(bone) ?? 0, soft = view.rest[i * 3 + 1] <= sole && step < 0.5 * t;
+        if (distance < share * t && !soft) view.attach(i, bone.body);
         else free.push(i);
       }
       this.free.set(part, free);
