@@ -265,6 +265,32 @@ describe.skipIf(!process.env.SIM_BENCH || !fs.existsSync(GLB))("benchmark, the r
     for (const b of benches) b.top = 0;
     phase("throw", 300);
     for (const b of benches) b.probe("thrown, 5 s later");
+
+    // Balls at 14 m/s at the belly and the head, one every 10 frames; a ball that ends inside the Body went through.
+    phase("balls", 240, (sim, k) => {
+      if (k % 10 || k >= 120) return;
+      const hips = new THREE.Vector3();
+      sim.readBones(new Map()); // keep the frog's surfaces fresh
+      const t = sim.scene.skeleton.bones.get("hips")!.body.translation();
+      hips.set(t.x, 0.45 + (k % 20 ? 0 : 0.3), t.z);
+      const from = hips.clone().add(new THREE.Vector3(Math.sin(k), 0.1, 2));
+      sim.throwBall(from, hips.clone().sub(from).setLength(14));
+    });
+    for (const b of benches) {
+      const balls = b.sim.readBalls(), body = b.sim.readBody(), part = b.sim.scene.parts[0];
+      let inside = 0;
+      for (let k = 0; k < balls.length; k += 4) {
+        // Inside if a ray up from the ball's centre crosses the Body's surface an odd number of times.
+        const ray = new THREE.Ray(new THREE.Vector3(balls[k], balls[k + 1], balls[k + 2]), new THREE.Vector3(0, 1, 0));
+        let crossings = 0;
+        const I = part.indices, a = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3(), hit = new THREE.Vector3();
+        for (let t = 0; t < I.length; t += 3) {
+          if (ray.intersectTriangle(a.fromArray(body, I[t] * 3), c.fromArray(body, I[t + 1] * 3), d.fromArray(body, I[t + 2] * 3), false, hit)) crossings++;
+        }
+        if (crossings % 2) inside++;
+      }
+      console.log(`${b.name.padEnd(12)} balls: ${balls.length / 4} left, ${inside} inside the Body, ${b.events.ball ?? 0} ball events`);
+    }
     for (const b of benches) {
       const t0 = performance.now();
       for (let k = 0; k < 20; k++) b.sim.stats();

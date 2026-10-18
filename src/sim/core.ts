@@ -97,8 +97,9 @@ class Core implements LabFrogSim {
     this.params = { ...params };
     this.world = new RAPIER.World({ x: 0, y: -9.81 * params.gravity, z: 0 });
     this.world.timestep = SIM_DT;
-    // Fast hits get one extra substep at most: Rapier's default (4) made frame times spike.
-    this.world.integrationParameters.softBodiesMaxExtraSubsteps = 1;
+    // No extra substeps on fast hits: Rapier's default (4) made frame times spike, and even one cost a sixth of the
+    // step in a dance (arms touching the belly count as hits) while balls at 14 m/s stay out of the belly without it.
+    this.world.integrationParameters.softBodiesMaxExtraSubsteps = 0;
     this.floor = this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(30, 1, 30).setTranslation(0, -1, 0).setFriction(0.9)
         .setCollisionGroups(GROUPS.floor).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
