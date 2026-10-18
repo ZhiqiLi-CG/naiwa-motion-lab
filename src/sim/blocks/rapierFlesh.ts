@@ -246,15 +246,15 @@ export const rapierFlesh: BlockDefinition<"flesh"> = {
       },
     },
     {
-      key: "bodyParticles", kind: "number", default: 400, min: 150, max: 1200, step: 50, rebuild: true,
+      key: "bodyParticles", kind: "number", default: 250, min: 150, max: 1200, step: 50, rebuild: true,
       label: { zh: "身体粒子数", en: "Body particles" },
     },
     {
-      key: "limbParticles", kind: "number", default: 60, min: 30, max: 200, step: 10, rebuild: true,
+      key: "limbParticles", kind: "number", default: 40, min: 30, max: 200, step: 10, rebuild: true,
       label: { zh: "四肢粒子数", en: "Limb particles" },
     },
     {
-      key: "iterations", kind: "number", default: 3, min: 0, max: 12, step: 1, rebuild: true,
+      key: "iterations", kind: "number", default: 2, min: 0, max: 12, step: 1, rebuild: true,
       label: { zh: "额外迭代", en: "Extra iterations" },
     },
     {

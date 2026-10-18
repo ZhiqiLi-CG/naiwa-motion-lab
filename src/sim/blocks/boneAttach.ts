@@ -19,7 +19,7 @@ import { nearestBone, particleAttributes } from "../parts";
  *  nodes there hung on soft cells and crumpled when the limbs swung. */
 const CARRIED: Record<string, number> = {
   head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55,
-  upperarm: 2, forearm: 2, hand: 2, thigh: 2, shin: 2, foot: 2,
+  upperarm: 2, forearm: 2, hand: 2, thigh: 9, shin: 9, foot: 9,
 };
 /** The softest flesh (the belly) keeps this much less on the bone. */
 const SOFT_LOOSENS = 0.35;

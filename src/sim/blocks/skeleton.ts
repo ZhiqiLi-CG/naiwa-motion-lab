@@ -38,6 +38,8 @@ const JOINTS: Record<string, Joint> = {
 };
 const jointOf = (name: CoreBone) => JOINTS[name.replace(/_[LR]$/, "")];
 
+/** Smallest radius of gyration of a bone (m). */
+const GYRATION = 0.15;
 const ANG_AXES = [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngY, RAPIER.JointAxis.AngZ] as const;
 const ONE = new THREE.Vector3(1, 1, 1);
 export const v3 = (v: { x: number; y: number; z: number }) => ({ x: v.x, y: v.y, z: v.z });
@@ -96,7 +98,6 @@ export interface BoneFlesh {
 export class Skeleton {
   readonly bones = new Map<CoreBone, Bone>();
   readonly byCollider = new Map<number, Bone>();
-  private upright: RAPIER.RigidBody;
   private uprightJoint: RAPIER.ImpulseJoint;
   private uprightStiffness = -1;
   private raw: RAPIER.World["impulseJoints"]["raw"];
@@ -118,14 +119,17 @@ export class Skeleton {
       rb.restWorld.decompose(restPos, restRot, scale);
       const length = restPos.distanceTo(rb.tail), radius = limbFlesh.get(name)?.radius ?? rb.radius;
       const { mass } = jointOf(name);
-      // The bone carries the mass of what is firm around it (bone, muscle), spread over the flesh's thickness: a solid
-      // cylinder along the bone. Its colliders add none.
-      const across = (mass * (3 * radius * radius + length * length)) / 12;
+      // The bone carries the mass of what is firm around it (bone, muscle) as a solid cylinder over the flesh's
+      // thickness; its colliders add none. Its inertia is at least that of a GYRATION-radius ring: the flesh riding on
+      // it turns with it, but the joint solver does not see that, and stiff motors on near-weightless links made the
+      // skeleton buzz and walk off on its own.
+      const inertia = (i: number) => Math.max(i, mass * GYRATION * GYRATION);
+      const across = inertia((mass * (3 * radius * radius + length * length)) / 12), along = inertia((mass * radius * radius) / 2);
       const rigid = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(restPos.x, restPos.y, restPos.z)
           .setRotation(q4(restRot))
-          .setAdditionalMassProperties(mass, { x: 0, y: length / 2, z: 0 }, { x: across, y: (mass * radius * radius) / 2, z: across }, { x: 0, y: 0, z: 0, w: 1 })
+          .setAdditionalMassProperties(mass, { x: 0, y: length / 2, z: 0 }, { x: across, y: along, z: across }, { x: 0, y: 0, z: 0, w: 1 })
           .setAngularDamping(0.5)
           .setLinearDamping(0.05),
       );
@@ -136,13 +140,11 @@ export class Skeleton {
       if (parent) this.join(bone, parent);
     }
     const hips = this.bone("hips");
-    this.upright = world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(hips.restPos.x, hips.restPos.y, hips.restPos.z),
-    );
+    // The upright pull: a joint from the world to the hips that only acts through its tilt motors (no locked axes).
+    const world0 = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     const zero = { x: 0, y: 0, z: 0 };
-    // No locked axes: the joint only acts through its tilt motors.
     this.uprightJoint = world.createImpulseJoint(
-      RAPIER.JointData.generic(zero, zero, { x: 1, y: 0, z: 0 }, 0 as RAPIER.JointAxesMask), this.upright, hips.body, true,
+      RAPIER.JointData.generic(zero, zero, { x: 1, y: 0, z: 0 }, 0 as RAPIER.JointAxesMask), world0, hips.body, true,
     );
     this.uprightJoint.setLocalFrame2(zero, q4(hips.restRot.clone().invert()));
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {
@@ -274,14 +276,6 @@ export class Skeleton {
    *  however light the hips are against that stiffness. */
   balance(tone: number, k: number, c: number) {
     for (const b of this.bones.values()) this.setMotors(b, jointOf(b.name).hold * tone);
-    const hips = this.bone("hips");
-    const t = hips.body.translation(), r = hips.body.rotation();
-    const q = new THREE.Quaternion(r.x, r.y, r.z, r.w).multiply(hips.restRot.clone().invert());
-    // The reference turns with the frog's heading, so only the tilt is pulled back.
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-    const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(fwd.x, fwd.z));
-    this.upright.setNextKinematicTranslation(t);
-    this.upright.setNextKinematicRotation(q4(yaw));
     if (Math.abs(k - this.uprightStiffness) < 1e-3 * (k + 1)) return;
     this.uprightStiffness = k;
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {
