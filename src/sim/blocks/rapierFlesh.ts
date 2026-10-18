@@ -196,9 +196,13 @@ class RapierFlesh implements FleshBlock {
   }
 
   addVelocity(dv: THREE.Vector3) {
+    // Particle by particle: SoftBody.applyImpulse gives the whole impulse to every particle.
     for (const { soft } of this.pieces.values()) {
-      const M = soft.mass();
-      soft.applyImpulse({ x: dv.x * M, y: dv.y * M, z: dv.z * M }, true);
+      const V = soft.particleVelocities();
+      for (let i = 0; i < soft.numParticles(); i++) {
+        soft.setParticleVelocity(i, { x: V[i * 3] + dv.x, y: V[i * 3 + 1] + dv.y, z: V[i * 3 + 2] + dv.z });
+      }
+      soft.wakeUp();
     }
   }
 
