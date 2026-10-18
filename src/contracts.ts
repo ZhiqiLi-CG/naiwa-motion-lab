@@ -261,6 +261,8 @@ export interface SimulatorInfo {
   parameters: SimParameter[];
   /** null when it can run in this browser, else why not (e.g. no WebGPU). */
   unavailable: Text | null;
+  /** What it actually runs on here, when that varies (e.g. "WebGPU", or "CPU 并行 · 8 线程" without a GPU). */
+  backend?: Text | string | null;
   /** Built in, or added by the user (editable source). */
   origin: "builtin" | "user";
 }
