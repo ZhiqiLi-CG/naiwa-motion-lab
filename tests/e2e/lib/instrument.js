@@ -542,12 +542,25 @@
     let head = null;
     const regions = spec.body.regions;
     if (regions) {
-      const ids = [];
-      for (let i = 0; i < regions.length; i++) if (regions[i] === 2) ids.push(i);
+      // The neck transition is left out: head-region vertices that share a mesh edge with a vertex of another
+      // region (one edge ring along the head's lower boundary, where it meets the chest and should bend with it).
+      if (!e2e.headCore) {
+        const idx = spec.body.indices;
+        const ring = new Set();
+        for (let t = 0; t < idx.length; t += 3) {
+          const tri = [idx[t], idx[t + 1], idx[t + 2]];
+          const head = tri.filter((v) => regions[v] === 2);
+          if (head.length && head.length < 3) for (const v of head) ring.add(v);
+        }
+        const core = [];
+        for (let i = 0; i < regions.length; i++) if (regions[i] === 2 && !ring.has(i)) core.push(i);
+        e2e.headCore = { core, ring: ring.size };
+      }
+      const ids = e2e.headCore.core;
       const A = new Float64Array(ids.length * 3), B = new Float64Array(ids.length * 3);
       ids.forEach((v, j) => { for (let k = 0; k < 3; k++) { A[j * 3 + k] = spec.body.positions[v * 3 + k]; B[j * 3 + k] = body[v * 3 + k]; } });
       const d = Array.from(rigidResidual(A, B)).sort((x, y) => x - y);
-      head = { vertices: d.length, rms: Math.sqrt(d.reduce((s2, x) => s2 + x * x, 0) / d.length), p95: d[Math.floor(d.length * 0.95)], max: d[d.length - 1] };
+      head = { vertices: d.length, ring: e2e.headCore.ring, rms: Math.sqrt(d.reduce((s2, x) => s2 + x * x, 0) / d.length), p95: d[Math.floor(d.length * 0.95)], max: d[d.length - 1] };
     }
     return { per, head };
   };
@@ -598,6 +611,25 @@
     const rest = n?.character?.spec?.bones.find((b) => b.name === "head")?.restWorld.elements;
     if (!head || !rest || !hips) return null;
     return { head: head[13], rest: rest[13], hips: [hips[12], hips[13], hips[14]], finite: [head[13], hips[12], hips[14]].every(Number.isFinite) };
+  };
+
+  /** What the simulation's own raycast hits at a screen point (CSS px): the body region, or null for a miss — the
+   *  same test the page's tap makes before it pokes. */
+  e2e.hitAt = (x, y) => {
+    const n = window.__naiwa;
+    const cam = n?.stage?.camera;
+    if (!n?.sim?.raycast || !cam) return undefined;
+    const r = e2e.mainCanvas().getBoundingClientRect();
+    const V = cam.position.constructor;
+    const p = new V(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1, 0.5).unproject(cam);
+    const dir = p.sub(cam.position).normalize();
+    const origin = cam.position.clone();
+    const ray = { origin, direction: dir, at: (t, o) => o.copy(dir).multiplyScalar(t).add(origin), clone() { return { ...this, origin: origin.clone(), direction: dir.clone() }; } };
+    try {
+      return n.sim.raycast(ray)?.region ?? null;
+    } catch (e) {
+      return `raycast threw: ${e.message}`;
+    }
   };
 
   /** The UI's floating panels (to see that the frog is framed beside them, not under them). */

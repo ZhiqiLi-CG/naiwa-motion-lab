@@ -189,7 +189,7 @@ async function sampleInterpenetration(page, frames, everyMs) {
       a.inside = Math.max(a.inside, v.deep);
       a.maxDepth = Math.max(a.maxDepth, v.maxDepth);
     }
-    if (r.head) for (const k of ["rms", "p95", "max"]) agg.head[k] = Math.max(agg.head[k], r.head[k]);
+    if (r.head) { for (const k of ["rms", "p95", "max"]) agg.head[k] = Math.max(agg.head[k], r.head[k]); agg.head.vertices = r.head.vertices; agg.head.ring = r.head.ring; }
     await sleep(everyMs);
   }
   return agg;
@@ -218,7 +218,7 @@ function verdictInterpenetration(T, group, what, agg) {
   }
   const h = agg.head;
   T.check(group, `${what}: the head keeps its shape`, h.rms <= HEAD_RMS_MAX_M && h.max <= HEAD_MAX_M ? "PASS" : "FAIL",
-    `head vertices off their rest shape after the best rigid fit: rms ${(h.rms * 100).toFixed(1)} cm, p95 ${(h.p95 * 100).toFixed(1)} cm, max ${(h.max * 100).toFixed(1)} cm (allowed rms ${HEAD_RMS_MAX_M * 100}, max ${HEAD_MAX_M * 100} cm)`);
+    `${h.vertices ?? "?"} head vertices (the ${h.ring ?? "?"} of the neck ring — head vertices sharing an edge with the chest — left out) off their rest shape after the best rigid fit: rms ${(h.rms * 100).toFixed(1)} cm, p95 ${(h.p95 * 100).toFixed(1)} cm, max ${(h.max * 100).toFixed(1)} cm (allowed rms ${HEAD_RMS_MAX_M * 100}, max ${HEAD_MAX_M * 100} cm)`);
 }
 
 /** The page is cross-origin isolated (COOP same-origin + COEP require-corp), so SharedArrayBuffer exists for the
@@ -1378,22 +1378,35 @@ export async function robust(T, page, log) {
   log.step = "pokes";
   const frog = await locateFrog(page, T.out, null);
   const b = frog.bbox ?? { x: frog.target.x - 50, y: frog.target.y - 100, w: 100, h: 200 };
-  // along the body's middle (head to belly), where a tap meets flesh rather than the gap beside an arm
-  const spots = [[0.5, 0.15], [0.5, 0.55], [0.42, 0.45], [0.58, 0.45], [0.5, 0.35], [0.46, 0.6], [0.54, 0.25], [0.5, 0.5]];
-  const c0 = await counts(page);
+  // Eight points spread over the frog where the simulation's own raycast (the page's tap test) meets the body:
+  // a tap beside an arm or past the outline is no poke, and that would be the test's aim, not the app.
+  const grid = [];
+  for (let v = 0.1; v <= 0.7; v += 0.075) for (let u = 0.3; u <= 0.7; u += 0.1) grid.push([b.x + b.w * u, b.y + b.h * v]);
+  const onBody = [];
+  for (const [x, y] of grid) if (await page.evaluate((px, py) => window.__e2e.hitAt(px, py), x, y)) onBody.push([x, y]);
+  const spots = Array.from({ length: Math.min(8, onBody.length) }, (_, i) => onBody[Math.floor((i * onBody.length) / Math.min(8, onBody.length))]);
   const t0 = await page.evaluate(() => performance.now());
-  for (const [u, v] of spots) {
-    await page.mouse.click(b.x + b.w * u, b.y + b.h * v);
+  let hits = 0, pokes = 0;
+  const per = [];
+  for (const [x, y] of spots) {
+    // the body has moved since the last poke: ask again right before this click
+    const hit = await page.evaluate((px, py) => window.__e2e.hitAt(px, py), x, y);
+    const c = await counts(page);
+    await page.mouse.click(x, y);
     await sleep(250);
+    const got = since(c, await counts(page)).events.filter((k) => k === "poke" || k === "slap").length;
+    if (hit) hits++;
+    if (hit && got) pokes++;
+    per.push(`${hit ?? "miss"}→${got ? "poke" : "none"}`);
   }
   const t1 = await page.evaluate(() => performance.now());
   const fs = await page.evaluate((a, z) => window.__e2e.frameStats(a, z), t0, t1);
-  const pokes = since(c0, await counts(page)).events.filter((k) => k === "poke" || k === "slap").length;
   await sleep(STAND_AFTER_MS);
   const afterPokes = await stance(page);
   await shot(page, T.out, "robust-pokes");
-  T.check(g, `${spots.length} quick pokes`, pokes >= spots.length / 2 && stands(afterPokes) ? "PASS" : "FAIL",
-    `${pokes} poke events; physics during the pokes p95 ${fs.physicsP95?.toFixed(2) ?? "?"} ms, ${fs.fps.toFixed(0)} fps; ${STAND_AFTER_MS / 1000} s later: ${standText(afterPokes)}; robust-pokes.png`);
+  // every click that lands on the body (by the simulation's own raycast) must poke it
+  T.check(g, `${spots.length} quick pokes (250 ms apart)`, spots.length >= 6 && hits >= spots.length - 1 && pokes === hits && stands(afterPokes) ? "PASS" : "FAIL",
+    `${hits} of ${spots.length} clicks on the body by the simulation's raycast, ${pokes} of those poked [${per.join(", ")}]; physics during the pokes p95 ${fs.physicsP95?.toFixed(2) ?? "?"} ms, ${fs.fps.toFixed(0)} fps; ${STAND_AFTER_MS / 1000} s later: ${standText(afterPokes)}; robust-pokes.png`);
 
   log.step = "throw";
   const f2 = await locateFrog(page, T.out, null);
