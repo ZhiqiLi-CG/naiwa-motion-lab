@@ -65,7 +65,7 @@ export interface LabClient {
 
 /** Messages on the stream (see lab/server.mjs). */
 export type StreamMessage =
-  | ({ ch: "hello"; convs: { id: string; busy: boolean }[] } & ServerStatus)
+  | ({ ch: "hello"; convs: { id: string; busy: boolean }[]; runs: string[] } & ServerStatus)
   | { ch: "tool"; id: string; action: string; args: Record<string, unknown>; owner: string | null }
   | { ch: "chat"; conv: string; ev: ChatEvent }
   | { ch: "job"; run: string; ev: JobEvent }

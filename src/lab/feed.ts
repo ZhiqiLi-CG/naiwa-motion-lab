@@ -126,11 +126,13 @@ export function applyJob(feed: Feed, run: string, ev: JobEvent): Feed {
 
 /** Before → after for each metric both sides have: the change and whether it got better (lower is better). */
 export function metricRows(m: NonNullable<JobResult["metrics"]>): { key: string; before: number | null; after: number | null; verdict: "better" | "worse" | "same" | null }[] {
-  const keys = [...new Set([...Object.keys(m.before), ...Object.keys(m.after)])];
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  // numbers only: a job may pass other things along
+  const keys = [...new Set([...Object.keys(m.before), ...Object.keys(m.after)])].filter((k) => n(m.before[k]) !== null || n(m.after[k]) !== null);
   return keys.map((key) => {
-    const b = m.before[key];
-    const a = m.after[key];
-    if (typeof b !== "number" || typeof a !== "number") return { key, before: b ?? null, after: a ?? null, verdict: null };
+    const b = n(m.before[key]);
+    const a = n(m.after[key]);
+    if (b === null || a === null) return { key, before: b, after: a, verdict: null };
     const tol = Math.max(Math.abs(a), Math.abs(b)) * 0.02 + 1e-9;
     // how much it gives is a choice, not a score
     const neutral = /peak/.test(key);

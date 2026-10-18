@@ -147,7 +147,7 @@ export function createLabServer({ repo = path.resolve(HERE, ".."), codex, status
         pageClient = client;
         log(`page connected (${req.headers.origin ?? "no origin"})`);
       }
-      write(res, { ch: "hello", ...(await statusBody()), convs: chat.list() });
+      write(res, { ch: "hello", ...(await statusBody()), convs: chat.list(), runs: jobs.recent() });
       const keep = setInterval(() => res.write(": keep-alive\n\n"), 15000);
       res.on("close", () => {
         clearInterval(keep);

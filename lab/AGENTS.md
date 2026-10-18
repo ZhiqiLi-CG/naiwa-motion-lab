@@ -45,7 +45,7 @@ numbers and true/false are typed; dotted keys nest (`regionSoftness.belly=1`, `s
 | `step` | `frames` | advance while paused |
 | `wait` | `ms` | let the simulation run |
 | `metrics` | | fps, step ms, the simulator's metrics (deviation, jitter, penetration, volume, inverted cells, momentum, energy), the retargeter's (fidelity °, jerk, penetration, footSlide) |
-| `probe` | `scene` (poke slap drop rest), `region`, `seconds`, `strength`, `reset=false` to skip the reset | a standard perturbation, sampled at 10 Hz -> `surface_peak_mm`, `surface_settle_s`, `surface_rest_mm`, and with the simulator's metrics `peak_mm`, `settle_s`, `jitter_rest_mm_s`, `penetration_mm`, `inverted_cells`, `volume_err_pct`, `step_ms`. Lower is better except the peaks, which say how much the flesh gives |
+| `probe` | `scene` (poke slap drop rest), `region`, `seconds`, `strength`, `reset=false` to skip the reset | a standard perturbation, sampled at 10 Hz -> `surface_peak_mm`, `surface_settle_s`, `surface_rest_mm`, and with the simulator's metrics `peak_mm`, `jitter_rest_mm_s`, `penetration_mm`, `inverted_cells`, `volume_err_pct`, `step_ms`. Lower is better except the peaks, which say how much the flesh gives |
 | `screenshot` | `width` (default 960) | the 3D view as a PNG -> `{ path }`; look at it (view the image file) |
 | `record` | `seconds` | a recording of the view -> `{ path }` |
 | `block.compare` | `core` (simulator or retargeter), `slot`, `from.id`, `from.path` (the page block, path below src/), `file` (your .ts) or `code` | runs your block and the built-in one on the code lab's comparison scene -> `{ scene, builtin: rows, mine: rows }` (lower is better) |

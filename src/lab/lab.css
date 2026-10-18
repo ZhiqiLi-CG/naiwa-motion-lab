@@ -624,6 +624,10 @@
     display: none;
   }
 
+  .nw-cx-form-row {
+    justify-content: flex-end;
+  }
+
   .nw-cx-input {
     font-size: var(--text-md);
   }

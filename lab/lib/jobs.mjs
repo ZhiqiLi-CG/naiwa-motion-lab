@@ -3,7 +3,7 @@
  * { id, name, summary, run(input, ctx) }; the server lists them, runs one at a time with a fresh work directory, streams
  * its log, progress and Codex events to the page, and hands the result (summary, metrics, artefacts) back.
  */
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { mapCodexEvent } from "./events.mjs";
@@ -53,6 +53,18 @@ export function normaliseResult(result, { repo, workdir }) {
  */
 export function createJobs({ repo, jobsDir = path.join(repo, "lab", "jobs"), codex, emit, effort = null }) {
   const runs = new Map();
+  const runsDir = path.join(repo, ".cache", "lab", "jobs");
+  // the last runs of earlier sessions (their results), so a restarted server still shows them
+  if (existsSync(runsDir)) {
+    for (const d of readdirSync(runsDir).sort().slice(-3)) {
+      try {
+        const r = JSON.parse(readFileSync(path.join(runsDir, d, "run.json"), "utf8"));
+        runs.set(r.id, { ...r, controller: new AbortController() });
+      } catch {
+        // a run that never finished
+      }
+    }
+  }
   let active = null;
 
   async function list() {
@@ -130,6 +142,8 @@ export function createJobs({ repo, jobsDir = path.join(repo, "lab", "jobs"), cod
         send({ type: run.status, error: run.error });
       } finally {
         if (active === run) active = null;
+        const { controller: _, ...saved } = run;
+        writeFileSync(path.join(workdir, "run.json"), JSON.stringify(saved, null, 2));
       }
     })();
     return runId;
@@ -151,5 +165,7 @@ export function createJobs({ repo, jobsDir = path.join(repo, "lab", "jobs"), cod
       return rest;
     },
     active: () => (active ? active.id : null),
+    /** The last runs, newest last (a page that reloads shows them again). */
+    recent: (n = 3) => [...runs.keys()].slice(-n),
   };
 }

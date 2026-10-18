@@ -20,8 +20,9 @@ async function measure() {
   const poke = await naiwa("probe", { scene: "poke", region: "belly" });
   const slap = await naiwa("probe", { scene: "slap", region: "belly" });
   const out = {};
-  for (const [k, v] of Object.entries(poke)) out[`poke.${k}`] = v;
-  for (const [k, v] of Object.entries(slap)) out[`slap.${k}`] = v;
+  // the numbers only (the probe also echoes its scene and region)
+  for (const [k, v] of Object.entries(poke)) if (typeof v === "number") out[`poke.${k}`] = v;
+  for (const [k, v] of Object.entries(slap)) if (typeof v === "number") out[`slap.${k}`] = v;
   return out;
 }
 

@@ -17,7 +17,7 @@ import type { LabFrogSim } from "../sim";
 import { MATERIAL_PRESETS, type Store } from "../store";
 import type { UICommands } from "../ui";
 import { setCodexHooks, type CodexTarget } from "../ui/codex";
-import { availability, availabilityNote, createClient, serverUrl, type Artifact, type JobInfo, type StreamMessage } from "./client";
+import { availability, availabilityNote, createClient, serverUrl, type Artifact, type JobInfo, type JobResult, type StreamMessage } from "./client";
 import { L, newDancePrompt, transferPrompt } from "./copy";
 import { applyChat, applyJob, emptyFeed, type Feed } from "./feed";
 import { createPanel, type Insets } from "./panel";
@@ -313,6 +313,18 @@ export function mountLab(opts: LabOptions): MountedLab {
         const a = availability(msg);
         if (a.state === "ready") codexLine = tr(L.connected(msg.codex.version, msg.codex.how));
         panel.setStatus(codexLine, true);
+        // after a reload: the recent jobs again (their results; the step log is not kept)
+        if (!feed.items.some((x) => x.kind === "job")) {
+          for (const run of msg.runs ?? []) {
+            const r = await client.get<{ job: string; name: Text; status: string; progress: number; result: JobResult | null; error: string | null }>(`/api/runs/${run}`).catch(() => null);
+            if (!r || feed.items.some((x) => x.key === `job:${run}`)) continue;
+            feed = applyJob(feed, run, { type: "start", job: r.job, name: r.name, workdir: "" });
+            feed = applyJob(feed, run, { type: "progress", value: r.progress });
+            if (r.status === "done" && r.result) feed = applyJob(feed, run, { type: "done", result: r.result });
+            else if (r.status === "failed" || r.status === "stopped") feed = applyJob(feed, run, { type: r.status, error: r.error ?? "" });
+          }
+          render();
+        }
         if (conv && feed.items.length === 0 && msg.convs.some((c) => c.id === conv)) {
           const h = await client.get<{ events: Parameters<typeof applyChat>[1][] }>(`/api/chat/${conv}`).catch(() => null);
           if (h) {

@@ -74,7 +74,6 @@ export function summariseProbe(samples: ProbeSample[]): Record<string, number> {
   out.surface_rest_mm = round((tail.reduce((a, s) => a + s.surfaceMean, 0) / tail.length) * 1000, 2);
   const has = <K extends keyof ProbeSample>(k: K) => after.every((s) => typeof s[k] === "number");
   if (has("deviationMax")) out.peak_mm = round(Math.max(...after.map((s) => s.deviationMax!)) * 1000, 1);
-  if (has("deviation")) out.settle_s = round(settleTime(samples, (s) => s.deviation) ?? 0, 2);
   if (has("jitter")) out.jitter_rest_mm_s = round((tail.reduce((a, s) => a + s.jitter!, 0) / tail.length) * 1000, 2);
   if (has("penetration")) out.penetration_mm = round(Math.max(...after.map((s) => s.penetration!)) * 1000, 1);
   if (has("invertedCells")) out.inverted_cells = Math.max(...after.map((s) => s.invertedCells!));
