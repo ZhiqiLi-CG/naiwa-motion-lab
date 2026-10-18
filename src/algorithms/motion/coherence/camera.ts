@@ -135,6 +135,49 @@ export function anchorCuts(frames: Frame[], cuts: number[], aspect: number, K = 
 }
 
 /**
+ * The estimator's cuts that the person confirms: around a real cut the person jumps in the picture (another framing),
+ * changes size or turns at once (another camera angle). Where they go on smoothly the "cut" was the picture changing
+ * for another reason (a dancer filling a plain wall), and re-anchoring there could only add a jump. A cut with nobody
+ * around it is kept.
+ */
+export function confirmedCuts(frames: Frame[], cuts: number[], aspect: number, K = 3): number[] {
+  return cuts.filter((c) => {
+    const before: number[] = [], after: number[] = [];
+    for (let k = c - 1; k >= 0 && before.length < K && c - k <= 10; k--) if (present(frames[k])) before.unshift(k);
+    for (let k = c; k < frames.length && after.length < K && k - c <= 10; k++) if (present(frames[k])) after.push(k);
+    if (before.length < 2 || after.length < 2) return true;
+    const at = (before[before.length - 1] + after[0]) / 2;
+    const side = (ks: number[]) => {
+      const hs = ks.map((k) => hip(frames[k], aspect));
+      let h = heading(frames[ks[0]]);
+      const hd: [number, number][] = ks.map((k) => [k, (h = h + wrap(heading(frames[k]) - h))]);
+      return {
+        x: extrapolate(ks.map((k, i) => [k, hs[i][0]]), at), y: extrapolate(ks.map((k, i) => [k, hs[i][1]]), at),
+        size: median(ks.map((k) => torso(frames[k], aspect))), heading: extrapolate(hd, at),
+      };
+    };
+    const b = side(before), a = side(after);
+    const jump = Math.hypot(a.x - b.x, a.y - b.y) / Math.max(1e-3, b.size);
+    return jump > 0.3 || Math.abs(Math.log(a.size / Math.max(1e-4, b.size))) > 0.15 || Math.abs(wrap(a.heading - b.heading)) > 0.5;
+  });
+}
+
+/** The camera made continuous across cuts that are dropped: the step at such a cut taken as no motion (in place). */
+export function stitchCamera(camera: { shift: [number, number]; scale: number }[], estimatorCuts: number[], dropped: number[]): void {
+  const all = [...estimatorCuts].sort((a, b) => a - b);
+  for (const c of [...dropped].sort((a, b) => a - b)) {
+    if (c <= 0 || c >= camera.length) continue;
+    const end = all.find((x) => x > c) ?? camera.length;
+    const prev = camera[c - 1];
+    // p_k = s_k (p_c − ½) + ½ + t_k and p_c = p_{c−1} = S (p_0 − ½) + ½ + T ⇒ S' = s_k S, T' = s_k T + t_k.
+    for (let k = c; k < end; k++) {
+      const q = camera[k];
+      camera[k] = { shift: [q.scale * prev.shift[0] + q.shift[0], q.scale * prev.shift[1] + q.shift[1]], scale: q.scale * prev.scale };
+    }
+  }
+}
+
+/**
  * Cuts read from the landmarks alone (a track without camera information): the hips jump further in one frame than
  * a person moves (`jump` torso lengths) while moving little just before and after, or the torso's size in the
  * picture changes by more than a third at once.

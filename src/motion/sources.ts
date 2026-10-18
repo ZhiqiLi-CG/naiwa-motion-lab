@@ -360,7 +360,10 @@ export async function startVideo(
   const shotOf: number[] = [];
   if (estimate) samples.forEach((_, i) => shotOf.push((i ? shotOf[i - 1] : 0) + (estimate.cuts.includes(i) ? 1 : 0)));
 
-  // Resample to 30 fps (gaps longer than half a second stay empty), then smooth with past and future frames.
+  // Resample to 30 fps, then smooth with past and future frames. Between two samples with the person (closer than a
+  // quarter second, in the same shot) the landmarks and the camera are interpolated: the detector keeps up with only
+  // 15–22 samples a second, and repeating each one gave the frog stair-step targets (jerky at full speed, and in slow
+  // motion only the steps' slow tail). Elsewhere the nearest sample; a gap longer than a quarter second stays empty.
   const fps = 30;
   const n = Math.max(2, Math.floor(length * fps));
   const frames: PersonFrame[] = [];
@@ -372,11 +375,18 @@ export async function startVideo(
     while (j + 1 < samples.length && samples[j + 1].t <= t) j++;
     const a = samples[j], b = samples[j + 1];
     const near = !b || Math.abs(a.t - t) <= Math.abs(b.t - t) ? a : b;
-    frames.push({ ...(near && Math.abs(near.t - t) < 0.25 ? near.frame : { world: [], image: [] }), aspect });
+    const between = !!b && a.t <= t && t < b.t && b.t - a.t < 0.25 && a.frame.world.length >= 33 && b.frame.world.length >= 33 && (!estimate || shotOf[j] === shotOf[j + 1]);
+    const w = between ? (t - a.t) / (b.t - a.t) : 0;
+    const mix = (p: number[][], q: number[][]) => p.map((x, i) => x.map((v, c) => v + (q[i][c] - v) * w));
+    if (between) frames.push({ world: mix(a.frame.world, b.frame.world), image: mix(a.frame.image, b.frame.image), aspect });
+    else frames.push({ ...(near && Math.abs(near.t - t) < 0.25 ? near.frame : { world: [], image: [] }), aspect });
     if (estimate) {
-      // Frame and camera from the same sample, so they belong together.
+      // Frame and camera from the same samples, so they belong together.
       const i = near === a ? j : j + 1;
-      cameraTrack.push(estimate.camera[i]);
+      if (between) {
+        const ca = estimate.camera[j], cb = estimate.camera[j + 1];
+        cameraTrack.push({ shift: [ca.shift[0] + (cb.shift[0] - ca.shift[0]) * w, ca.shift[1] + (cb.shift[1] - ca.shift[1]) * w], scale: ca.scale + (cb.scale - ca.scale) * w });
+      } else cameraTrack.push(estimate.camera[i]);
       if (k > 0 && shotOf[i] !== shotOf[prevSample]) cuts.push(k);
       prevSample = i;
     }
@@ -409,7 +419,8 @@ export async function startVideo(
     frames: filter.recorded(coherent.track.frames.map((f) => ({ ...f, aspect })), fps).map(({ world, image }): LandmarkFrame => ({ world, image })),
   };
   if (videoAnalysis.keepRaw) videoAnalysis.raw = filter.recorded(frames, fps).map(({ world, image }): LandmarkFrame => ({ world, image }));
-  if (estimate) Object.assign(track, { camera: cameraTrack, cuts, cameraUndone: coherent.track.cameraUndone });
+  // The estimate is kept for reference; the cuts are those the person confirmed.
+  if (estimate) Object.assign(track, { camera: cameraTrack, cuts: coherent.track.cuts, cameraUndone: coherent.track.cameraUndone });
 
   // Play with sound, the frog following video time (seeking and looping stay in sync).
   const retarget = open(recordingOf(track));

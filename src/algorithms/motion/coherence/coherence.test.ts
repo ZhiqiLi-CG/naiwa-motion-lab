@@ -106,6 +106,16 @@ describe("motion coherence under a moving camera", () => {
     expect(errors(r.track.frames, truth.frames, truth.aspect ?? 1).hips).toBeLessThan(0.01);
   });
 
+  it("drops a cut the person does not confirm (a still camera, the picture changing for another reason)", () => {
+    const truth = looped("naenae", 6);
+    const n = truth.frames.length;
+    const still = { ...truth, camera: truth.frames.map(() => ({ shift: [0, 0] as [number, number], scale: 1 })), cuts: [Math.round(n / 2)] };
+    const r = coherence(still, AUTO);
+    expect(r.report.droppedCuts).toEqual([Math.round(n / 2)]);
+    expect(r.report.anchors).toEqual([]);
+    expect(errors(r.track.frames, truth.frames, truth.aspect ?? 1).hips).toBeLessThan(0.01);
+  });
+
   it("finds a cut from the person's jump when the track has no camera information", () => {
     const truth = looped("kemusan", 8);
     const { raw, cut } = film(truth);

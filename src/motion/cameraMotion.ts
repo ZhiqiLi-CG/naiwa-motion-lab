@@ -53,6 +53,8 @@ export interface CameraStep {
   /** Median aligned difference against the median band-passed value (well under 1 aligned, about 1 and more
    *  for unrelated pictures). */
   residual: number;
+  /** Median band-passed value of the background (gray levels): its texture. */
+  texture: number;
 }
 
 export interface CameraOptions {
@@ -68,13 +70,16 @@ export interface CameraOptions {
   /** Aligned residual that is a cut, and the largest one a trusted fit may have. */
   cutResidual: number;
   maxResidual: number;
+  /** Background texture (median band-passed value, gray levels) under which there is nothing to align: a plain wall.
+   *  The residual then measures noise, so it says nothing about a cut, and the fit is not trusted. */
+  minTexture: number;
   /** Largest uncertainty of the shift (px of the finest level, σ_residual / √information along the weakest
    *  direction) for that direction to be trusted. */
   maxUncertainty: number;
 }
 
 export const CAMERA_DEFAULTS: CameraOptions = {
-  search: 4, minBackground: 0.06, minAgreement: 0.45, cutHistogram: 0.45, cutHistogramWeak: 0.2, cutResidual: 0.9, maxResidual: 0.7, maxUncertainty: 0.05,
+  search: 4, minBackground: 0.06, minAgreement: 0.45, cutHistogram: 0.45, cutHistogramWeak: 0.2, cutResidual: 0.9, maxResidual: 0.7, minTexture: 1.5, maxUncertainty: 0.05,
 };
 
 /** The long side of the pictures to feed (px). */
@@ -235,8 +240,9 @@ interface Refined {
   /** Background pixels used, and those agreeing (Tukey weight over ½). */
   used: number;
   agree: number;
-  /** Median |residual| over median |band-passed value|. */
+  /** Median |residual| over median |band-passed value|, and that median value. */
   residual: number;
+  texture: number;
   /** The shift's uncertainty along its weakest direction (px), and that direction (unit). */
   weak: number;
   weakDir: [number, number];
@@ -257,7 +263,7 @@ function refine(P: Level, C: Level, bg: Uint8Array, m: Model, iterations: number
   const cap = Math.ceil(w / step) * Math.ceil(h / step);
   const R = new Float32Array(cap), J0 = new Float32Array(cap), J1 = new Float32Array(cap), J2 = new Float32Array(cap), V = new Float32Array(cap);
   let model = { ...m };
-  let out: Refined = { model, used: 0, agree: 0, residual: Infinity, weak: 0, weakDir: [1, 0] };
+  let out: Refined = { model, used: 0, agree: 0, residual: Infinity, texture: 0, weak: 0, weakDir: [1, 0] };
   for (let it = 0; it < iterations; it++) {
     let n = 0;
     for (let y = 2; y < h - 2; y += step)
@@ -303,7 +309,7 @@ function refine(P: Level, C: Level, bg: Uint8Array, m: Model, iterations: number
     const lam = 1e-6 * (h00 / Math.max(1, cx * cx) + h11 + h22) + 1e-6;
     const d = solve3([[h00 + lam * cx * cx, h01, h02], [h01, h11 + lam, h12], [h02, h12, h22 + lam]], [g0, g1, g2]);
     model = { a: Math.max(-0.2, Math.min(0.2, model.a - d[0])), tx: model.tx - d[1], ty: model.ty - d[2] };
-    out = { model, used: n, agree, residual: med / Math.max(1e-6, val[val.length >> 1]), weak: sigma / Math.sqrt(Math.max(1e-9, lmin)), weakDir: wd };
+    out = { model, used: n, agree, residual: med / Math.max(1e-6, val[val.length >> 1]), texture: val[val.length >> 1], weak: sigma / Math.sqrt(Math.max(1e-9, lmin)), weakDir: wd };
     if (Math.abs(d[1]) + Math.abs(d[2]) < 0.01 && Math.abs(d[0]) < 1e-4) break;
   }
   return out;
@@ -335,8 +341,8 @@ export class CameraEstimator {
     const cur = picture(gray, w, h, masks);
     const prev = this.prev;
     this.prev = cur;
-    const still = (cut: boolean, histogram: number, used = 0, agree = 0, residual = 0): CameraStep =>
-      ({ dx: 0, dy: 0, scale: 1, cut, ok: false, blocks: used, inliers: agree, histogram, residual });
+    const still = (cut: boolean, histogram: number, used = 0, agree = 0, residual = 0, texture = 0): CameraStep =>
+      ({ dx: 0, dy: 0, scale: 1, cut, ok: false, blocks: used, inliers: agree, histogram, residual, texture });
     if (!prev || prev.levels[0].w !== w || prev.levels[0].h !== h) {
       this.velocity = { a: 0, tx: 0, ty: 0 };
       return { ...still(false, 0), ok: true };
@@ -362,19 +368,23 @@ export class CameraEstimator {
     }
     const r = fine!;
     const total = Math.ceil((w - 4) / 2) * Math.ceil((h - 4) / 2);
-    const enough = r.used >= this.o.minBackground * total;
+    const enough = r.used >= this.o.minBackground * total && r.texture >= this.o.minTexture;
     const agreement = r.used ? r.agree / r.used : 0;
     const trusted = enough && agreement >= this.o.minAgreement && r.residual <= this.o.maxResidual;
-    if ((enough && r.residual > this.o.cutResidual) || (histogram > this.o.cutHistogramWeak && !trusted)) {
+    // Without texture (a plain wall) only a large change of the brightness histogram says cut.
+    const textured = r.texture >= this.o.minTexture;
+    // The residual only speaks for a cut over a good part of the picture (beside a dancer, their arms and clothes leak in).
+    const wide = r.used >= 0.15 * total;
+    if ((enough && wide && r.residual > this.o.cutResidual) || (textured && histogram > this.o.cutHistogramWeak && !trusted)) {
       this.velocity = { a: 0, tx: 0, ty: 0 };
-      return still(true, histogram, r.used, r.agree, r.residual);
+      return still(true, histogram, r.used, r.agree, r.residual, r.texture);
     }
     if (!trusted) {
       // Too little background (a dancer filling the picture): cameras move smoothly, so carry on the last trusted
       // motion for a few frames, fading, then stand still.
       const k = ++this.coast <= 6 ? 0.75 : 0;
       const p = (this.velocity = { a: this.velocity.a * k, tx: this.velocity.tx * k, ty: this.velocity.ty * k });
-      return { ...still(false, histogram, r.used, r.agree, r.residual), dx: p.tx / w, dy: p.ty / h, scale: 1 + p.a };
+      return { ...still(false, histogram, r.used, r.agree, r.residual, r.texture), dx: p.tx / w, dy: p.ty / h, scale: 1 + p.a };
     }
     this.coast = 0;
     // Along a direction without texture the camera is taken as still.
@@ -384,7 +394,7 @@ export class CameraEstimator {
     }
     this.velocity = model;
     // x' = (1 + a)·x + t about the centre ⇒ p' − ½ = (1 + a)(p − ½) + t / size.
-    return { dx: model.tx / w, dy: model.ty / h, scale: 1 + model.a, cut: false, ok: true, blocks: r.used, inliers: r.agree, histogram, residual: r.residual };
+    return { dx: model.tx / w, dy: model.ty / h, scale: 1 + model.a, cut: false, ok: true, blocks: r.used, inliers: r.agree, histogram, residual: r.residual, texture: r.texture };
   }
 }
 

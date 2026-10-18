@@ -131,7 +131,7 @@ async function analyse(file: File | string, withCamera: boolean): Promise<Track>
   console.info = info;
   const t = s.track()! as Track;
   s.dispose();
-  if (withCamera && typeof file !== "string") results.steps = videoAnalysis.steps?.map((x) => [x.ok ? 1 : 0, +x.dx.toFixed(4), +x.dy.toFixed(4), +x.scale.toFixed(4), +x.residual.toFixed(2), x.inliers, x.blocks, +x.histogram.toFixed(2), x.cut ? 1 : 0]);
+  if (withCamera) results.steps = videoAnalysis.steps?.map((x) => [x.ok ? 1 : 0, +x.dx.toFixed(4), +x.dy.toFixed(4), +x.scale.toFixed(4), +x.residual.toFixed(2), +x.texture.toFixed(1), x.blocks, +x.histogram.toFixed(2), x.cut ? 1 : 0]);
   results[`log ${typeof file === "string" ? "original" : withCamera ? "filmed+camera" : "filmed"}`] = logs;
   return t;
 }

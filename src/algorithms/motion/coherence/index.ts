@@ -21,7 +21,7 @@ import type { PersonFrame, Settings } from "../../../motion/api";
 import type { Track } from "../../../motion/track";
 import { kalmanFilter } from "../kalmanFilter";
 import { savitzkyGolay } from "../savitzkyGolay";
-import { anchorCuts, compensateCamera, landmarkCuts, markOffPicture } from "./camera";
+import { anchorCuts, compensateCamera, confirmedCuts, landmarkCuts, markOffPicture, stitchCamera } from "./camera";
 import { detectContacts, pinFeet, SIDES, type Side } from "./contacts";
 import { aspectOf, copyFrames, hip, present, type Frame } from "./frames";
 import { seamlessLoop } from "./loop";
@@ -95,8 +95,10 @@ export interface CoherenceReport {
   shots: number;
   movingShots: number;
   cuts: number[];
-  /** Cuts found from the person's jumps (not in the camera estimate). */
+  /** Cuts found from the person's jumps (not in the camera estimate), and the estimate's cuts the person did not
+   *  confirm (dropped). */
   foundCuts: number[];
+  droppedCuts: number[];
   anchors: { cut: number; shift: [number, number]; scale: number; turn: number }[];
   offPicture: number;
   flips: number;
@@ -148,9 +150,19 @@ export function coherence(track: Track, params: Partial<CoherenceParams> = {}): 
   const segs = p.segments.filter((s) => s.to > s.from);
 
   const offPicture = p.offPicture ? markOffPicture(frames) : 0;
-  let cuts = [...(track.cuts ?? []), ...segs.filter((s) => s.fix === "cut").map((s) => s.from)].filter((c) => c > 0 && c < n);
+  // The estimator's cuts, kept where the person confirms them; the camera stitched across the others.
+  const estimated = (track.cuts ?? []).filter((c) => c > 0 && c < n);
+  const kept = track.cameraUndone ? estimated : confirmedCuts(frames, estimated, aspect);
+  const dropped = estimated.filter((c) => !kept.includes(c));
+  let camTrack = track;
+  if (dropped.length && track.camera?.length === n) {
+    const camera = track.camera.map((c) => ({ shift: [c.shift[0], c.shift[1]] as [number, number], scale: c.scale }));
+    stitchCamera(camera, estimated, dropped);
+    camTrack = { ...track, camera };
+  }
+  let cuts = [...kept, ...segs.filter((s) => s.fix === "cut").map((s) => s.from)].filter((c) => c > 0 && c < n);
   cuts = [...new Set(cuts)].sort((a, b) => a - b);
-  const { moving } = p.camera && !track.cameraUndone ? compensateCamera(frames, track, cuts, p.minCameraMotion, p.panFov) : { moving: [] as boolean[] };
+  const { moving } = p.camera && !track.cameraUndone ? compensateCamera(frames, camTrack, cuts, p.minCameraMotion, p.panFov) : { moving: [] as boolean[] };
   let foundCuts: number[] = [];
   if (p.detectCuts && !track.camera) {
     // A cut within two frames of a known one is the same cut.
@@ -183,7 +195,7 @@ export function coherence(track: Track, params: Partial<CoherenceParams> = {}): 
     track: out,
     reference,
     report: {
-      shots: cuts.length + 1, movingShots: moving.filter(Boolean).length, cuts, foundCuts, anchors, offPicture, flips, outliers,
+      shots: cuts.length + 1, movingShots: moving.filter(Boolean).length, cuts, foundCuts, droppedCuts: dropped, anchors, offPicture, flips, outliers,
       contacts: { L: contacts.L.filter(Boolean).length / seen, R: contacts.R.filter(Boolean).length / seen },
       pinned, looped, ms: performance.now() - t0,
     },
