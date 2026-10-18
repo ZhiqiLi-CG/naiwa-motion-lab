@@ -14,9 +14,9 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import { compile, scanImports, type SourceLang, type SourceProblem } from "./compile";
 
-/** The page's modules by path below src/ ("sim/api.ts"), loaded on demand. */
-const MODULES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../algorithms/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts"]);
-const SOURCES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../algorithms/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts"], {
+/** The page's modules by path below src/ ("sim/api.ts"), loaded on demand (test helpers and dev pages left out). */
+const MODULES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../algorithms/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts", "!**/test*.ts", "!**/devPage.ts", "!../algorithms/motion/rigs.ts", "!../algorithms/**/bench.ts"]);
+const SOURCES = import.meta.glob(["../sim/**/*.ts", "../motion/**/*.ts", "../algorithms/**/*.ts", "../contracts.ts", "../i18n.ts", "!**/*.test.ts", "!**/test*.ts", "!**/devPage.ts", "!../algorithms/motion/rigs.ts", "!../algorithms/**/bench.ts"], {
   query: "?raw",
   import: "default",
 }) as Record<string, () => Promise<string>>;

@@ -21,7 +21,7 @@ export interface BlockSource {
 }
 
 /** The directories whose files define blocks of each core. */
-const ROOTS: Record<CoreKind, string[]> = { simulator: ["sim/"], retargeter: ["motion/", "algorithms/motion/"] };
+const ROOTS: Record<CoreKind, string[]> = { simulator: ["sim/", "algorithms/sim/"], retargeter: ["motion/", "algorithms/motion/"] };
 
 const DEFINITION = /BlockDefinition<"(\w+)">\s*=\s*\{[\s\S]*?\bid:\s*"([^"]+)"/g;
 
@@ -43,13 +43,11 @@ let scanned: Promise<BlockSource[]> | null = null;
 /** Every block definition in the page's sources (read once). */
 export function blockSources(): Promise<BlockSource[]> {
   return (scanned ??= Promise.all(
-    pageFiles()
-      .filter((path) => /\/(blocks|examples)\/|^algorithms\//.test(path))
-      .map(async (path) => {
-        const kind = (Object.keys(ROOTS) as CoreKind[]).find((k) => ROOTS[k].some((r) => path.startsWith(r)));
-        if (!kind) return [];
-        return definitionsIn(await pageSource(path)).map((d) => ({ kind, path, ...d }));
-      }),
+    pageFiles().map(async (path) => {
+      const kind = (Object.keys(ROOTS) as CoreKind[]).find((k) => ROOTS[k].some((r) => path.startsWith(r)));
+      if (!kind) return [];
+      return definitionsIn(await pageSource(path)).map((d) => ({ kind, path, ...d }));
+    }),
   ).then((all) => all.flat()));
 }
 
