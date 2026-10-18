@@ -30,6 +30,10 @@ function spring(p: PhysicsParams) {
 function material(p: PhysicsParams): RAPIER.SoftBodyMaterial {
   const { f, z } = spring(p);
   const m = new RAPIER.SoftBodyMaterial();
+  // The elastic cell models: 20 kPa (firm jelly) down to 2 kPa, nearly incompressible like flesh.
+  m.youngModulus = 20000 * Math.pow(0.1, clamp01(p.softness));
+  m.poissonRatio = 0.4;
+  m.elasticDampingRatio = z;
   m.edgeSoftness = { naturalFrequency: f, dampingRatio: z };
   m.bendSoftness = { naturalFrequency: f, dampingRatio: z };
   m.volumeSoftness = { naturalFrequency: f * 2, dampingRatio: z };

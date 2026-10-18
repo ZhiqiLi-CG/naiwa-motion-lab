@@ -1,40 +1,70 @@
 /**
- * Coupling block: the bones are the flesh's boundary condition. The deep flesh (and the flesh hugging a bone, since
- * thin limbs have little that is deep) rides on its nearest bone through Rapier attachments, which act both ways: the
- * flesh's weight and inertia pull on the bone. The flesh over that core is free, thickest where the region is softest,
- * and the flesh next to a joint stays free so it can fold there.
+ * Coupling block: the bones are the flesh's boundary condition. The flesh close to a bone rides on it through Rapier
+ * attachments, which act both ways (the flesh's weight and inertia pull on the bone); the flesh further out is free
+ * and held by the elastic cells alone.
+ *
+ * "Close" is measured against how thick the flesh is around that bone, per bone: the skull fills most of the head and
+ * the ribs most of the chest, so little there is free and the head keeps its shape when the torso bends; the belly
+ * has no bones in front, so much of it is free. The flesh solver's particles may be the nodes of a coarse lattice
+ * that covers the surface (many lie outside it): a node stands for the flesh within half a lattice step of it, so it
+ * rides on the bone when that flesh reaches into the carried core.
  */
 import * as THREE from "three";
-import type { BlockDefinition, CouplingBlock, Scene, Settings, SimPart } from "../api";
-import { TriMesh } from "../geometry";
+import type { CoreBone } from "../../contracts";
+import type { BlockDefinition, CouplingBlock, Scene, Settings, SimBone, SimPart } from "../api";
 import { nearestBone, particleAttributes } from "../parts";
 
-/** Free flesh over the attached core (m): at softness 0, and its growth up to softness 1. */
-const FREE_DEPTH = { body: [0.05, 0.07], limb: [0.012, 0.02] } as const;
+/** The part of the flesh's thickness around a bone that rides on it, for the firmest flesh (softness 0). */
+const CARRIED: Record<string, number> = {
+  head: 0.8, chest: 0.7, spine: 0.5, hips: 0.55,
+  upperarm: 0.75, forearm: 0.75, hand: 0.9, thigh: 0.75, shin: 0.8, foot: 0.9,
+};
+/** The softest flesh (the belly) keeps this much less on the bone. */
+const SOFT_LOOSENS = 0.35;
+
+const carriedOf = (bone: CoreBone) => CARRIED[bone.replace(/_[LR]$/, "")] ?? 0.6;
+
+/** How thick the flesh is around each bone of a part: the median distance of its surface vertices to the bone. */
+function thickness(part: SimPart): Map<SimBone, number> {
+  const d = new Map<SimBone, number[]>(part.bones.map((b) => [b, []]));
+  const p = new THREE.Vector3();
+  for (let v = 0; v < part.positions.length; v += 3) {
+    const { bone, distance } = nearestBone(part, p.fromArray(part.positions, v));
+    d.get(bone)!.push(distance);
+  }
+  return new Map([...d].map(([b, list]) => [b, list.sort((x, y) => x - y)[list.length >> 1] ?? 0]));
+}
+
+/** Typical distance between neighbouring particles (the median nearest-neighbour distance). */
+function spacing(P: Float32Array): number {
+  const n = P.length / 3, nearest: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let best = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (j !== i) best = Math.min(best, (P[i * 3] - P[j * 3]) ** 2 + (P[i * 3 + 1] - P[j * 3 + 1]) ** 2 + (P[i * 3 + 2] - P[j * 3 + 2]) ** 2);
+    }
+    nearest.push(Math.sqrt(best));
+  }
+  return nearest.sort((a, b) => a - b)[n >> 1] ?? 0;
+}
 
 class BoneAttach implements CouplingBlock {
   /** Free particles of each part. */
   private free = new Map<SimPart, number[]>();
 
   constructor(private scene: Scene, settings: Readonly<Settings>) {
-    const scale = Number(settings.freeDepth);
+    const scale = Number(settings.carried);
     const p = new THREE.Vector3();
     for (const part of scene.parts) {
       const view = scene.flesh.particles(part);
-      const surface = new TriMesh(part.positions, part.indices);
-      // The lattice spacing, from the part's volume and particle count (as the flesh block sizes its cells).
-      const spacing = Math.cbrt((4.7 * surface.volume()) / view.count);
-      const [depth, depthSoft] = part.limb ? FREE_DEPTH.limb : FREE_DEPTH.body;
-      const joints = part.bones.filter((b) => b.parent && part.bones.includes(b.parent)).map((b) => b.restPos);
+      const thick = thickness(part);
+      const half = 0.5 * spacing(view.rest);
       const { softness } = particleAttributes(part, view.rest);
       const free: number[] = [];
       for (let i = 0; i < view.count; i++) {
-        p.fromArray(view.rest, i * 3);
-        const { bone, distance } = nearestBone(part, p);
-        const inside = -surface.signedDistance(p.x, p.y, p.z);
-        const nearJoint = joints.some((j) => j.distanceTo(p) < 0.35 * spacing);
-        const deep = inside > scale * (depth + depthSoft * softness[i]) || distance < 0.45 * spacing;
-        if (deep && !nearJoint) view.attach(i, bone.body);
+        const { bone, distance } = nearestBone(part, p.fromArray(view.rest, i * 3));
+        const reach = scale * carriedOf(bone.name) * (1 - SOFT_LOOSENS * softness[i]) * (thick.get(bone) ?? 0) + half;
+        if (distance < reach) view.attach(i, bone.body);
         else free.push(i);
       }
       this.free.set(part, free);
@@ -57,15 +87,18 @@ export const boneAttach: BlockDefinition<"coupling"> = {
   slot: "coupling",
   name: { zh: "骨骼附着", en: "Bone attachments" },
   summary: {
-    zh: "深层的肉挂在最近的骨头上（双向：肉的重量和惯性也拉骨头），表层的肉自由，关节附近不挂好让它能折。",
-    en: "Deep flesh rides on its nearest bone (two-way: its weight and inertia pull on the bone); the flesh over it is free, and so is the flesh at the joints so it can fold.",
+    zh: "靠近骨头的肉挂在骨头上（双向：肉的重量和惯性也拉骨头），外层的肉自由；头和胸挂得多（颅骨、肋骨），肚子挂得少。",
+    en: "The flesh near a bone rides on it (two-way: its weight and inertia pull on the bone), the flesh further out is free; head and chest carry much (skull, ribs), the belly little.",
   },
   device: "cpu",
   parameters: [
     {
-      key: "freeDepth", kind: "number", default: 1, min: 0.4, max: 2, step: 0.1, rebuild: true,
-      label: { zh: "自由肉厚度", en: "Free flesh depth" },
-      help: { zh: "相对默认厚度的倍数：越大，挂在骨头上的越少，越软。", en: "Times the default: more free flesh, fewer particles on the bones, softer." },
+      key: "carried", kind: "number", default: 1, min: 0.3, max: 1.5, step: 0.1, rebuild: true,
+      label: { zh: "挂骨比例", en: "Flesh on the bones" },
+      help: {
+        zh: "相对默认的倍数：越小，挂在骨头上的肉越少，越软。",
+        en: "Times the default: smaller leaves more flesh free, softer.",
+      },
     },
   ],
   create: (scene, settings) => new BoneAttach(scene, settings),

@@ -25,16 +25,16 @@ interface Joint {
   twist: number;
 }
 const JOINTS: Record<string, Joint> = {
-  hips: { mass: 2, hold: 0, drive: 0, swing: 0, twist: 0 },
-  spine: { mass: 1.5, hold: 3000, drive: 0, swing: 40, twist: 30 },
-  chest: { mass: 1.5, hold: 3000, drive: 0, swing: 40, twist: 30 },
-  head: { mass: 1, hold: 1500, drive: 0, swing: 60, twist: 70 },
-  upperarm: { mass: 0.4, hold: 120, drive: 120, swing: 100, twist: 70 },
-  forearm: { mass: 0.3, hold: 80, drive: 80, swing: 140, twist: 60 },
-  hand: { mass: 0.15, hold: 30, drive: 30, swing: 80, twist: 40 },
-  thigh: { mass: 0.8, hold: 5000, drive: 1500, swing: 100, twist: 40 },
-  shin: { mass: 0.5, hold: 5000, drive: 1500, swing: 140, twist: 20 },
-  foot: { mass: 0.4, hold: 3000, drive: 800, swing: 60, twist: 20 },
+  hips: { mass: 3, hold: 0, drive: 0, swing: 0, twist: 0 },
+  spine: { mass: 3, hold: 3000, drive: 0, swing: 40, twist: 30 },
+  chest: { mass: 3, hold: 3000, drive: 0, swing: 40, twist: 30 },
+  head: { mass: 2, hold: 1500, drive: 0, swing: 60, twist: 70 },
+  upperarm: { mass: 0.6, hold: 120, drive: 120, swing: 100, twist: 70 },
+  forearm: { mass: 0.4, hold: 80, drive: 80, swing: 140, twist: 60 },
+  hand: { mass: 0.2, hold: 30, drive: 30, swing: 80, twist: 40 },
+  thigh: { mass: 1.5, hold: 5000, drive: 1500, swing: 100, twist: 40 },
+  shin: { mass: 1, hold: 5000, drive: 1500, swing: 140, twist: 20 },
+  foot: { mass: 1, hold: 3000, drive: 800, swing: 60, twist: 20 },
 };
 const jointOf = (name: CoreBone) => JOINTS[name.replace(/_[LR]$/, "")];
 
@@ -116,10 +116,16 @@ export class Skeleton {
       if (!rb) throw new Error(`sim: rig has no bone ${name}`);
       const restPos = new THREE.Vector3(), restRot = new THREE.Quaternion(), scale = new THREE.Vector3();
       rb.restWorld.decompose(restPos, restRot, scale);
+      const length = restPos.distanceTo(rb.tail), radius = limbFlesh.get(name)?.radius ?? rb.radius;
+      const { mass } = jointOf(name);
+      // The bone carries the mass of what is firm around it (bone, muscle), spread over the flesh's thickness: a solid
+      // cylinder along the bone. Its colliders add none.
+      const across = (mass * (3 * radius * radius + length * length)) / 12;
       const rigid = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(restPos.x, restPos.y, restPos.z)
           .setRotation(q4(restRot))
+          .setAdditionalMassProperties(mass, { x: 0, y: length / 2, z: 0 }, { x: across, y: (mass * radius * radius) / 2, z: across }, { x: 0, y: 0, z: 0, w: 1 })
           .setAngularDamping(0.5)
           .setLinearDamping(0.05),
       );
@@ -159,7 +165,6 @@ export class Skeleton {
    *  shrunk a little, a flat sole to stand on. A limb bone also gets a contact capsule as thick as its flesh over the
    *  flesh's length, trimmed to where it is clear of the Body at rest, which presses into the Body's flesh. */
   private addColliders(bone: Bone, rb: RigBone, body: TriMesh, flesh: BoneFlesh | undefined) {
-    const { mass } = jointOf(bone.name);
     const head = bone.restPos, tail = rb.tail;
     if (bone.torso) {
       let depth = Infinity;
@@ -167,11 +172,11 @@ export class Skeleton {
         const p = head.clone().lerp(tail, s / 8);
         depth = Math.min(depth, -body.signedDistance(p.x, p.y, p.z));
       }
-      this.capsule(bone, head, tail, Math.max(0.02, Math.min(rb.radius, depth * 0.5)), "core", mass);
+      this.capsule(bone, head, tail, Math.max(0.02, Math.min(rb.radius, depth * 0.5)), "core");
       return;
     }
-    if (flesh && /foot/.test(bone.name)) this.sole(bone, flesh.points, mass);
-    else this.capsule(bone, head, tail, flesh ? 0.45 * flesh.radius : rb.radius, "core", mass);
+    if (flesh && /foot/.test(bone.name)) this.sole(bone, flesh.points);
+    else this.capsule(bone, head, tail, flesh ? 0.45 * flesh.radius : rb.radius, "core");
 
     // The contact capsule spans the flesh along the bone (a hand's reaches the finger tips).
     const r = 0.9 * (flesh?.radius ?? rb.radius);
@@ -195,10 +200,10 @@ export class Skeleton {
       if (body.signedDistance(p.x, p.y, p.z) > r + 0.01) start = s;
       else break;
     }
-    if (start >= 0 && start < 16) this.capsule(bone, at(t0 + ((t1 - t0) * start) / 16), at(t1), r, "contact", 0);
+    if (start >= 0 && start < 16) this.capsule(bone, at(t0 + ((t1 - t0) * start) / 16), at(t1), r, "contact");
   }
 
-  private capsule(bone: Bone, a: THREE.Vector3, b: THREE.Vector3, radius: number, role: "core" | "contact", mass: number) {
+  private capsule(bone: Bone, a: THREE.Vector3, b: THREE.Vector3, radius: number, role: "core" | "contact") {
     const la = a.clone().applyMatrix4(bone.restInverse), lb = b.clone().applyMatrix4(bone.restInverse);
     const len = la.distanceTo(lb);
     const dir = len > 1e-6 ? lb.clone().sub(la).normalize() : new THREE.Vector3(0, 1, 0);
@@ -208,7 +213,7 @@ export class Skeleton {
       RAPIER.ColliderDesc.capsule(len / 2, radius)
         .setTranslation(mid.x, mid.y, mid.z)
         .setRotation(q4(rot))
-        .setMass(mass)
+        .setDensity(0)
         .setFriction(0.9)
         .setCollisionGroups(role === "core" ? this.groups.core : this.groups.contact),
       bone.body,
@@ -217,7 +222,7 @@ export class Skeleton {
     bone.shapes.push({ kind: "capsule", role, a: la, b: lb, radius });
   }
 
-  private sole(bone: Bone, points: Float32Array, mass: number) {
+  private sole(bone: Bone, points: Float32Array) {
     const c = new THREE.Vector3();
     for (let i = 0; i < points.length; i += 3) c.add(new THREE.Vector3(points[i], points[i + 1], points[i + 2]));
     c.multiplyScalar(3 / points.length);
@@ -231,7 +236,7 @@ export class Skeleton {
     }
     const desc = RAPIER.ColliderDesc.convexHull(local);
     if (!desc) throw new Error(`sim: no sole for ${bone.name}`);
-    const col = this.world.createCollider(desc.setMass(mass).setFriction(0.9).setCollisionGroups(this.groups.core), bone.body);
+    const col = this.world.createCollider(desc.setDensity(0).setFriction(0.9).setCollisionGroups(this.groups.core), bone.body);
     this.byCollider.set(col.handle, bone);
     bone.shapes.push({ kind: "hull", role: "core", points: local });
   }
@@ -263,9 +268,11 @@ export class Skeleton {
     for (const axis of ANG_AXES) this.raw.jointConfigureMotorPosition(bone.joint.handle, axis as number, 0, k, 0.2 * Math.sqrt(k));
   }
 
-  /** Free mode: every joint holds the rest pose at `tone` (0..1) of its strength, and the hips are pulled upright with
-   *  `upright` N·m/rad once they lean. */
-  balance(tone: number, upright: number) {
+  /** Free mode: every joint holds the rest pose at `tone` (0..1) of its strength, and the hips are held upright with
+   *  `k` N·m/rad against the tilt and `c` N·m·s/rad against its speed (the floor's answer to a standing animal's
+   *  balance; the turn about the vertical stays free). A joint motor, so the solver applies it implicitly: stable
+   *  however light the hips are against that stiffness. */
+  balance(tone: number, k: number, c: number) {
     for (const b of this.bones.values()) this.setMotors(b, jointOf(b.name).hold * tone);
     const hips = this.bone("hips");
     const t = hips.body.translation(), r = hips.body.rotation();
@@ -275,13 +282,10 @@ export class Skeleton {
     const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(fwd.x, fwd.z));
     this.upright.setNextKinematicTranslation(t);
     this.upright.setNextKinematicRotation(q4(yaw));
-    // Standing on its feet it balances by itself; the pull only engages once it leans (else it fights the legs).
-    const tilt = new THREE.Vector3(0, 1, 0).applyQuaternion(q).angleTo(new THREE.Vector3(0, 1, 0));
-    const k = upright * THREE.MathUtils.smoothstep(tilt, 0.1, 0.3);
-    if (Math.abs(k - this.uprightStiffness) < 0.5) return;
+    if (Math.abs(k - this.uprightStiffness) < 1e-3 * (k + 1)) return;
     this.uprightStiffness = k;
     for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngZ]) {
-      this.raw.jointConfigureMotorPosition(this.uprightJoint.handle, axis as number, 0, k, 0.1 * k);
+      this.raw.jointConfigureMotorPosition(this.uprightJoint.handle, axis as number, 0, k, c);
     }
   }
 
@@ -413,6 +417,28 @@ export function limbFlesh(spec: RigSpec): Map<CoreBone, BoneFlesh> {
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** The balance's stiffness at full stubbornness, in units of gravity's toppling stiffness m·g·h. */
+const BALANCE = 4;
+
+/** What the balance works against: gravity's toppling stiffness m·g·h (h: rest centre of mass over the floor) and the
+ *  frog's moment of inertia about its feet, m·h², bones and flesh together. */
+function standing(scene: Scene): { mgh: number; inertia: number } {
+  let m = 0, my = 0;
+  for (const b of scene.skeleton.bones.values()) {
+    m += b.body.mass();
+    my += b.body.mass() * b.restPos.y;
+  }
+  for (const part of scene.parts) {
+    const view = scene.flesh.particles(part);
+    for (let i = 0; i < view.count; i++) {
+      m += view.mass(i);
+      my += view.mass(i) * view.rest[i * 3 + 1];
+    }
+  }
+  const h = my / Math.max(m, 1e-6);
+  return { mgh: m * 9.81 * scene.params.gravity * h, inertia: m * h * h };
+}
+
 /** Seconds to blend from where the bones are into driven mode. */
 const DRIVE_BLEND = 0.35;
 
@@ -427,6 +453,7 @@ class RigidSkeleton implements SkeletonBlock {
   private sinceKnock = 10;
   private rootFromHips: THREE.Matrix4;
   private rootTarget: THREE.Matrix4 | null = null;
+  private standing: { mgh: number; inertia: number } | null = null;
 
   constructor(scene: Scene) {
     const spec = scene.spec;
@@ -486,7 +513,10 @@ class RigidSkeleton implements SkeletonBlock {
       // Stubbornness sets the tone; right after a knock the frog goes floppy and gathers itself again.
       const s = clamp01(this.params.stubbornness);
       const recover = clamp01((this.sinceKnock - 0.4) / 1.2);
-      this.skeleton.balance(lerp(0.04, 1, s) * lerp(0.15, 1, recover), 150 * s * lerp(0.3, 1, recover));
+      // Balance stiffness in units of what gravity does to the leaning frog (m·g·h per radian): above 1 it stands.
+      const { mgh, inertia } = (this.standing ??= standing(scene));
+      const k = BALANCE * s * lerp(0.3, 1, recover) * mgh;
+      this.skeleton.balance(lerp(0.04, 1, s) * lerp(0.15, 1, recover), k, 2 * Math.sqrt(k * inertia));
     }
     this.sinceKnock += scene.dt;
   }
