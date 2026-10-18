@@ -2,55 +2,58 @@
 
 ## 直觉
 默认的 retarget 把人的朝向直接拷贝到奶蛙的根节点。舞者原地扭身（狗熊哆嗦毛左右转 ±0.68 rad）时，奶蛙踩在地上的脚就跟着在地上“拧”，
-滑动速度约 1.2 m/s。脚踩实先判断哪只脚踩在地上，把它钉在落地的位置，再摆放整体位置让脚留在那里；脚做不到的转动交给上半身扭转。
+脚跟、脚尖约以 1.1 m/s 滑动。脚踩实先判断哪只脚踩在地上，把它钉在落地的位置，再做两件事让它留在那里：保持朝向、摆放整体位置；整体做不到的
+交给腿（一个小的两骨 IK）。脚做不到的转动交给上半身扭转。
 
 ## 核心公式
-一只脚离较低那只脚不到 `contactHeight`、且没有在跳，就算着地。根节点绕 +Y 转 ψ、在地面上平移 o 时，脚（奶蛙坐标 p）在
-$R(\psi)\,p + o$。
+脚离地面不到 `contactHeight` 就算着地（小跳也算：加上奶蛙离地的高度），要再高 1 cm 才松开（滞回）。根节点绕 +Y 转 ψ、在地面上平移 o 时，
+脚（奶蛙坐标 p）在 $R(\psi)\,p + o$。着地的脚跟着根节点转，转根节点会让脚尖绕脚跟扫过：所以只要有脚着地，ψ 就不动，目标的转动交给上半身，
+$\tau = \mathrm{clamp}(\psi_{goal} - \psi, \pm\tau_{max})$。
 
-- 双脚着地，锚点 $A_L, A_R$：朝向由两脚连线决定，$\psi = \angle(A_R - A_L) - \angle(p_R - p_L)$；平移取最小二乘
-  $o = \tfrac12 \sum_s (A_s - R(\psi)p_s)$。
-- 单脚着地：$o = A_s - R(\psi)p_s$ 精确成立，于是任何转动都是绕这只脚转。
-- 目标朝向剩下的部分由上半身承担：扭转 $\tau = \mathrm{clamp}(\psi_{goal} - \psi, \pm\tau_{max})$，作用在脊柱及以上，绕脊柱关节。
+- 根节点平移：对着地的脚（锚点 $A_s$）取 $o = \sum_s w_s (A_s - R(\psi)p_s) / \sum_s w_s$，越贴地的脚权重越大。
+- 腿部 IK：每只着地的脚踝用余弦定理两骨 IK（在腿自己的弯曲平面里）拉回锚点上方（高度不变），最多 8 cm，并且只到腿离身体表面不超过 1 cm
+  为止（对修正比例二分，`constraints.check`）。
+- 抬脚后修正在 0.12 s 内淡出而不是突变；贴近地面（本帧或上一帧 < 3 cm）的自由脚横扫不超过 0.6 m/s；快速横扫的自由脚被抬高至多 5 cm。
+  录制的舞蹈会有一帧之内的腿部跳变（狗熊哆嗦毛一帧 10 cm）；仿真的脚在地面上跟着跳变就会被拖着滑。
 
 ## 算法步骤
 ```ts
-const stance = SIDES.filter((s) => frog.lift < 0.005 && feet[s].y - lowest < contact);
-if (planted.length === 2) yaw = heading(B - A) - heading(pR - pL);        // 两只脚决定朝向
-else yaw = this.yaw + (free - this.yaw) * smoothstep(swingHeight / releaseHeight); // 另一只脚真抬起来才转身
-yaw = home(yaw, frog.yaw, dt, homing / halfStance);                        // 慢慢回到目标朝向
-this.twist = clamp(frog.yaw - yaw, ±twistLimit);                           // 剩下的扭给上半身
-offset = 着地脚上 anchor[s] - R(yaw)·foot[s] 的平均;                        // 让脚留在原地
-offset → 目标位置：弹簧，有脚着地时最快 homing m/s，跳在空中时不限
-着地的脚 anchor[s] = R(yaw)·foot[s] + offset，抬起的脚清空
+const stance = SIDES.filter((s) => height(s) < contact + (已锚定 ? 0.01 : 0));
+let yaw = stance.length ? this.yaw : free;                  // 有脚着地就不转身
+yaw = home(yaw, frog.yaw, dt, homing / max(脚长, 两脚距离));
+this.twist = clamp(frog.yaw - yaw, ±twistLimit);            // 剩下的扭给上半身
+offset = anchor[s] − R(yaw)·foot[s] 的加权平均;             // 根节点尽量让着地的脚不动
+扭转上半身；constraints.setTorso(frog)
+每只脚：着地 → reach(锚点) | 自由 → 修正淡出、限制贴地横扫、快速横扫时抬脚
+anchor[s] = 着地 ? 脚现在的位置 : null
 ```
 
 ## 参数
 | 参数 | 含义 | 常用范围 | 改变时看到什么 |
 |---|---|---|---|
-| `contactHeight` | 离较低那只脚这么近就算着地（m） | 0.01–0.03 | 小：脚更早“松开”；大：抬起的脚也被当成踩着 |
-| `twistLimit` | 上半身相对腿最多扭多少（rad） | 0.6–1.0 | 小：大转身时脚又会滑；大：奶蛙扭成麻花 |
-| `releaseHeight` | 另一只脚抬到多高才允许绕站立脚转身（m） | 0.03–0.08 | 小：蹭地也算迈步，奶蛙会走远；大：要大步才转身 |
-| `blend` | 抬脚后扭转还给整体的时间常数（s） | 0.1–0.4 | 小：迈步转身更利落；大：更柔和 |
-| `homing` | 有脚着地时回位的最大速度（m/s），即允许的最大脚滑 | 0.02–0.1 | 0：脚绝不滑，但转身迈步会走远；大：不离家，滑得多 |
+| `contactHeight` | 离地这么近就算着地（m） | 0.01–0.02 | 大：双脚着地更多，腿要做更多修正；小：脚更早松开 |
+| `twistLimit` | 上半身相对腿最多扭多少（rad） | 0.5–1.0 | 小：大转身时脚又会滑，前臂蹭肚子更少（科目三 0.3 时 5.3 → 3.3 mm） |
+| `blend` | 在空中扭转还给整体的时间常数（s） | 0.1–0.4 | 小：跳起转身更利落 |
+| `homing` | 有脚着地时回位的最大速度（m/s），即允许的最大脚滑 | 0.01–0.05 | 0：转身迈步可能走远；大：不离家，滑得多 |
 
 ## 何时用
-在地上跳的舞都该用。它不改四肢（保真度、穿透不变），只改整只奶蛙站在哪儿。naiwa.glb 上实测（60 fps，狗熊哆嗦毛 / Nae Nae /
-科目三，测量代码 `src/algorithms/motion/bench.ts`）：
+在地上跳的舞都该用。naiwa.glb 上实测（60 fps，狗熊哆嗦毛 / Nae Nae / 科目三，`src/algorithms/motion/bench.ts`）：
 
-| | 脚滑 cm/s | 保真度 ° | jerk m/s³ |
-|---|---|---|---|
-| 内置输出（`planted-rotations`） | 117.3 / 11.9 / 7.2 | 16.3 / 16.3 / 17.3 | 5131 / 383 / 1254 |
-| `foot-plant` | 9.1 / 5.7 / 4.7 | 16.3 / 16.3 / 17.3 | 5294 / 408 / 1267 |
+| | 脚滑 cm/s（指标） | 脚跟脚尖滑动 cm/s（e2e 测法） | 保真度 ° | 穿透 mm |
+|---|---|---|---|---|
+| 内置输出（`planted-rotations`） | 117.3 / 11.9 / 7.2 | 113.7 / 6.5 / 3.3 | 16.3 / 16.3 / 17.3 | 7.6 / 1.0 / 1.0 |
+| `foot-plant` | 0.0 / 0.0 / 0.0 | 0.4 / 2.7 / 0.8 | 18.8 / 16.8 / 17.4 | 10.0 / 4.2 / 5.3 |
 
-每帧约 0.02 ms。局限：它移动的是整只奶蛙而不是腿。两只着地的脚在奶蛙自身坐标里相互靠近或分开时，最小二乘只能折中（少量滑动）；
-有脚着地时，目标要求的侧步速度被限制在 `homing`。下一步是用腿部 IK 把摆动脚放到该落的地方（本库的 IK 求解器可以用上）。
-会跳的舞在空中迈步转身，奶蛙在空中被拉回原位，这时不产生脚滑。
+e2e 测法就是页面测试自己的（`tests/e2e/lib/instrument.js` 的 footSlide）：脚跟、脚尖分别计，离各自最低点 1.5 cm 以内算着地，按落地点到离开时
+的距离计（bench.ts 的 `measureContact`）。Nae Nae 里有一只脚长时间悬在 1.4–3 cm 高，这种测法把它在移动时也算作着地。
+
+每帧约 0.03 ms。局限：腿部 IK 会稍微改动腿（狗熊哆嗦毛保真度 16.3° → 18.8°），上半身扭转会让前臂蹭到肚子（4–5 mm）。页面里的脚是由
+马达驱动的动态肢体，会落后于目标：狗熊哆嗦毛上渲染出来的脚跟脚尖仍约以 16–18 cm/s 滑动，主要是右脚抬得晚、脚尖被拖着（见
+`docs/learn/motion-index.md`）。
 
 ## 在代码里
-`src/algorithms/motion/footPlant.ts`，**output** 槽，包着内置的 `planted-rotations`。它就地修改 FrogPose（朝向、平移、上半身扭转），
-所以指标看到的就是画面上的。最值得先改的：单脚分支里的转身规则（`releaseHeight`），或者把双脚的最小二乘换成腿部 IK。
-核心目前还不给 output 块传 `dt`，在那之前按 1/60 s 计算。
+`src/algorithms/motion/footPlant.ts`，**output** 槽，包着内置的 `planted-rotations`。它就地修改 FrogPose（朝向、平移、上半身扭转、腿的旋转），
+所以指标看到的就是画面上的。最值得先试：让髋部也跟着扭、由腿部 IK 重新踩实；或者把着地标记传给仿真，让仿真钉住着地的脚。
 
 ## 参考
 - L. Kovar, J. Schreiner, M. Gleicher, *Footskate cleanup for motion capture editing*, SCA 2002. https://doi.org/10.1145/545261.545277

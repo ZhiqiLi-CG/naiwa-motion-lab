@@ -10,7 +10,9 @@ import type { PersonFrame, RetargetMetrics, Settings, Slot } from "../../motion/
 import { createRetargetPipeline } from "../../motion/core";
 import { resolve } from "../../motion/registry";
 import type { Binding } from "../../motion/rig";
+import { fk } from "../../motion/rig";
 import { recordingOf, TrackPlayer, type Track } from "../../motion/track";
+import * as THREE from "three";
 
 const FPS = 60;
 /** Seconds played: long enough for three metric windows on every track. */
@@ -130,4 +132,45 @@ export function measureFilter(rig: Binding, o: RetargetOptions, track: Track): F
     if (g) p.pose(g, 1 / track.fps);
   }
   return { rmseLive, rmseRecorded: Math.sqrt(sq / n) * 1000, jerkLive, jerkRecorded: jerkOf(p), liveMs: ms / (2 * input.length) };
+}
+
+/**
+ * Foot slide as the page's e2e measures it on the rendered frog (tests/e2e/lib/instrument.js, footSlide), here on the
+ * pose targets: heel (ankle) and toe each count while within 1.5 cm of their lowest point of the window, and each
+ * stretch of contact by how far the point ends up from where it touched down. Played `warm` s first, then `span` s.
+ */
+export function measureContact(rig: Binding, toes: Record<"foot_L" | "foot_R", THREE.Vector3>, o: RetargetOptions, track: Track, warm = 2.5, span = 3) {
+  const options = { id: o.id, settings: o.settings ?? {}, blocks: o.blocks };
+  const p = createRetargetPipeline(rig, options, recordingOf(track));
+  const player = new TrackPlayer(track, () => p);
+  const samples: Record<string, number[][]> = { foot_L: [], foot_R: [] };
+  for (let i = 1; i <= (warm + span) * FPS; i++) {
+    const g = player.goal(i / FPS, 1 / FPS, false);
+    if (!g) continue;
+    const frame = p.pose(g, 1 / FPS);
+    if (i / FPS < warm) continue;
+    const { D, P } = fk(rig, frame);
+    const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), frame.rootYaw ?? 0);
+    const off = frame.rootOffset ?? new THREE.Vector3();
+    for (const k of ["foot_L", "foot_R"] as const) {
+      const ankle = P.get(k)!.clone();
+      const toe = ankle.clone().add(toes[k].clone().applyQuaternion(D.get(k)!));
+      const [a, t] = [ankle, toe].map((v) => v.applyQuaternion(yaw).add(off));
+      samples[k].push([i / FPS, a.x, a.y, a.z, t.x, t.y, t.z]);
+    }
+  }
+  let dist = 0, time = 0;
+  for (const s of Object.values(samples)) for (const c of [1, 4]) {
+    const low = Math.min(...s.map((x) => x[c + 1]));
+    const down = (i: number) => s[i][c + 1] <= low + 0.015;
+    for (let i = 0; i < s.length; ) {
+      if (!down(i)) { i++; continue; }
+      let j = i;
+      while (j + 1 < s.length && down(j + 1)) j++;
+      if (j > i) (dist += Math.hypot(s[j][c] - s[i][c], s[j][c + 2] - s[i][c + 2])), (time += s[j][0] - s[i][0]);
+      if (j > i && (globalThis as { __trace?: boolean }).__trace) console.log("stretch", c === 1 ? "heel" : "toe", s[i][0].toFixed(2), s[j][0].toFixed(2), (Math.hypot(s[j][c] - s[i][c], s[j][c + 2] - s[i][c + 2]) * 100).toFixed(1), "cm");
+      i = j + 1;
+    }
+  }
+  return { speed: time ? dist / time : 0, standing: time / 4 / span };
 }

@@ -45,14 +45,17 @@ retarget 的一个块。
 | gouxiong / naenae / kemusan | fidelity ° | jerk m/s³ | penetration mm | foot slide cm/s | solve + output ms |
 |---|---|---|---|---|---|
 | direction copy (built-in) | 16.3 / 16.3 / 17.3 | 5131 / 383 / 1254 | 7.6 / 1.0 / 1.0 | 117.3 / 11.9 / 7.2 | 0.25 / 0.25 / 0.30 |
-| foot-plant | 16.3 / 16.3 / 17.3 | 5294 / 408 / 1267 | 7.6 / 2.0 / 1.0 | **9.1 / 5.7 / 4.7** | 0.29 / 0.24 / 0.32 |
+| foot-plant | 18.8 / 16.8 / 17.4 | 5790 / 419 / 1255 | 10.0 / 4.2 / 5.3 | **0.0 / 0.0 / 0.0** | 0.13 / 0.12 / 0.12 |
 | ccd-ik | 18.9 / 17.6 / 17.2 | 6258 / 1184 / 1835 | 1.0 / 1.0 / 1.0 | 118.9 / 11.9 / 7.2 | 0.59 / 0.52 / 0.62 |
 | fabrik-ik | 17.5 / 16.4 / 17.6 | 4746 / 456 / 1743 | 1.0 / 1.0 / 1.0 | 117.9 / 11.9 / 7.2 | 0.50 / 0.50 / 0.73 |
 | dls-ik | 17.0 / 16.1 / 18.2 | 5837 / 542 / 1701 | 1.0 / 1.0 / 1.0 | 115.9 / 11.9 / 7.2 | 0.66 / 0.52 / 0.66 |
 | penalty-opt | **16.1 / 15.2 / 15.8** | 6463 / 471 / 1615 | 1.2 / 0.9 / 1.0 | 123.0 / 12.2 / 7.3 | 0.90 / 0.95 / 0.84 |
 
-- Foot slide is the output's business: `foot-plant` cuts it 13× on 狗熊哆嗦毛 and leaves the limbs alone; the solvers do
-  not change it (they keep the built-in output in this table; the registered assemblies add `foot-plant`).
+- Foot slide is the output's business: `foot-plant` holds planted ankles exactly (leg IK) and the solvers do not change it
+  (they keep the built-in output in this table; the registered assemblies add `foot-plant`). Measured as the page's e2e
+  does (heel and toe, `measureContact`), the pose targets slide 0.4 / 2.7 / 0.8 cm/s against 113.7 / 6.5 / 3.3 for the
+  built-in output. On the simulated frog in the page 狗熊哆嗦毛 still shows about 16–18 cm/s: the motor-driven feet lag
+  their targets (late lift-off, a dragged toe, overshoot on landing); see `foot-plant` and the simulation's notes.
 - Fidelity is measured against the person's directions. Direction copy and `penalty-opt` aim at exactly that; the IK
   solvers aim at the hand and ankle positions and give a little of it up, in exchange for hands kept off the head and
   belly (the built-in lets a hand touch the head by 7.6 mm on 狗熊哆嗦毛).
