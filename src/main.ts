@@ -10,6 +10,7 @@ import { createFrogSim, initPhysics, listSimulators, onSimulatorsChanged } from 
 import { registerMotionLibrary } from "./algorithms/motion";
 import { createMotion, metricReadouts } from "./motion";
 import { createRecorder, createSfx, decodeConfig, encodeConfig, shareRecording } from "./media";
+import { mountCodeLab, openCodeLab } from "./labcode";
 import { mountUI, type UICommands } from "./ui";
 
 const GRAVITY = 9.81;
@@ -76,6 +77,8 @@ async function switchMotion() {
 let stepRequested = false;
 
 const commands: UICommands = {
+  editSimulator: () => openCodeLab({ kind: "simulator" }),
+  editRetargeter: () => openCodeLab({ kind: "retargeter" }),
   stepSim() {
     stepRequested = true;
   },
@@ -149,9 +152,22 @@ const commands: UICommands = {
 const ui = mountUI(document.getElementById("ui")!, store, commands, { dances: motion.dances(), presets: MATERIAL_PRESETS });
 stage.setTheme(ui.theme());
 ui.onTheme((theme) => stage.setTheme(theme));
-// Frame the frog in the part of the window the panels leave free.
-stage.setInsets(ui.insets());
-ui.onInsets((insets) => stage.setInsets(insets));
+// The code lab mounts on the body: mountUI rebuilds #ui when the language changes.
+const codeLab = mountCodeLab({
+  host: document.body,
+  store,
+  spec: () => character?.spec ?? null,
+  binding: () => motion.binding(),
+  toast: (m, k) => ui.toast(m, k),
+});
+// Frame the frog in the part of the window the panels and the code lab leave free.
+const frameStage = () => {
+  const a = ui.insets(), b = codeLab.insets();
+  stage.setInsets({ ...a, right: Math.max(a.right, b.right) });
+};
+ui.onInsets(frameStage);
+codeLab.onInsets(frameStage);
+frameStage();
 sfx.setEnabled(store.get().sound);
 
 function setDances(dances: DanceInfo[]) {
@@ -338,6 +354,8 @@ async function boot() {
   store.set({ loading: { active: true, message: tr({ zh: "正在叫醒奶蛙…", en: "Waking 奶蛙 up…" }) } });
   void motion.ready().then(() => setDances(motion.dances()));
   const [, loaded] = await Promise.all([initPhysics(), loadCharacter()]);
+  // Saved experiments register their blocks before the lists are read.
+  await codeLab.ready;
   store.set({ simulators: listSimulators(), retargeters: motion.retargeters() });
   motion.onRetargetersChanged((retargeters) => store.set({ retargeters }));
   motion.setRetargeter(store.get().retargeter);
