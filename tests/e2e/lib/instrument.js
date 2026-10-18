@@ -68,9 +68,10 @@
     const n = window.__naiwa;
     const found = { hook: !!n };
     if (!n) return found;
-    if (n.sim?.onEvent && !e2e.simHooked) {
+    // every simulation the page builds (it is rebuilt when the simulator, and now and then the motion, changes)
+    if (n.sim?.onEvent && !(e2e.hookedSims ??= new WeakSet()).has(n.sim)) {
       n.sim.onEvent((e) => e2e.events.push({ kind: e.kind, strength: e.strength, region: e.region, t: performance.now() }));
-      e2e.simHooked = true;
+      e2e.hookedSims.add(n.sim);
     }
     if (n.sim?.step && !n.sim.step.__e2e) {
       const step = n.sim.step.bind(n.sim);

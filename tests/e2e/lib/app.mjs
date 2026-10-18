@@ -252,14 +252,14 @@ export async function sampleBones(page) {
 
 /** Frame rate and per-frame main-thread work over a quiet window (no screenshots meanwhile). */
 export async function measureFrames(page, ms = 3000) {
-  const t0 = await page.evaluate(() => performance.now());
+  const t0 = await page.evaluate(() => (window.__e2e.attachHooks(), performance.now()));
   await sleep(ms);
   const t1 = await page.evaluate(() => performance.now());
   return page.evaluate((a, b) => window.__e2e.frameStats(a, b), t0, t1);
 }
 
 export async function counts(page) {
-  return page.evaluate(() => ({ sounds: window.__e2e.sounds.length, events: window.__e2e.events.map((e) => e.kind), fx: window.__e2e.fx.map((f) => f.arg ? `${f.k}:${f.arg}` : f.k) }));
+  return page.evaluate(() => (window.__e2e.attachHooks(), { sounds: window.__e2e.sounds.length, events: window.__e2e.events.map((e) => e.kind), fx: window.__e2e.fx.map((f) => f.arg ? `${f.k}:${f.arg}` : f.k) }));
 }
 /** What happened since `before` (from counts()). */
 export function since(before, after) {
