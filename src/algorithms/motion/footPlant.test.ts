@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import { createRetargetPipeline } from "../../motion/core";
 import { bentLeg, idlePose } from "../../motion/pose";
 import { bindRig, jointPositions } from "../../motion/rig";
+import { recordingOf, TrackPlayer } from "../../motion/track";
 import { measureContact, measureRetargeter } from "./bench";
 import { glbCharacter, loadTrack, toeOffsets } from "./rigs";
 import { setup } from "./testSupport";
@@ -60,5 +61,30 @@ it("cuts the foot slide of the dances", async () => {
     const before = measureRetargeter(b, { id: "direction-copy" }, loadTrack(d)).footSlide;
     const after = measureRetargeter(b, { id: "planted-feet" }, loadTrack(d)).footSlide;
     expect(after).toBeLessThan(before * most);
+  }
+}, 30000);
+
+it("reports pinned feet that stay still and on the floor while pinned (released no later than the frame they lift)", async () => {
+  const b = await setup();
+  for (const d of ["gouxiong", "naenae", "kemusan"]) {
+    const t = loadTrack(d);
+    const p = createRetargetPipeline(b, { id: "planted-feet", settings: {} }, recordingOf(t));
+    const player = new TrackPlayer(t, () => p);
+    let prev: { at: Map<string, THREE.Vector3>; pin: Record<string, boolean | undefined> } | null = null;
+    let pinnedFrames = 0, worstMove = 0, worstLift = 0;
+    for (let i = 1; i <= 360; i++) {
+      const f = p.pose(player.goal(i / 60, 1 / 60, false)!, 1 / 60);
+      const at = jointPositions(b, f) as Map<string, THREE.Vector3>;
+      const pin = { foot_L: f.contacts?.foot_L, foot_R: f.contacts?.foot_R };
+      if (prev) for (const k of ["foot_L", "foot_R"] as const) {
+        const a = at.get(k)!, o = prev.at.get(k)!;
+        if (prev.pin[k] && pin[k]) (pinnedFrames++, (worstMove = Math.max(worstMove, Math.hypot(a.x - o.x, a.z - o.z))));
+        if (pin[k]) worstLift = Math.max(worstLift, a.y - b.restFootY);
+      }
+      prev = { at, pin };
+    }
+    expect(pinnedFrames).toBeGreaterThan(30);
+    expect(worstMove).toBeLessThan(0.002);
+    expect(worstLift).toBeLessThan(0.015);
   }
 }, 30000);

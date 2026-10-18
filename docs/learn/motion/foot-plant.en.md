@@ -61,9 +61,11 @@ late and its toe dragging (see `docs/learn/motion-index.md`).
 
 ## In the code
 `src/algorithms/motion/footPlant.ts`, an **output** block wrapping the built-in `planted-rotations`. It edits the
-FrogPose in place (heading, shift, upper-body twist, leg rotations) so the metrics see what is shown. Worth trying
-first: turn the hips with the twist and let the leg IK re-plant the feet, or pass contact flags to the simulation so
-it can pin a planted foot.
+FrogPose in place (heading, shift, upper-body twist, leg rotations) so the metrics see what is shown, and reports
+`PoseFrame.contacts`: a foot is pinned while it is planted, within `contactHeight` (not the release hysteresis) and not
+rising, so the simulation lets it go no later than the frame it lifts. Worth trying
+first: turn the hips with the twist and let the leg IK re-plant the feet, or move the release earlier with a lookahead
+on recordings.
 
 ## References
 - L. Kovar, J. Schreiner, M. Gleicher, *Footskate cleanup for motion capture editing*, SCA 2002. https://doi.org/10.1145/545261.545277

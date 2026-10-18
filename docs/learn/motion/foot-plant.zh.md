@@ -53,7 +53,8 @@ e2e 测法就是页面测试自己的（`tests/e2e/lib/instrument.js` 的 footSl
 
 ## 在代码里
 `src/algorithms/motion/footPlant.ts`，**output** 槽，包着内置的 `planted-rotations`。它就地修改 FrogPose（朝向、平移、上半身扭转、腿的旋转），
-所以指标看到的就是画面上的。最值得先试：让髋部也跟着扭、由腿部 IK 重新踩实；或者把着地标记传给仿真，让仿真钉住着地的脚。
+所以指标看到的就是画面上的；并给出 `PoseFrame.contacts`：脚已踩实、离地不到 `contactHeight`（不含松开的滞回）且没有在上升时才算钉住，
+仿真最晚在脚抬起的那一帧松开它。最值得先试：让髋部也跟着扭、由腿部 IK 重新踩实；或者对录制的舞蹈预读后续帧，提前松开要抬起的脚。
 
 ## 参考
 - L. Kovar, J. Schreiner, M. Gleicher, *Footskate cleanup for motion capture editing*, SCA 2002. https://doi.org/10.1145/545261.545277

@@ -189,6 +189,12 @@ class FootPlant implements OutputBlock {
       this.offset = { x: this.offset.x + (goalOffset.x - this.offset.x) * k, z: this.offset.z + (goalOffset.z - this.offset.z) * k };
     }
 
+    // Which feet the simulation may pin (PoseFrame.contacts): planted ones still within contactHeight (not the 1 cm
+    // of hysteresis the anchor keeps) and not rising since last frame, so a foot about to lift is let go a frame or more
+    // before it leaves and the pin never drags it.
+    const pinned = (s: Side) => planted.includes(s) && height(s) < contact && !(this.lastFoot[s] && height(s) > this.lastFoot[s]!.h + 0.001);
+    const contacts = { foot_L: pinned("L"), foot_R: pinned("R") };
+
     // The upper body takes the twist (before the legs are touched: the leg IK keeps them out of the body as posed).
     if (Math.abs(this.twist) > 1e-6) {
       const q = new THREE.Quaternion().setFromAxisAngle(UP, this.twist);
@@ -245,6 +251,7 @@ class FootPlant implements OutputBlock {
     frog.yaw = this.yaw;
     frog.shift = this.offset.x;
     const frame = this.inner.pose(frog, dt);
+    frame.contacts = contacts;
     frame.rootOffset!.z = this.offset.z;
     return frame;
   }
