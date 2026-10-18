@@ -45,6 +45,8 @@ export interface PluginSectionOpts {
   choose(o: SimulatorOptions): void;
   /** Opens the chosen one's code; the entry is left out without it. */
   edit?(id: string): void;
+  /** A "用 Codex 优化" entry for the section's head (src/ui/codex.ts; hidden unless Codex is available). */
+  codex?: HTMLElement;
   /** Live metrics as label → value (empty: none shown). */
   metrics(s: AppState): [string, string][];
   /** Which state changes refresh the metrics. */
@@ -62,7 +64,7 @@ export function createPluginSection(ctx: Ctx, o: PluginSectionOpts) {
   const el = h(
     "div",
     { class: "nw-section" },
-    h("div", { class: "nw-section-head" }, h("h3", { class: "nw-section-title" }, o.title), edit),
+    h("div", { class: "nw-section-head" }, h("h3", { class: "nw-section-title" }, o.title), h("span", { class: "nw-section-actions" }, o.codex ?? null, edit)),
     list,
     empty,
     metrics,

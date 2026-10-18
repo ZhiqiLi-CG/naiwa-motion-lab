@@ -6,6 +6,7 @@ import { DANCE_ORIGINS, RECORD_LAYOUTS, SOURCES, copy, danceName } from "./copy"
 import { changed, type Ctx, type Part } from "./ctx";
 import { append, h, icon } from "./dom";
 import { pickVideo } from "./overlays";
+import { codexButton } from "./codex";
 import { motionChip, panel, section, segmented, switchRow } from "./panel";
 
 /** "my dance.final.mp4" → "my dance.final", at most 16 characters (what the motion module keeps). */
@@ -227,7 +228,7 @@ function createVideoSection(ctx: Ctx) {
     showForm(false);
   });
 
-  const keep = h("div", { class: "nw-keep" }, keepBtn, form);
+  const keep = h("div", { class: "nw-keep" }, keepBtn, form, codexButton({ kind: "video" }, { zh: "用 Codex 优化这段动作", en: "Improve this motion with Codex" }));
   const el = h("div", { class: "nw-group" }, zone, input, fileRow, progress, keep, h("p", { class: "nw-note" }, T.video.tip, " · ", T.video.privacy));
   return {
     el,
@@ -265,6 +266,7 @@ function createPresetList(ctx: Ctx, initial: DanceInfo[]) {
   const el = h("div", { class: "nw-group nw-presets-list" });
   let rows: { id: string; el: HTMLElement }[] = [];
   let shown: DanceInfo[] | null = null;
+  const newDance = codexButton({ kind: "new-dance" }, { zh: "生成新舞蹈", en: "New dance from words" }, { cls: "nw-panel-link" });
 
   function row(d: DanceInfo): HTMLElement {
     const btn = h(
@@ -274,7 +276,8 @@ function createPresetList(ctx: Ctx, initial: DanceInfo[]) {
       d.credit ? h("span", { class: "nw-row-credit", title: d.credit }, `${T.dance.from}: ${d.credit}`) : null,
     );
     rows.push({ id: d.id, el: btn });
-    if (originOf(d) !== "mine") return h("li", {}, btn);
+    const improve = originOf(d) === "procedural" ? null : codexButton({ kind: "dance", id: d.id }, { zh: "优化这段动作", en: "Improve this motion" }, { compact: true, cls: "nw-row-codex" });
+    if (originOf(d) !== "mine") return h("li", { class: improve ? "nw-row-codex-wrap" : null }, btn, improve);
     let armed = 0;
     const del = h("button", { class: "nw-icon-btn nw-icon-btn--sm nw-row-del", "aria-label": T.dance.delete, "data-tip": T.dance.delete }, icon("trash"));
     const disarm = () => {
@@ -302,7 +305,7 @@ function createPresetList(ctx: Ctx, initial: DanceInfo[]) {
         },
       );
     });
-    return h("li", { class: "nw-row-wrap" }, btn, del);
+    return h("li", { class: "nw-row-wrap" }, btn, improve, del);
   }
 
   function render(list: DanceInfo[]) {
@@ -320,7 +323,7 @@ function createPresetList(ctx: Ctx, initial: DanceInfo[]) {
           );
       return [section(`${T.dance.groups[origin]}${items.length ? ` · ${items.length}` : ""}`, content)];
     });
-    el.replaceChildren(...(groups.length ? groups : [h("p", { class: "nw-note" }, T.dance.empty)]));
+    el.replaceChildren(newDance, ...(groups.length ? groups : [h("p", { class: "nw-note" }, T.dance.empty)]));
   }
   const mark = (s: AppState) => {
     for (const r of rows) r.el.setAttribute("aria-pressed", String(s.mode === "dance" && r.id === s.dance));

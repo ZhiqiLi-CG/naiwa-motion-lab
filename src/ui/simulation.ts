@@ -10,6 +10,7 @@ import { formatCount, formatMs, matchingPreset } from "./format";
 import { knob } from "./knob";
 import { panel, section } from "./panel";
 import { createPluginSection, type PluginMetric } from "./plugins";
+import { codexButton, codexNote } from "./codex";
 
 type GroupId = RegionGroupDef["id"];
 
@@ -73,6 +74,7 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
     chosen: (s) => s.retargeter,
     choose: (retargeter) => store.set({ retargeter }),
     edit: ctx.commands.editRetargeter,
+    codex: codexButton({ kind: "retargeter" }, { zh: "优化动作迁移", en: "Optimise the transfer" }),
     metrics: (s) => ((s.motion as { metrics?: PluginMetric[] }).metrics ?? []).map((m) => [tr(m.label), m.value]),
     metricsSource: (s) => s.motion,
   });
@@ -145,10 +147,17 @@ export function createSimulationPanel(ctx: Ctx, host: HTMLElement): Part {
   );
 
   append(body, [
+    codexButton({ kind: "chat" }, { zh: "与 Codex 对话", en: "Chat with Codex" }, { cls: "nw-panel-link" }),
+    codexNote(),
     simulator.el,
     retargeter.el,
     section(T.sim.presets, h("div", { class: "nw-chips", role: "group", "aria-label": T.sim.presets }, ...chips, modified)),
-    section(T.sim.global, ...knobs.map((x) => x.k.row)),
+    h(
+      "div",
+      { class: "nw-section" },
+      h("div", { class: "nw-section-head" }, h("h3", { class: "nw-section-title" }, T.sim.global), codexButton({ kind: "feel" }, { zh: "优化手感", en: "Tune the feel" })),
+      ...knobs.map((x) => x.k.row),
+    ),
     section(
       T.sim.regions,
       h("p", { class: "nw-note" }, T.sim.regionsSub),

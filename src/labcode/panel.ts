@@ -130,10 +130,34 @@ const T = {
   scene: { zh: "场景", en: "Scene" },
   failed: { zh: "对比失败", en: "The comparison failed" },
   shortcuts: { zh: "Ctrl/⌘+S 应用 · Esc 关闭", en: "Ctrl/⌘+S apply · Esc close" },
+  codex: { zh: "让 Codex 改进", en: "Improve with Codex" },
   loading: { zh: "正在读取源码…", en: "Reading the source…" },
 };
 
 type Selection = { type: "page"; src: BlockSource } | { type: "mine"; key: string } | { type: "none"; id: string };
+
+/** The block shown in the code lab, as "让 Codex 改进这个模块" hands it to the local Lab (src/lab). */
+export interface CodexBlockTarget {
+  core: CoreKind;
+  slot: string;
+  /** The code as the editor shows it. */
+  code: string;
+  /** The page block it is (or was forked from); path below src/. */
+  from: { id: string; path: string };
+  /** The user's block, when it is one. */
+  key: string | null;
+  name: string;
+}
+
+let codexImprove: ((t: CodexBlockTarget) => void) | null = null;
+let codexChanged: (() => void) | null = null;
+
+/** Offer "让 Codex 改进这个模块 / Improve with Codex" on the shown block (null hides it); set by the local Lab when
+ *  Codex CLI is available. */
+export function setCodexImprove(fn: ((t: CodexBlockTarget) => void) | null): void {
+  codexImprove = fn;
+  codexChanged?.();
+}
 type Tab = "code" | "learn" | "compare" | "api";
 
 let mounted: CodeLab | null = null;
@@ -343,6 +367,12 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
     if (sel.type !== "none") actions.push(btn(tr(T.compare), "swap", "nw-btn--secondary", () => setTab("compare")));
     if (lab.experiment(kind)?.slots[slot] && host.current(kind).id === LAB_ASSEMBLY[kind]) actions.push(btn(tr(T.restore), "again", "nw-btn--ghost", () => lab.restore(kind, slot)));
     if (b) actions.push(btn(tr(T.remove), "trash", "nw-btn--ghost nw-cl-danger", removeMine));
+    const from = sel.type === "page" ? { id: sel.src.id, path: sel.src.path } : b ? b.from : null;
+    if (codexImprove && from) {
+      const improve = codexImprove;
+      const name = sel.type === "page" ? nameOfPage(sel.src) : b ? nameOfMine(b) : from.id;
+      actions.push(btn(tr(T.codex), "sparkle", "nw-btn--ghost nw-cl-codex", () => improve({ core: kind, slot, code: editor.get(), from, key: b?.key ?? null, name })));
+    }
     const saveNote = b ? h("span", { class: "nw-cl-save" }, tr(lab.persistent() ? T.saved : T.notSaved)) : null;
     bar.replaceChildren(h("div", { class: "nw-cl-bar-left" }, select, chip, saveNote), h("div", { class: "nw-cl-actions" }, ...actions));
 
@@ -732,6 +762,7 @@ export function mountCodeLab(opts: CodeLabOptions): CodeLab {
     }
   });
   const offLang = onLang(() => openNow && renderAll());
+  codexChanged = () => openNow && renderBar();
 
   const api: CodeLab = {
     open: (t) => void open(t),
