@@ -192,6 +192,8 @@ export interface DanceTrack {
    *  A moving camera otherwise reads as the person travelling, turning or hopping. */
   camera?: { shift: [number, number]; scale: number }[];
   cuts?: number[];
+  /** The camera's motion has already been taken out of the image landmarks (it must not be undone twice). */
+  cameraUndone?: boolean;
 }
 export interface DanceIndexEntry {
   id: string;

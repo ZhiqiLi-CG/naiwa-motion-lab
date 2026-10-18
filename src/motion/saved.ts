@@ -18,6 +18,9 @@ interface Stored {
   present: Uint8Array;
   /** Per frame: world then image landmarks, [x, y, z, visibility] each. */
   data: Float32Array;
+  /** Shot cuts, and whether the camera's motion was already taken out (the coherence job needs both). */
+  cuts?: number[];
+  cameraUndone?: boolean;
 }
 
 let dbp: Promise<IDBDatabase> | null = null;
@@ -52,7 +55,10 @@ function pack(t: Track, savedAt: number): Stored {
     const o = i * PER_FRAME;
     [...f.world, ...f.image].forEach((p, k) => data.set(p.slice(0, 4), o + k * 4));
   });
-  return { id: t.id, name: t.name, nameEn: t.nameEn, fps: t.fps, duration: t.duration, aspect: t.aspect ?? 1, source: t.source, savedAt, present, data };
+  return {
+    id: t.id, name: t.name, nameEn: t.nameEn, fps: t.fps, duration: t.duration, aspect: t.aspect ?? 1, source: t.source, savedAt, present, data,
+    cuts: t.cuts, cameraUndone: t.cameraUndone,
+  };
 }
 
 function unpack(s: Stored): Track {
@@ -61,7 +67,10 @@ function unpack(s: Stored): Track {
     const lm = (from: number) => Array.from({ length: 33 }, (_, k) => Array.from(s.data.subarray(from + k * 4, from + k * 4 + 4)));
     return { world: lm(i * PER_FRAME), image: lm(i * PER_FRAME + 33 * 4) };
   });
-  return { id: s.id, name: s.name, nameEn: s.nameEn, fps: s.fps, duration: s.duration, aspect: s.aspect, source: s.source, frames };
+  return {
+    id: s.id, name: s.name, nameEn: s.nameEn, fps: s.fps, duration: s.duration, aspect: s.aspect, source: s.source, frames,
+    cuts: s.cuts, cameraUndone: s.cameraUndone,
+  };
 }
 
 export async function loadSaved(): Promise<Track[]> {
