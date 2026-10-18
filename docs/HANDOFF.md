@@ -1,41 +1,54 @@
-# 交接：Naiwa Motion Lab 进度与未完成任务（2026-10-17）
+# 交接：Naiwa Motion Lab 进度与未完成任务（2026-10-18）
 
-给换到另一台电脑后继续开发的人（包括新的 Claude / Codex 会话）。原来那台机器上的长期记忆和各个 subagent 的上下文带不过来，
-所以用户的全部要求、每个模块的进度和下一步都写在这里。先读这一页，再读 `docs/BRIEF.md`（产品与协作规则）、
-`src/contracts.ts`（模块间接口）、`docs/soft-binding.md`（软体绑定设计）。
+这页写给接着开发的人，包括新的 Claude / Codex 会话：用户的全部要求、每个模块的进度、已知问题和下一步都在这里。先读这一页，再读下面几份：
+
+- `docs/BRIEF.md`：产品定位和协作规则
+- `src/contracts.ts`：模块之间的接口
+- `docs/simulator-api.md`、`docs/motion-api.md`：模拟和动作迁移两个插件接口
+- `docs/soft-binding.md`：软体怎么绑到骨骼上
 
 ## 一句话现状
 
-- **能跑的最新版本是标签 `runnable-2026-10-17`（提交 `7a192ed`）**：模拟实验页的新界面、真模型、全身软体（Rapier 体积软体 +
-  刚体骨骼）、预设舞蹈 / 摄像头 / 上传视频的动作迁移、录制、中英切换都在。截图：`docs/handoff/runnable-7a192ed.png`。
-  已知问题：自由模式下奶蛙开局就倒地；跳舞时有穿模；模拟面板默认展开（应收进“实验室”）；模拟器列表显示“加载中”。
-- **`main` 的最新提交是各模块做到一半的 WIP，打开是白屏**：模拟模块正在重构成“核心 + 板块”，`src/sim/frog.ts` 引用的
-  `./skeleton` 已被挪进 `src/sim/blocks/skeleton.ts` 改写，路径和接口没改完，页面加载时这个文件 404。单元测试
-  （`npx vitest run`，9 个文件 86 个测试）全部通过；`npx tsc --noEmit` 有 29 处报错，集中在 `src/sim/blocks/`、`src/sim/flesh.ts`、
-  `src/motion/api.ts`、`src/main.ts`。
-- 停下的原因：所有 Claude subagent 在 2026-10-16 晚上撞上每周额度（10-21 早上 5 点太平洋时间恢复），13 路同时停在半路。
+- **发布候选版**：标签 `rc-2026-10-18`，说明见 `docs/RELEASE-NOTES.md`。
+  - `main` 能完整跑起来。
+  - 端到端检查中，没过的项目全部是默认模拟器的质量指标，见下面“已知问题”。
+  - 其余功能全部通过：摄像头、上传视频、录制、手机、中英切换、GPU 与 CPU 并行回退、代码实验室、本机 Lab、手感面板。
+- **开发机已经换到 Windows 11**。原来在 Linux 上写的脚本都已经适配 Windows。机器配置：
+  - AMD Radeon 880M 核显，WebGPU 可用；
+  - Node 24、Chrome；
+  - ffmpeg 用 winget 装；
+  - Codex CLI 0.155.1，已登录。
+- **旧标签 `runnable-2026-10-17`（`7a192ed`）只作对照**：它在自由模式下也会倒、会折。
 
-## 在新电脑上跑起来
+## 跑起来
 
 ```bash
 git clone git@github.com:ZhiqiLi-CG/naiwa-motion-lab.git && cd naiwa-motion-lab
 npm ci                      # Node 18.19+；依赖版本都钉死在 package.json
-git checkout runnable-2026-10-17 && npx vite --port 5180    # 能跑的版本；回到开发：git checkout main
-npx vitest run              # 单元测试
-npm run e2e                 # 端到端检查（puppeteer-core，需要本机 Chrome：CHROME=/path/to/chrome）
-node tests/tools/shot.mjs <url> <out.png> --wait 8000        # 无头 Chrome 截图（用 GPU 跑 WebGL2）
+npx vite                    # http://localhost:5180/（开发服务器带 COOP/COEP 头，页面是跨源隔离的）
+npm run lab                 # 可选：本机 Lab 服务 127.0.0.1:5170；检测到 Codex CLI 已登录，页面才出现对话和“用 Codex 优化”入口
+npx vitest run              # 单元测试（模拟的真实模型测试较慢，几分钟）
+npm run test:lab            # 本机 Lab 服务的测试（node:test）
+npm run e2e -- --head       # 端到端检查：构建最后一次提交，在无头 Chrome 里检查（约 14 分钟，同一时间只能跑一个）
+node tests/tools/shot.mjs <url> <out.png> --wait 8000 [--eval "js"]   # 无头 Chrome 截图（自动找 Chrome，Windows 上用 D3D11）
 ```
 
-不在 git 里、需要时再准备的东西：
+Windows 上要注意三件事：
+
+- **删目录**：不要递归删除带 `node_modules` 目录联接（junction）的目录，比如 worktree 或 `.cache/e2e/head`，否则会顺着联接把真正的 `node_modules` 删掉。端到端脚本已经改成只解除联接。万一坏了，用 `npm rebuild` 加 `npm install` 补回来；不要用 `npm ci`，它会打断正在跑的开发服务器。
+- **换行**：`.gitattributes` 固定用 LF 换行。
+- **给用户看的页面**：最好从一个已验证提交的 worktree 单独起服务，例如 `git worktree add ../naiwa-head <提交>`，再 `npx vite --port 5182`。不要让用户看到 subagent 正在改的工作区。
+
+下面这些不在 git 里，需要时再准备：
 
 | 东西 | 用途 | 怎么准备 |
 |---|---|---|
-| 舞蹈源视频（别人的视频，不进 git、不发布） | 重新提取 `public/dances/*.json` | `yt-dlp` + `node tools/dances/add.mjs <id>`（来源和时间段在 `tools/dances/dances.json`、`tools/dances/SOURCES.md`） |
-| HY-Motion 的 Python 环境 | 文字生成舞蹈（`tools/dances/hy_motion.py`） | 新建 conda 环境，Hugging Face 下载需自己的 `HF_TOKEN` |
-| Blender 5.2.2 | 重建模型 `blender -b -P assets-src/naiwa/build_naiwa.py` | 模型已提交在 `public/models/naiwa.glb`，平时不用 |
-| Genesis 1.4.2 的 Python 环境 | Genesis 高清渲染 `python tools/genesis-hd/render.py session.json -o out.mp4 [--renderer nyx\|raster]` | 原机器用的是 `genesis-world` 的 venv |
+| 舞蹈源视频（别人的视频，不进 git、不发布） | 重新提取 `public/dances/*.json` | `yt-dlp` + `node tools/dances/add.mjs <id>`；来源和时间段在 `tools/dances/dances.json` 和 `tools/dances/SOURCES.md` |
+| HY-Motion 的 Python 环境 | 用文字生成舞蹈（`tools/dances/hy_motion.py`） | 新建 Python 环境；Hugging Face 的 token 存在用户机器上的 hf_key 文件里，只引用路径，不打印、不提交 |
+| Blender 5.2.2 | 重建模型：`blender -b -P assets-src/naiwa/build_naiwa.py` | 这台机器没装；模型已经提交在 `public/models/naiwa.glb` |
+| Genesis 1.4.2 的 Python 环境 | Genesis 高清渲染（已暂停，见要求 14） | — |
 
-MediaPipe 的 wasm 和姿态模型已自托管在 `public/mediapipe/`（运行时不访问 Google，国内可用）。
+MediaPipe 的 wasm 和姿态模型自己托管在 `public/mediapipe/`。它自带的使用统计上报（`odml.pa.googleapis.com`）已经在 `src/motion/mediapipe.ts` 里拦掉，运行时不会访问 Google。
 
 ## 用户的要求（按提出顺序，都仍然有效）
 
@@ -71,40 +84,77 @@ MediaPipe 的 wasm 和姿态模型已自托管在 `public/mediapipe/`（运行�
     很多地方提供“用 Codex 优化”（模拟参数 / 分部位软度、retarget 参数和指标、代码实验室里用户的板块、舞蹈）；没有就隐藏这些入口
     并说明怎么登录。见 `docs/next/lab.md`。
 
-版权提醒：奶蛙是 2024 年从奶龙（第七印象的商业 IP）二创出来的梗；仓库目前是私有的，公开发布前需要用户决定。
+19. **2026-10-17/18 的其他决定**：
+    - 捧腹大笑的笑声先不加。
+    - 公开发布前要处理版权：协议只能管用户自己写的代码，奶蛙形象需要授权或者换成原创角色（见 `docs/RELEASE-NOTES.md`）。
+    - 头型检查不算脖子交界那一圈。
+    - 先出发布候选版，模拟质量问题之后接着改。
+
+版权提醒：奶蛙是 2024 年从奶龙二创出来的梗，奶龙是第七印象的商业 IP。仓库目前是私有的，公开发布前需要用户决定。
 
 ## 架构速览
 
-- 模块按文件夹分工，接口全部在 `src/contracts.ts`，`src/main.ts` 是总装（帧循环、模式切换、手势到工具、事件到表情和声音）。
-- `src/store.ts`：唯一的状态；`AppState` 含 `playback`（暂停 / 单步 / 慢放）、`stats`（帧率、步进耗时、粒子、单元、体积比）、
-  `simulator` / `simulators`、`retargeter` / `retargeters`、`lang` 等。
-- 模拟器插件接口：`SimulatorInfo` 声明参数（`SimParameter`），页面据此生成控件；`src/sim/api.ts` 设计为核心循环 + 槽位
-  `skeleton, flesh, target, coupling, collision, interaction, output, metrics`，一个模拟器 = 一组板块。
-- 动作迁移插件接口：`src/motion/api.ts`，槽位 `filter → constraints → solver → output`，外加指标（贴合度、平滑度、四肢入体、脚滑）。
+- **分工**：模块按文件夹分工，接口全部在 `src/contracts.ts`。`src/main.ts` 负责总装：帧循环、模式切换、手势、事件、挂载各个面板。
+- **状态**：`src/store.ts` 是唯一的状态，包括模式、材质参数、回放、读数、模拟器和 retarget 的选择与列表、语言等。
+- **模拟**（`src/sim`，`docs/simulator-api.md`）：
+  - 结构：小核心 `core.ts` 按槽位 `skeleton, flesh, target, coupling, collision, interaction, output, metrics` 依次调用各个板块；一个模拟器就是一组板块，在 `registry.ts` 里注册。
+  - 内置 CPU 示例：`cpu-constraints`（`src/sim/blocks/`）。
+  - GPU 示例：`gpu-mpm`（`src/sim/gpu/`）。同一个算法两套后端：有 GPU 时用 WebGPU 计算着色器，没有时用 Web Worker 加 SharedArrayBuffer 做 CPU 并行。`initPhysics` 启动时检测设备。
+  - 算法库：7 个模拟器（`src/algorithms/sim/`）——质点弹簧、PBD、XPBD、形状匹配、Projective Dynamics、隐式 FEM、FEM 加拉索。
+  - 和动作的衔接：换动作来源时调用 `FrogSim.transition()` 平滑过渡；`PoseFrame.contacts` 把正踩在地上的脚传给骨骼，让骨骼钉住它。
+- **动作迁移**（`src/motion`，`docs/motion-api.md`）：
+  - 槽位：`filter → constraints → goal → solver → output`。
+  - 默认 retarget：`planted-feet`，即方向拷贝加身体约束，再让脚踩住地面。
+  - 算法库（`src/algorithms/motion/`）：Kalman、Savitzky–Golay、CCD、FABRIK、阻尼最小二乘、带约束优化、脚踩地。
+  - 上传视频：分析时估计镜头运动和切镜（`cameraMotion.ts`），自动去掉镜头运动，并在切镜处衔接（`src/algorithms/motion/coherence/`）。
+- **代码实验室**（`src/labcode`）：入口是实验室 → 编辑代码。可以按槽位看源码、复制为“我的”，按 Ctrl+S 编译并热替换，出错自动回退；能和内置板块对比，旁边显示学习页。
+- **本机 Lab**（`lab/` 和 `src/lab`）：
+  - `npm run lab` 在 127.0.0.1:5170 起服务，由它驱动 `codex exec --json`。
+  - Codex 通过 `lab/bin/naiwa.mjs` 操作页面，说明写在 `lab/AGENTS.md`。
+  - 任务框架在 `lab/jobs/`，现有三个任务：优化手感、改进模块、优化这段动作。
+  - 服务没启动或 Codex 没登录时，页面上不显示任何相关入口。
+- **学习页**：每个板块一页，在 `docs/learn/{motion,sim}/<板块 id>.{zh,en}.md`；对比表在 `docs/learn/motion-index.md` 和 `docs/learn/sim-index.md`。
 
-## 各模块进度与下一步
+## 各模块进度
 
-| 模块（文件夹） | 已完成（已提交） | 做到一半（WIP 提交里） | 下一步 |
-|---|---|---|---|
-| 模型（`assets-src/naiwa`, `public/models`） | 最新版 `7a192ed`：在用户认可的基准上改；Body + 四肢共 5 个封闭网格，`_softness`，关节环线和平滑权重，41 个双四元数蒙皮测试姿态通过；表情 laugh / tongue / surprise / blink | — | 线性蒙皮在举手时肩根仍有重叠（见 `assets-src/naiwa/NOTES.md`）；随模拟需要继续调权重 |
-| 模拟（`src/sim`） | 第一版 FrogSim（`21cc7d4`）：Rapier 体积软体身体 + 带马达球铰的刚体骨骼、不倒翁回正、戳 / 拍 / 抓 / 球、事件 | 全身软体（`flesh.ts`：每块肉一个体积软体、按部位分簇、深层粒子挂骨头）；重构成核心 + 板块（`api.ts`、`core.ts`、`registry.ts`、`parts.ts`、`blocks/skeleton.ts`）——停在“写核心循环”这一步，导致 main 白屏 | ① 先把重构收尾、让 main 重新能跑；② 修穿模（四肢与身体的接触、关节限位）、弯腰时头胸塌陷（换旋转不变的超弹性单元 / FEM 求解、头胸挂骨头的粒子数）、开局倒地；③ CPU 示例 `cpu-constraints` 插件声明参数；④ 写 `docs/simulator-api.md`（含一个自定义板块的最小例子）；⑤ 暴露形变质量指标和动量 / 能量漂移 |
-| GPU 示例（`src/sim/gpu`） | 无 | 刚开工，没有文件 | WebGPU 上的 MLS-MPM（及 GPU FEM / XPBD），按板块写、声明参数；先解决原机器无头 Chrome 拿不到 WebGPU 适配器的问题 |
-| 算法库（`src/algorithms/{motion,sim}`, `docs/learn`） | 文档模板 | 两个库刚开工，没有文件 | retarget：方向拷贝、两骨 IK、CCD、FABRIK、阻尼最小二乘、带约束优化、One Euro / Kalman / Savitzky–Golay、脚接触清理；simulation：质点弹簧、PBD/XPBD、形状匹配、Projective Dynamics、线性 / 共旋 / neo-Hookean FEM（隐式）、各种碰撞板块、两向耦合；每个配学习页 |
-| 代码编辑器（`src/labcode`） | 无 | 开了个头（`compile.ts`、`loader.ts` 及测试） | 在页面里按板块编辑、热替换、出错回退、和内置算法同场景对比、旁边显示学习页；挂在“实验室”下 |
-| 角色（`src/character`） | 加载 GLB（缺文件时用代码拼的替身）、焊接成封闭网格交给模拟、软体变形渲染、四肢软体、五官跟随表面局部坐标、克制的生命感（眨眼、呼吸、视线、强戳时短暂惊讶）；每帧约 0.76 ms | 替身和 dev 页的小改动 | 给 `FleshPart` 填 `skinIndices` / `skinWeights`；和模拟的 output 板块划清边界；眼睛在大变形时贴住表面 |
-| 动作迁移（`src/motion`） | MediaPipe 摄像头 / 上传视频（先分析、非因果平滑、同步播放、存“我的舞蹈”）、程序舞蹈 + 视频舞蹈轨迹、按 dt 推进（暂停和慢放可用）、四肢避开身体、中英状态文案 | 插件接口 `api.ts`（核心还没写） | 写核心；默认 retarget 换成清楚的数值方法（带约束优化 / IK）；暴露指标；写 `docs/motion-api.md` |
-| 舞蹈素材（`tools/dances`, `public/dances`） | 狗熊哆嗦毛（明文军示范，1.46 s 循环）、提取工具一条命令重建 | Nae Nae、科目三、肚皮舞、企鹅舞轨迹及工具更新；HY-Motion 文字生成舞蹈 | 检查新轨迹的效果，补英文名 |
-| 舞台（`src/stage`） | 完成：干净画面（天空渐变 + 波点地面 + 荷叶），能看清凹陷的侧向主光，软阴影，跟随相机，手势识别（点 / 拖 / 划 / 双指），`setInsets`；每帧 CPU 约 0.4 ms | — | 无 |
-| UI（`src/ui`, `src/styles`） | 模拟实验页布局（动作面板、模拟面板、回放 / 交互条、读数、按插件声明生成参数）、中英切换 | 通用插件区（模拟器和 retarget 共用）、回放条、读数 | 把技术面板全部收进默认关闭的“实验室”；接上模拟器 / retarget 列表；去掉剩下的游戏化元素 |
-| 媒体（`src/media`） | 完成：轻微的肉感碰撞音（默认静音）、录制（仅奶蛙 / 画中画 / 真人 vs 奶蛙并排，带视频原声）、分享、配置链接、图标和 manifest | — | 无 |
-| 端到端测试（`tests/e2e`） | `npm run e2e` 构建并检查真实页面：暂停 / 单步 / 慢放、模拟器组合、每支舞的穿模和头形、中英两种语言；CC BY 测试视频 | 场景编排还在改 | 跑通并接上模拟的质量指标 |
-| Genesis 高清（`src/session`, `tools/genesis-hd`） | 会话录制格式和播放器，Genesis 全身 FEM 肉 + 记录的骨骼渲染 | 场景和表面的改进，准备换成 Genesis 的隐式 FEM | 跑通一段真实会话的 1080p 渲染，和浏览器同一时刻对比 |
-| 部署 | `vercel.json`、`public/_headers` | — | 用户决定是否、何时发布（不要自动部署） |
+| 模块（文件夹） | 现状 |
+|---|---|
+| 模型（`assets-src/naiwa`, `public/models`） | 基于用户认可的基准修改，版本 `7a192ed`。资产里舌头的 shape key 放错了位置（悬在脸前 5.6 cm），现在由 `src/character/tongue.ts` 在加载时贴回下唇。以后在 `build_naiwa.py` 里改正后，这段运行时修正会自动不生效 |
+| 模拟（`src/sim`） | 核心加板块的结构已完成。开局能站稳（10 秒漂移约 3 cm），弯腰时头不塌，切换动作不再撕裂（`switch.test.ts`）。四肢由骨骼携带（实验室里可以切回“解算”），腿靠肉的凸包和肚子接触，支撑脚可以钉住。用真实模型跑的测试：`sim.test.ts`、`switch.test.ts`、`tracking.test.ts` |
+| GPU 示例（`src/sim/gpu`） | `gpu-mpm`：MLS-MPM（neo-Hookean 加粘性）。WebGPU 约 2.6 ms/步，CPU 并行 7–18 ms/步。粒子出现非有限值或飞远会被复位，不会把 NaN 交给渲染。还没有 GPU 版 FEM |
+| 算法库和学习页 | 两个库都完成，每个板块一页中英学习文档，附实测对比表。FEM 和 PD 改用 BDF2，不像后向欧拉那样把晃动吃掉；“弹性”滑块控制的是衰减时间 |
+| 代码实验室（`src/labcode`） | 完成。已保存的实验，刷新页面后要在实验室里重新选一次 |
+| 角色（`src/character`） | 完成。舌头贴住脸，跳舞时最远离脸 2.9 cm，接近 3 cm 的检查上限 |
+| 动作迁移（`src/motion`） | 完成。端到端测得的视频跟随度：竖屏 0.78–0.95，横屏 0.58–0.79。慢放同步、镜头运动补偿、“优化这段动作”任务都可用 |
+| UI（`src/ui`, `src/styles`） | 实验室默认收起；有手感面板，不需要专业知识也能调；手机上触控区不小于 40 px；中英双语 |
+| 媒体（`src/media`） | 录制前先预热编码器；MP4 没画面时自动换成 WebM；声音默认关闭 |
+| 本机 Lab（`lab/`, `src/lab`） | 完成。“优化动作迁移”和“生成新舞蹈”目前只是对话模板，不是带前后指标的正式任务 |
+| 端到端测试（`tests/e2e`） | Windows 和 Linux 都能跑，场景覆盖上面所有功能 |
+| Genesis 高清 | 用户决定暂停 |
+| 部署 | `vercel.json` 和 `public/_headers` 已配好（含 COOP/COEP）。是否发布、何时发布由用户决定；公开前先处理版权（见 `docs/RELEASE-NOTES.md`） |
+
+## 已知问题（发布候选版，按重要程度排序）
+
+1. **默认模拟器的四肢还会插进身体 1–4 cm**：腿 1.1–3.8 cm，部分舞蹈里手臂 2–3.9 cm（原来最深 11 cm）。给手臂也加凸包可以解决，但每帧要多花 1.7–3 ms。
+2. **物理耗时 p95 约 4.9–5.1 ms**，超过 4 ms 的预算（画面仍是 60 fps）。耗时来自三处：腿的凸包、关节附近的体积修正、骨骼的 2 次内部 PGS 迭代。
+3. **狗熊哆嗦毛抬脚时脚尖擦地**：屏幕上的脚滑约 21 cm/s，标准是 5，原来是 117。
+   - retarget 给出的目标已经不滑了，问题在模拟里：抬脚慢半拍，落地又冲过头。
+   - 钉脚只管脚踩住的那一段，抬脚和落地时管不到。
+   - 加硬马达反而更糟，需要换一种抬脚的做法。
+4. **个别舞蹈里有少量翻转单元**：青蛙跳 6 个，狗熊哆嗦毛 5 个，其余 0–1 个。狗熊哆嗦毛的左臂体积掉到 0.83。
+5. **默认果冻戳一下晃得不够久**：不可压缩的肉更符合物理，但凹坑变浅了。下一步应该把剪切调软，而不是让肉可压缩。
+6. **隐式 FEM 和 FEM 加拉索每步超过 4 ms**；neo-Hookean 在负载高的机器上达不到实时。
+7. **头型检查**：已经去掉脖子交界那一圈（用户决定），其余部分的头型误差在多数舞蹈里达标。
 
 ## 建议的继续顺序
 
-1. 让 `main` 重新能跑：收尾模拟重构（`src/sim/blocks/skeleton.ts` 的导入路径和接口，`frog.ts` 改用新核心或暂时继续走旧路径）。
-2. 穿模、头胸塌陷、开局倒地（软体是特色，这是用户最在意的问题）。
-3. UI 的“实验室”默认收起，接上 `store.simulators` / `store.retargeters`。
-4. 插件接口和文档定稿（`docs/simulator-api.md`、`docs/motion-api.md`），再并行铺开 GPU 示例、两个算法库和代码编辑器。
-5. Genesis 高清和端到端测试收尾；之后再做推迟的 Lab 对话模式。
+1. **用户验收**：用户验收发布候选版，决定版权怎么处理、要不要公开（见 `docs/RELEASE-NOTES.md`）。
+2. **模拟质量**：
+   - 修抬脚（已知问题 3）；
+   - 把手臂凸包和物理预算放在一起权衡（已知问题 1、2）；
+   - 把剪切调软，让果冻多晃一会儿（已知问题 5）。
+3. **四肢外层软肉**：四肢的核心继续跟着骨骼走，只解算外面一薄层肉，让手臂和大腿也能晃、能戳出坑，同时守住耗时预算。
+4. **本机 Lab**：
+   - 把“优化动作迁移”和“生成新舞蹈”做成带前后指标的正式任务。
+   - 世界坐标的视频转动作模型（GVHMR / WHAM）需要 Python 环境，最好有 NVIDIA 显卡。
+5. **GPU FEM 示例**；Genesis 高清等用户决定恢复时再做。
